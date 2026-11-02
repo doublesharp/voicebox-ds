@@ -117,8 +117,10 @@ def validate(settings, *, admit=bench.admit_cached_model):
         raise ValueError("a comparison needs warm runs on both sides; warm repeats must be at least 1")
     if settings.baseline_model == settings.candidate_model:
         raise ValueError("baseline and candidate must differ")
-    if not 1 <= settings.rounds <= 20:
-        raise ValueError("rounds must be 1..20")
+    if bench.stock_model(settings.baseline_model) != bench.stock_model(settings.candidate_model):
+        raise ValueError("baseline and candidate must share one base size; a size change is not a runtime comparison")
+    if not 2 <= settings.rounds <= 20 or settings.rounds % 2:
+        raise ValueError("rounds must be an even number in 2..20, so ABBA ordering is balanced")
     if not settings.texts or any(text not in CORPUS for text in settings.texts):
         raise ValueError(f"texts must be a nonempty subset of {', '.join(CORPUS)}")
     if not settings.references or any(key not in ("a", "b") for key in settings.references):
@@ -231,8 +233,12 @@ def summarize(results):
             "small_sample": len(warm) < 10}
 
 
-def ratio_of_medians(baseline, candidate):
-    left, right = baseline["warm_generation_s"], candidate["warm_generation_s"]
+RATIOS = {"warm_generation_s_p50_ratio": "warm_generation_s", "wall_audio_rtf_p50_ratio": "wall_audio_rtf"}
+
+
+def ratio_of_medians(baseline, candidate, key="warm_generation_s"):
+    """baseline p50 / candidate p50 of the warm runs; above 1 means the candidate is faster."""
+    left, right = baseline[key], candidate[key]
     if left is None or right is None or not right["p50"]:
         return None
     return left["p50"] / right["p50"]
@@ -250,11 +256,14 @@ def aggregate(jobs, results):
     cell_summaries = {}
     for key, groups in cells.items():
         cell = {label: summarize(group) for label, group in groups.items()}
-        cell["speedup_warm_generation_s_p50_ratio"] = ratio_of_medians(cell["baseline"], cell["candidate"])
+        for name, metric in RATIOS.items():
+            cell[f"speedup_{name}"] = ratio_of_medians(cell["baseline"], cell["candidate"], metric)
         cell_summaries[key] = cell
-    ratio = ratio_of_medians(summary["baseline"], summary["candidate"])
-    speedup = None if ratio is None else {"warm_generation_s_p50_ratio": ratio,
-                                          "method": "baseline p50 / candidate p50 of warm generation_s over every cell"}
+    ratios = {name: ratio_of_medians(summary["baseline"], summary["candidate"], metric) for name, metric in RATIOS.items()}
+    speedup = None if ratios["warm_generation_s_p50_ratio"] is None else {
+        **ratios,
+        "method": {name: f"baseline p50 / candidate p50 of warm {metric} over every cell; above 1 means the candidate is faster"
+                   for name, metric in RATIOS.items()}}
     failures = [f"{label}: no warm runs to compare (a cold-only side is not a baseline)" for label in LABELS
                 if by_label[label] and summary[label]["warm_generation_s"] is None]
     return summary, cell_summaries, speedup, failures

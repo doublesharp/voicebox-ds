@@ -160,10 +160,14 @@ def test_comparison_runs_serially_aggregates_warm_runs_and_exports_audition(sett
     assert candidate["runtime_identity"] == {"runtime": "cudagraph", "graph_capture_s": 4.5}
     assert baseline["small_sample"] is False
     assert report["speedup"]["warm_generation_s_p50_ratio"] == pytest.approx(10.25 / 1.25)
-    assert "baseline p50 / candidate p50" in report["speedup"]["method"]
+    assert report["speedup"]["wall_audio_rtf_p50_ratio"] == pytest.approx(baseline["wall_audio_rtf"]["p50"] / candidate["wall_audio_rtf"]["p50"])
+    assert "baseline p50 / candidate p50" in report["speedup"]["method"]["warm_generation_s_p50_ratio"]
+    assert "wall_audio_rtf" in report["speedup"]["method"]["wall_audio_rtf_p50_ratio"]
     cell = report["cells"]["short/a"]
     assert cell["baseline"]["warm_generation_s"]["count"] == 4 and cell["candidate"]["small_sample"] is True
     assert cell["speedup_warm_generation_s_p50_ratio"] == pytest.approx(10.25 / 1.25)
+    assert cell["speedup_wall_audio_rtf_p50_ratio"] == pytest.approx(
+        cell["baseline"]["wall_audio_rtf"]["p50"] / cell["candidate"]["wall_audio_rtf"]["p50"])
     assert report["notes"]["small_sample"].startswith("fewer than 10")
     assert "never concurrently" in report["method"]
     manifest = json.loads((settings.output_root / "quality-manifest.json").read_text())
@@ -238,7 +242,8 @@ def test_runner_exception_fails_the_job_and_continues(settings):
 
 
 @pytest.mark.parametrize("change", [
-    {"warm_repeats": 0}, {"candidate_model": "0.6B"}, {"device": "cpu"}, {"rounds": 0}, {"rounds": 21},
+    {"warm_repeats": 0}, {"candidate_model": "0.6B"}, {"candidate_model": "1.7B-cudagraph"}, {"baseline_model": "1.7B"},
+    {"device": "cpu"}, {"rounds": 0}, {"rounds": 1}, {"rounds": 3}, {"rounds": 21},
     {"texts": ("short", "unknown")}, {"texts": ()}, {"seeds": ()}, {"references": ("a", "c")}, {"references": ()},
     {"process_timeout_s": 0}, {"warmup_repeats": -1},
 ])
