@@ -120,3 +120,20 @@ def test_studio_identity_records_the_pinned_runtime(monkeypatch):
     assert "runtime" not in stock["registry_identity"]
     assert stock["registry_revision"] != variant["registry_revision"]
     assert variant["supports_instruct"] is False and variant["supports_seed"] is True
+
+
+def test_studio_identity_reports_a_missing_runtime_package_as_unknown(monkeypatch):
+    from backend.utils import platform_detect
+
+    monkeypatch.setattr(platform_detect, "get_backend_type", lambda: "pytorch")
+    configs = listed(monkeypatch)
+    original = importlib.metadata.version
+
+    def version(package):
+        if package == "faster-qwen3-tts":
+            raise importlib.metadata.PackageNotFoundError(package)
+        return original(package)
+
+    monkeypatch.setattr(importlib.metadata, "version", version)
+    identity = capabilities.capability_for_config(configs["0.6B-cudagraph"])["registry_identity"]
+    assert identity["packages"]["faster-qwen3-tts"] is None

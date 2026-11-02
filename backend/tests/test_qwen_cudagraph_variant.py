@@ -100,7 +100,7 @@ class FakeUpstream:
             upstream.generate_kwargs.append(kwargs)
             upstream.events.append(("generate", threading.get_ident()))
             steps = min(upstream.steps, kwargs["max_new_tokens"])
-            return torch.zeros(steps, 16, dtype=torch.long), {"steps": steps}
+            return (torch.zeros(steps, 16, dtype=torch.long) if steps else None), {"steps": steps}
 
         self.modules = {
             "faster_qwen3_tts": SimpleNamespace(FasterQwen3TTS=FasterQwen3TTS),
@@ -206,6 +206,14 @@ async def test_reaching_the_bound_raises_instead_of_returning_a_clip(backend, up
     with pytest.raises(CudaGraphRuntimeError, match="bound"):
         await backend.generate("Hello", ["voice"], seed=1)
     assert backend.last_generation == {"steps": 2048 - PROMPT_LEN, "hit_eos": False, "max_new_tokens": 2048 - PROMPT_LEN}
+    assert upstream.decoded == []
+
+
+@pytest.mark.asyncio
+async def test_a_run_without_codec_tokens_is_an_error_not_silence(backend, upstream):
+    upstream.steps = 0
+    with pytest.raises(CudaGraphRuntimeError, match="no codec tokens"):
+        await backend.generate("Hello", ["voice"], seed=1)
     assert upstream.decoded == []
 
 
@@ -350,6 +358,15 @@ class TestNativeStreaming:
                     received.append(audio)
         assert len(received) == 170
         assert backend.last_generation["hit_eos"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_stream_taken_before_unload_refuses_after_it(self, backend, upstream):
+        await backend.load_model(VARIANT)
+        native = backend.generate_stream
+        backend.unload_model()
+        with pytest.raises(CudaGraphRuntimeError, match="No CUDA-graph variant"):
+            async for _frame in native("Hello", ["voice"], "en", None, None):
+                pytest.fail("frames came from released graphs")
 
     @pytest.mark.asyncio
     async def test_closing_the_stream_drains_the_replay_worker(self, backend, upstream):
