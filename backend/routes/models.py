@@ -579,13 +579,24 @@ async def delete_model(model_name: str):
     """Delete a downloaded model from the HuggingFace cache."""
     from huggingface_hub import constants as hf_constants
 
-    from ..backends import get_llm_backend_for_engine, get_model_config, unload_model_by_config
+    from ..backends import check_model_loaded, get_all_model_configs, get_llm_backend_for_engine, get_model_config, unload_model_by_config
 
     config = get_model_config(model_name)
     if not config:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
 
     hf_repo_id = config.hf_repo_id
+    # A CUDA-graph variant lives in the stock size's cache directory.
+    sharers = [cfg for cfg in get_all_model_configs() if cfg.hf_repo_id == hf_repo_id and cfg.model_name != model_name]
+    loaded_sharers = [cfg.model_name for cfg in sharers if check_model_loaded(cfg)]
+    if loaded_sharers:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Model {model_name} shares its weights with {', '.join(loaded_sharers)}, which is loaded; unload it before deleting",
+        )
+    message = f"Model {model_name} deleted successfully"
+    if sharers:
+        message += f"; its weights were shared with {', '.join(cfg.model_name for cfg in sharers)}, which is no longer downloaded either"
     model_inventory.invalidate()
 
     try:
@@ -616,7 +627,7 @@ async def delete_model(model_name: str):
             except OSError as e:
                 raise HTTPException(status_code=500, detail=f"Failed to delete model cache directory: {str(e)}")
 
-            return {"message": f"Model {model_name} deleted successfully"}
+            return {"message": message}
 
     except HTTPException:
         raise
