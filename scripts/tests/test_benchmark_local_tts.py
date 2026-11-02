@@ -100,7 +100,9 @@ def run_fake(settings, adapter, **kwargs):
                 settings, output, clock=lambda: next(ticks),
                 get_provenance=lambda: {"fixture": True},
                 **{"factory": lambda *args: adapter, "identify": lambda _: {"fixture": True},
-                   "verify_residency": lambda roots, device: {"fixture": True}, **kwargs},
+                   "verify_residency": lambda roots, device: {"fixture": True},
+                   "meter_factory": lambda device, clock: bench.telemetry.StageMeter.for_device("cpu", clock),
+                   **kwargs},
             ))
         saved = json.loads((settings.output_root / "results.json").read_text())
         assert saved["status"] == result["status"]
