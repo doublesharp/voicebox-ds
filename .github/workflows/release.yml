@@ -94,6 +94,7 @@ jobs:
           python -m pip install pyinstaller -r backend/requirements.txt
           python -m pip install --no-deps chatterbox-tts hume-tada omnivoice
           python -m pip install --no-deps "moss-tts-nano @ git+https://github.com/OpenMOSS/MOSS-TTS-Nano.git@8b7bcc9341b3b4ef3a3a58ba1338a7d85ff133eb"
+          python -m pip install --no-deps faster-qwen3-tts==0.3.2
           if [ "$RUNNER_OS" = "macOS" ]; then
             python -m pip install -r backend/requirements-mlx.txt
             python -m pip install --no-deps mlx-lm==0.31.1 mlx-audio==0.4.1

@@ -61,6 +61,11 @@ pydub
 onnxruntime>=1.20
 sentencepiece==0.2.1
 
+# faster-qwen3-tts==0.3.2 (CUDA-graph Qwen Base variants) is installed --no-deps
+# in setup/release/Docker: it pins huggingface-hub<1.0 and its later releases
+# require transformers 5 and qwen-tts-hf. Its imports (torch, numpy, soundfile,
+# transformers, qwen_tts) are all covered by this file and the Qwen3-TTS install.
+
 # Kokoro TTS (lightweight 82M-param engine)
 kokoro>=0.9.4
 misaki[en,ja,zh]>=0.9.4
