@@ -122,6 +122,28 @@ def test_studio_identity_records_the_pinned_runtime(monkeypatch):
     assert variant["supports_instruct"] is False and variant["supports_seed"] is True
 
 
+@pytest.mark.parametrize("module", ["qwen_cudagraph.py", "qwen_cuda_variants.py"])
+def test_studio_identity_of_the_variant_changes_with_the_graph_runtime_sources(monkeypatch, module):
+    from pathlib import Path
+
+    from backend.utils import platform_detect
+
+    monkeypatch.setattr(platform_detect, "get_backend_type", lambda: "pytorch")
+    configs = listed(monkeypatch)
+    before = {size: capabilities.capability_for_config(configs[size]) for size in ("0.6B", "0.6B-cudagraph")}
+    original = Path.read_bytes
+
+    def edited(path):
+        data = original(path)
+        return data + b"\n# edited\n" if path.name == module else data
+
+    monkeypatch.setattr(Path, "read_bytes", edited)
+    after = {size: capabilities.capability_for_config(configs[size]) for size in ("0.6B", "0.6B-cudagraph")}
+    assert after["0.6B"]["registry_revision"] == before["0.6B"]["registry_revision"]
+    assert after["0.6B-cudagraph"]["registry_revision"] != before["0.6B-cudagraph"]["registry_revision"]
+    assert after["0.6B-cudagraph"]["registry_identity"]["adapter_sha256"] != before["0.6B-cudagraph"]["registry_identity"]["adapter_sha256"]
+
+
 def test_studio_identity_reports_a_missing_runtime_package_as_unknown(monkeypatch):
     from backend.utils import platform_detect
 
