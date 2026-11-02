@@ -123,6 +123,8 @@ class FakeGraphBackend:
             self.oom_next = False
             if self.defect == "oom_unloads":
                 self.unload_model()
+            if self.defect == "wrong_oom_error":
+                raise ValueError("boom")
             raise RuntimeError("CUDA out of memory. Tried to allocate 20.00 MiB")
         # The reference's codec frames fill the prefill; the text trails and drives the step count.
         prompt_len = voice_prompt["frames"] + 16
@@ -281,6 +283,7 @@ def test_every_check_passes_against_the_contract_fake(settings):
     assert [row["cycle"] for row in lifecycle["cycles"]] == [1, 2]
     assert all(row["captures"] >= 1 and row["cuda_allocated_after_unload_bytes"] == 0 for row in lifecycle["cycles"])
     assert report["summary"]["recorded"] == {"first_generation_after_capture_timing": timing["evidence"]}
+    assert report["summary"]["expected"] == report["summary"]["passed"] == len(qualify.CHECKS)
     assert report["load"]["runtime_identity"]["runtime"] == "cudagraph" and report["load"]["captures"] == 1
     assert fixture.backends[0].unloads >= 3 and fixture.vram.allocated == 0
     for name in report["wavs"]:
@@ -335,14 +338,30 @@ def test_stock_identity_stops_before_checks(settings):
     assert report["status"] == "failed" and report["checks"] == [] and "silent runtime substitution" in report["error"]["message"]
 
 
-def test_oom_not_provoked_is_recorded_as_a_pass(settings):
-    checks = by_name(run(settings, harness(provoke_oom=False)))
-    assert checks["oom_recovery"]["passed"] is True and checks["oom_recovery"]["evidence"] == {"provoked": False, "reason": "fixture declined"}
+def test_oom_not_provoked_is_recorded_not_gated(settings):
+    report = run(settings, harness(provoke_oom=False))
+    oom = by_name(report)["oom_recovery"]
+    assert oom["kind"] == "recorded" and oom["evidence"] == {"provoked": False, "reason": "fixture declined"}
+    assert report["summary"]["recorded"]["oom_recovery"] == oom["evidence"]
+    assert report["summary"]["expected"] == report["summary"]["passed"] + report["summary"]["failed"]
 
 
-def test_model_size_change_is_skipped_without_a_second_model(settings):
-    checks = by_name(run(settings, harness()))
-    assert checks["model_size_change"]["passed"] is True and checks["model_size_change"]["evidence"] == {"skipped": "no --second-model"}
+def test_model_size_change_is_recorded_as_skipped_without_a_second_model(settings):
+    report = run(settings, harness())
+    sizes = by_name(report)["model_size_change"]
+    assert sizes["kind"] == "recorded" and sizes["evidence"] == {"skipped": "no --second-model"}
+    assert report["summary"]["recorded"]["model_size_change"] == {"skipped": "no --second-model"}
+
+
+def test_an_error_that_is_not_an_oom_fails_oom_recovery(settings):
+    checks = by_name(run(settings, harness(defect="wrong_oom_error")))
+    assert checks["oom_recovery"]["kind"] == "gating" and checks["oom_recovery"]["passed"] is False
+    assert "not an OOM" in checks["oom_recovery"]["error"]
+
+
+def test_no_silent_fallback_fails_without_any_generation(settings):
+    checks = by_name(run(settings, harness(), checks=[qualify.check_no_silent_fallback]))
+    assert checks["no_silent_fallback"]["passed"] is False and "no generation" in checks["no_silent_fallback"]["error"]
 
 
 def test_vram_leak_fails_lifecycle_and_recovery(settings):
@@ -488,7 +507,7 @@ def test_capture_fault_swallowed_or_misreported_fails_recovery(settings):
 def test_oom_that_never_happens_or_that_unloads_is_handled(settings):
     checks = by_name(run(settings, harness(harmless_oom=True)))
     evidence = checks["oom_recovery"]["evidence"]
-    assert checks["oom_recovery"]["passed"] is True and evidence["provoked"] is False and "no OOM" in evidence["reason"]
+    assert checks["oom_recovery"]["kind"] == "recorded" and evidence["provoked"] is False and "no OOM" in evidence["reason"]
     checks = by_name(run(dataclasses.replace(settings, output_root=settings.output_root.with_name("run-unloads")),
                          harness(defect="oom_unloads")))
     assert checks["oom_recovery"]["passed"] is True and checks["oom_recovery"]["evidence"]["recovered"]["bit_exact"] is True

@@ -96,6 +96,13 @@ class CheckResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class Recorded:
+    """Returned by a gating check whose property this run could not exercise;
+    the result is recorded, never counted as a pass."""
+    evidence: dict
+
+
 class GraphSpy:
     """Count capture_end and replay calls on a CUDA graph class, calling through.
     Instance methods resolve through the class, so every graph the runtime
@@ -209,6 +216,10 @@ def compare_audio(left, right):
 
 def is_cudagraph_error(exc):
     return isinstance(exc, RuntimeError) and type(exc).__name__ == "CudaGraphRuntimeError"
+
+
+def is_oom(exc):
+    return type(exc).__name__ == "OutOfMemoryError" or "out of memory" in str(exc).lower()
 
 
 def vram_released(allocated_before, allocated_after):
@@ -445,18 +456,19 @@ async def check_capture_failure_recovery(s):
 async def check_oom_recovery(s):
     outcome = s.filler.fill()
     if not outcome["provoked"]:
-        return outcome
+        return Recorded(outcome)
     raised = None
     try:
         try:
             with s.stage("generate_under_vram_pressure"):
                 await s.adapter.generate(s.settings.text, s.prompt_a, language="en", seed=s.settings.seed)
         except Exception as exc:
+            expect(is_oom(exc), f"generation under VRAM pressure raised {type(exc).__name__}, not an OOM: {exc}")
             raised = type(exc).__name__
     finally:
         s.filler.release()
     if raised is None:
-        return {**outcome, "provoked": False, "reason": "generation completed under VRAM pressure; no OOM occurred"}
+        return Recorded({**outcome, "provoked": False, "reason": "generation completed under VRAM pressure; no OOM occurred"})
     if not s.adapter.is_loaded():
         await s.load(label="load_after_oom")
         await s.prepare_both()
@@ -468,7 +480,7 @@ async def check_oom_recovery(s):
 
 async def check_model_size_change(s):
     if s.settings.second_model is None:
-        return {"skipped": "no --second-model"}
+        return Recorded({"skipped": "no --second-model"})
     first = s.settings.model
     second = await s.load(s.settings.second_model, label="load_second_model")
     await s.prepare_both()
@@ -483,6 +495,7 @@ async def check_model_size_change(s):
 
 
 async def check_no_silent_fallback(s):
+    expect(s.audio, "no generation ran, so nothing shows the graphs replayed")
     without = [entry["label"] for entry in s.audio if entry["replays"] <= 0]
     expect(not without, f"generations without replay calls: {without}")
     expect(s.spy.captures >= 1, "no capture was ever observed")
@@ -595,6 +608,8 @@ async def qualify(settings, output, *, factory=bench.create_adapter, admit=bench
             start = time.perf_counter()
             try:
                 evidence = await check(session)
+                if isinstance(evidence, Recorded):
+                    kind, evidence = "recorded", evidence.evidence
                 result = CheckResult(name, kind, True, time.perf_counter() - start, evidence)
             except (Exception, asyncio.CancelledError) as exc:
                 result = CheckResult(name, kind, False, time.perf_counter() - start, {},
@@ -617,9 +632,11 @@ async def qualify(settings, output, *, factory=bench.create_adapter, admit=bench
         if spy is not None:
             spy.restore()
         gating = [c for c in report["checks"] if c["kind"] == "gating"]
+        recorded = {c["name"]: recorded_outcome(c) for c in report["checks"] if c["kind"] == "recorded"}
         report["summary"] = {"passed": sum(c["passed"] for c in gating), "failed": sum(not c["passed"] for c in gating),
-                             "expected": sum(check_kind(c) == "gating" for c in checks),
-                             "recorded": {c["name"]: recorded_outcome(c) for c in report["checks"] if c["kind"] == "recorded"}}
+                             "expected": sum(check_kind(check) == "gating" and check.__name__.removeprefix("check_") not in recorded
+                                             for check in checks),
+                             "recorded": recorded}
         with output.open("results.json") as handle:
             handle.write(json.dumps(report, default=str, indent=2, allow_nan=False).encode() + b"\n")
     return report
