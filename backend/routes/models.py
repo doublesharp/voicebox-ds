@@ -151,6 +151,7 @@ async def load_model(
     endpoint had.
     """
     from ..backends import get_model_load_func
+    from ..backends.qwen_cuda_variants import cuda_graph_unavailable_reason, is_cuda_graph_variant
     from ..services import tts
 
     requested_name = request.model_name if request else None
@@ -167,6 +168,10 @@ async def load_model(
         return {"message": f"Model {config.model_name} loaded successfully"}
 
     size = requested_size or DEFAULT_QWEN_MODEL_SIZE
+    if is_cuda_graph_variant(size):
+        reason = cuda_graph_unavailable_reason()
+        if reason is not None:
+            raise HTTPException(status_code=400, detail=f"Model {size} is not available on this host: {reason}")
     try:
         tts_model = tts.get_tts_model()
         await _run_model_work(None, lambda: tts_model.load_model_async(size))

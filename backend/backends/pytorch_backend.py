@@ -184,8 +184,10 @@ class PyTorchTTSBackend:
         is_cached = self._is_model_cached(model_size)
         variant = QWEN_CUDA_GRAPH_VARIANTS.get(model_size)
         if variant is not None:
+            from .qwen_cuda_variants import require_cuda_graph_variant
             from .qwen_cudagraph import CudaGraphSession, require_cuda_device
 
+            require_cuda_graph_variant("qwen")
             require_cuda_device(self.device)
 
         with model_load_progress(model_name, is_cached):

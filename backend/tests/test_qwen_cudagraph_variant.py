@@ -15,6 +15,7 @@ import pytest
 import torch
 
 from backend.backends import pytorch_backend as pt
+from backend.backends import qwen_cuda_variants
 from backend.backends import qwen_cudagraph as qc
 from backend.backends.qwen_cuda_variants import CUDA_GRAPH_RUNTIME, CudaGraphRuntimeError
 
@@ -141,6 +142,7 @@ def backend(monkeypatch, upstream):
         loads.append((path, kwargs))
         return upstream.stock_model()
 
+    monkeypatch.setattr(qwen_cuda_variants, "cuda_graph_unavailable_reason", lambda: None)
     monkeypatch.setattr(pt, "is_model_cached", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(pt, "model_load_progress", lambda *_args: nullcontext())
     monkeypatch.setattr(pt, "empty_device_cache", lambda _device: None)
@@ -293,6 +295,16 @@ async def test_non_cuda_device_is_refused_before_the_model_loads(backend, upstre
     with pytest.raises(CudaGraphRuntimeError, match="CUDA device"):
         await backend.load_model(VARIANT)
     assert backend.loads == [] and not backend.is_loaded()
+
+
+@pytest.mark.asyncio
+async def test_a_host_the_runtime_is_not_qualified_on_is_refused_by_the_backend_itself(backend, upstream, monkeypatch):
+    """The registry guard runs only in load_engine_model; a direct load_model call must refuse too."""
+    monkeypatch.setattr(qwen_cuda_variants, "cuda_graph_unavailable_reason",
+                        lambda: "CUDA graphs are qualified on NVIDIA CUDA only, not ROCm/HIP")
+    with pytest.raises(CudaGraphRuntimeError, match="ROCm"):
+        await backend.load_model(VARIANT)
+    assert backend.loads == [] and not backend.is_loaded() and backend.runtime_identity == {"runtime": "stock"}
 
 
 def test_cache_check_uses_the_pinned_revision_and_required_files(monkeypatch):
