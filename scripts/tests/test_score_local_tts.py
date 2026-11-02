@@ -97,6 +97,7 @@ def test_edit_operations_and_rates_follow_the_alignment():
     assert score.edit_operations(["the", "cat", "sat"], ["the", "cat", "sat", "sat"]) == {"substitutions": 0, "deletions": 0, "insertions": 1}
     assert score.edit_operations(["a", "b", "c"], ["a", "x", "c"]) == {"substitutions": 1, "deletions": 0, "insertions": 0}
     assert score.edit_operations([], ["a"]) == {"substitutions": 0, "deletions": 0, "insertions": 1}
+    assert score.edit_operations("x a".split(), "a y".split()) == {"substitutions": 2, "deletions": 0, "insertions": 0}
     assert score.error_rate(["the", "cat", "sat"], ["the", "cat"]) == pytest.approx(1 / 3)
     assert score.error_rate([], []) == 0.0 and score.error_rate([], ["x"]) == 1.0
 

@@ -133,7 +133,8 @@ def normalize_basic(text):
 
 
 def edit_operations(reference, hypothesis):
-    """Substitutions, deletions and insertions of the minimal edit alignment."""
+    """Substitutions, deletions and insertions of the minimal edit alignment;
+    at equal cost a substitution beats a deletion plus an insertion."""
     rows = [[(j, 0, 0, j) for j in range(len(hypothesis) + 1)]]
     for i in range(1, len(reference) + 1):
         row = [(i, 0, i, 0)]
@@ -146,7 +147,7 @@ def edit_operations(reference, hypothesis):
             candidates = ((diagonal[0] + 1, diagonal[1] + 1, diagonal[2], diagonal[3]),
                           (up[0] + 1, up[1], up[2] + 1, up[3]),
                           (left[0] + 1, left[1], left[2], left[3] + 1))
-            row.append(min(candidates))
+            row.append(min(candidates, key=lambda c: (c[0], c[2] + c[3])))
         rows.append(row)
     _, substitutions, deletions, insertions = rows[-1][-1]
     return {"substitutions": substitutions, "deletions": deletions, "insertions": insertions}
