@@ -224,6 +224,7 @@ async def test_capture_failure_frees_everything_and_never_falls_back_to_stock(ba
         await backend.load_model(VARIANT)
     assert not backend.is_loaded() and backend.model is None and backend._graphs is None
     assert backend._current_model_size is None and backend.runtime_identity == {"runtime": "stock"}
+    assert backend.generate_stream is None
 
     upstream.fail_capture = False
     await backend.load_model(VARIANT)
@@ -258,7 +259,7 @@ async def test_unload_releases_graphs_and_reload_recaptures(backend, upstream):
     backend.unload_model()
     assert backend._graphs is None and backend.model is None and session.wrapper is None
     assert all(graph.graph is None and graph.static_cache is None for graph in first_graphs)
-    assert backend.runtime_identity == {"runtime": "stock"}
+    assert backend.runtime_identity == {"runtime": "stock"} and backend.generate_stream is None
 
     await backend.load_model(VARIANT)
     assert backend._graphs is not session and len(upstream.graphs) == 4
@@ -311,5 +312,64 @@ async def test_stock_generation_reports_only_what_it_observes(backend, upstream,
     await backend.load_model("0.6B")
     await backend.generate("Hello", ["voice"])
     assert backend.last_generation == {"steps": None, "hit_eos": None, "max_new_tokens": 8192}
-    assert backend.runtime_identity == {"runtime": "stock"}
+    assert backend.runtime_identity == {"runtime": "stock"} and backend.generate_stream is None
     assert upstream.events == []
+
+
+class TestNativeStreaming:
+    @pytest.mark.asyncio
+    async def test_variant_streams_native_frames_on_the_replay_thread(self, backend, upstream):
+        from backend.utils.streaming_audio import iter_speech_audio
+
+        await backend.load_model(VARIANT)
+        frames = [frame async for frame in iter_speech_audio(backend, "One sentence.", ["voice"], seed=7, instruct="x", crossfade_ms=0)]
+        audio = np.concatenate([frame[0] for frame in frames])
+        np.testing.assert_array_equal(audio, np.concatenate(upstream.stream_chunks))
+        assert {rate for _, rate in frames} == {24000}
+        stream = upstream.stream_kwargs[0]
+        assert stream["instruct"] is None and stream["max_new_tokens"] == 2048 - PROMPT_LEN and stream["chunk_size"] == 12
+        assert {key: stream[key] for key in ("do_sample", "top_k", "top_p", "temperature", "repetition_penalty")} == {
+            "do_sample": True, "top_k": 50, "top_p": 1.0, "temperature": 0.9, "repetition_penalty": 1.05,
+        }
+        assert backend.last_generation == {"steps": 5, "hit_eos": True, "max_new_tokens": 2048 - PROMPT_LEN}
+        threads = {event[1] for event in upstream.events}
+        assert len(threads) == 1
+        assert [event[0] for event in upstream.events] == ["warmup", "seed", "stream", "stream"]
+
+    @pytest.mark.asyncio
+    async def test_stream_that_reaches_the_bound_raises_after_its_frames(self, backend, upstream):
+        from contextlib import aclosing
+
+        upstream.steps = 2048 - PROMPT_LEN
+        upstream.stream_chunks = [np.full(10, 0.1, dtype=np.float32)] * 170
+        await backend.load_model(VARIANT)
+        received = []
+        with pytest.raises(CudaGraphRuntimeError, match="bound"):
+            async with aclosing(backend.generate_stream("Hello", ["voice"], "en", 1, None)) as stream:
+                async for audio, _rate in stream:
+                    received.append(audio)
+        assert len(received) == 170
+        assert backend.last_generation["hit_eos"] is False
+
+    @pytest.mark.asyncio
+    async def test_closing_the_stream_drains_the_replay_worker(self, backend, upstream):
+        from contextlib import aclosing
+
+        started, release = threading.Event(), threading.Event()
+        finished = []
+
+        def chunks():
+            yield np.full(10, 0.1, dtype=np.float32)
+            started.set()
+            release.wait(5)
+            finished.append(True)
+            yield np.full(10, 0.2, dtype=np.float32)
+
+        upstream.stream_chunks = chunks()
+        await backend.load_model(VARIANT)
+        stream = backend.generate_stream("Hello", ["voice"], "en", None, None)
+        async with aclosing(stream):
+            await anext(stream)
+            assert started.wait(5)
+            release.set()
+        assert finished == [True]

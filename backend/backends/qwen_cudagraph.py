@@ -179,6 +179,21 @@ class CudaGraphSession:
             audio = audio[int(ref_codes.shape[0] / max(codes.shape[0], 1) * len(audio)):]
         return np.asarray(audio, dtype=np.float32), int(sample_rate)
 
+    def stream(self, text: str, items: list, language: str, chunk_steps: int = STREAM_CHUNK_STEPS):
+        """Yield (audio, sample rate) per decoded window; raises after the frames at the bound."""
+        with torch.inference_mode():
+            _, prompt_len = self._prepare(text, items, language)
+            budget = self._token_budget(prompt_len)
+            steps = 0
+            for audio, sample_rate, timing in self.wrapper.generate_voice_clone_streaming(
+                text=text, language=language, voice_clone_prompt=items, instruct=None,
+                max_new_tokens=budget, min_new_tokens=MIN_NEW_TOKENS, chunk_size=chunk_steps,
+                **self._talker_sampling(),
+            ):
+                steps = timing["total_steps_so_far"]
+                yield np.asarray(audio, dtype=np.float32), int(sample_rate)
+            self._record(steps, budget)
+
     @staticmethod
     def _free(wrapper) -> None:
         for graph in (wrapper.predictor_graph, wrapper.talker_graph):

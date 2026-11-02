@@ -111,6 +111,11 @@ class PyTorchTTSBackend:
         """The runtime that actually renders: captured graphs or the stock decode loop."""
         return self._graphs.identity if self._graphs is not None else dict(STOCK_RUNTIME_IDENTITY)
 
+    @property
+    def generate_stream(self):
+        """Native frames exist only while a CUDA-graph variant is resident."""
+        return self._graph_stream if self._graphs is not None else None
+
     def _get_model_path(self, model_size: str) -> str:
         """
         Get the HuggingFace Hub model ID.
@@ -364,6 +369,31 @@ class PyTorchTTSBackend:
             return graphs.generate(text, voice_prompt, language_name)
         finally:
             self.last_generation = dict(graphs.last_outcome or NO_GENERATION)
+
+    async def _graph_stream(self, text, voice_prompt, language="en", seed=None, instruct=None):
+        """Yield native frames from the resident graphs; the bound raises after its frames."""
+        from contextlib import aclosing
+
+        from ..utils.native_stream import audio_frame, iter_native_worker
+        from .qwen_cudagraph import run_on_graph_thread
+
+        graphs = self._graphs
+        if graphs is None:
+            raise CudaGraphRuntimeError("No CUDA-graph variant is loaded")
+        language_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
+
+        def frames():
+            if seed is not None:
+                manual_seed(seed, self.device)
+            try:
+                for audio, sample_rate in graphs.stream(text, voice_prompt, language_name):
+                    yield audio_frame(audio, sample_rate)
+            finally:
+                self.last_generation = dict(graphs.last_outcome or NO_GENERATION)
+
+        async with aclosing(iter_native_worker(frames, run_on_graph_thread)) as stream:
+            async for frame in stream:
+                yield frame
 
 
 class PyTorchSTTBackend:
