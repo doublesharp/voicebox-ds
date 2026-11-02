@@ -34,7 +34,7 @@ PARAGRAPH = (
     "minus 3 degrees, light snow and a 40% chance of clear skies by Thursday. She did not believe it, but she packed "
     "the camera anyway, because hope, like luggage, weighs nothing until you have to carry it up a mountain."
 )
-REPORT = {"torch": torch.__version__, "gpu": torch.cuda.get_device_name(0), "sizes": {}}
+REPORT = {"torch": torch.__version__, "gpu": None, "sizes": {}}
 
 
 def mib():
@@ -54,6 +54,7 @@ def references():
 
 @pytest.fixture(scope="module", autouse=True)
 def report_file():
+    REPORT["gpu"] = torch.cuda.get_device_name(0)
     yield
     path = os.environ.get("VOICEBOX_CUDAGRAPH_REPORT")
     if path:
