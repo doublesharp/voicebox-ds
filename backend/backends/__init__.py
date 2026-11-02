@@ -22,6 +22,7 @@ DEFAULT_LLM_MAX_TOKENS = 512
 DEFAULT_LLM_TEMPERATURE = 0.7
 
 from ..utils.platform_detect import get_backend_type
+from .qwen_cuda_variants import is_cuda_graph_variant, require_cuda_graph_variant
 
 LANGUAGE_CODE_TO_NAME = {
     "zh": "chinese",
@@ -310,6 +311,26 @@ def _get_qwen_model_configs() -> list[ModelConfig]:
             )
             for size, repo in QWEN_MLX_QUANTIZED_VARIANTS.items()
         )
+    elif backend_type == "pytorch":
+        from .qwen_cuda_variants import QWEN_CUDA_GRAPH_REQUIRED_FILES, QWEN_CUDA_GRAPH_VARIANTS, cuda_graph_unavailable_reason
+
+        if cuda_graph_unavailable_reason() is None:
+            configs.extend(
+                ModelConfig(
+                    model_name=f"qwen-tts-{size}",
+                    display_name=f"Qwen TTS {variant.base_size} (CUDA graphs, Experimental)",
+                    engine="qwen",
+                    hf_repo_id=variant.hf_repo_id,
+                    revision=variant.revision,
+                    required_files=QWEN_CUDA_GRAPH_REQUIRED_FILES,
+                    license="apache-2.0",
+                    model_size=size,
+                    size_mb=variant.size_mb,
+                    supports_instruct=False,
+                    languages=["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
+                )
+                for size, variant in QWEN_CUDA_GRAPH_VARIANTS.items()
+            )
     return configs
 
 
@@ -690,6 +711,8 @@ async def _load_engine_model_unmanaged(engine: str, model_size: Optional[str] = 
     model_size = _normalize_engine_model_size(engine, model_size)
     if model_size.endswith("bit") and engine != "qwen":
         raise ValueError("Quantized MLX model variants require the Qwen Base engine")
+    if is_cuda_graph_variant(model_size):
+        require_cuda_graph_variant(engine)
     backend = get_tts_backend_for_engine(engine)
     if engine in ("qwen", "qwen_custom_voice"):
         await backend.load_model_async(model_size)
@@ -706,6 +729,8 @@ async def load_engine_model(engine: str, model_size: Optional[str] = "default") 
     model_size = _normalize_engine_model_size(engine, model_size)
     if model_size.endswith("bit") and engine != "qwen":
         raise ValueError("Quantized MLX model variants require the Qwen Base engine")
+    if is_cuda_graph_variant(model_size):
+        require_cuda_graph_variant(engine)
     configuration = _model_config(engine, model_size)
     await model_residency.load_model(
         configuration, lambda: _load_engine_model_unmanaged(engine, configuration.model_size)

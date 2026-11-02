@@ -107,7 +107,7 @@ class GenerationRequest(SpeechDeliverySettings):
     text: str = Field(..., min_length=1, max_length=50000)
     language: str = Field(default="en", pattern="^(zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr)$")
     seed: Optional[int] = Field(None, ge=0)
-    model_size: Optional[str] = Field(default="1.7B", pattern="^(1\\.7B|0\\.6B|1B|3B|1\\.7B-(8|4)bit)$")
+    model_size: Optional[str] = Field(default="1.7B", pattern="^(1\\.7B|0\\.6B|1B|3B|1\\.7B-(8|4)bit|(1\\.7B|0\\.6B)-cudagraph)$")
     instruct: Optional[str] = Field(None, max_length=500)
     engine: Optional[str] = Field(default=None, pattern="^(qwen|qwen_custom_voice|qwen_voice_design|luxtts|chatterbox|chatterbox_turbo|tada|kokoro|omnivoice|moss_tts)$")
     personality: bool = Field(
@@ -129,6 +129,8 @@ class GenerationRequest(SpeechDeliverySettings):
     def validate_delivery_engine(self):
         if self.model_size and self.model_size.endswith("bit") and self.engine not in (None, "qwen"):
             raise ValueError("Quantized MLX model variants require the Qwen Base engine")
+        if self.model_size and self.model_size.endswith("-cudagraph") and self.engine not in (None, "qwen"):
+            raise ValueError("CUDA-graph model variants require the Qwen Base engine")
         if self.engine is not None:
             self.chatterbox_options(self.engine)
         return self
