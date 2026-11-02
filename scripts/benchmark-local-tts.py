@@ -526,7 +526,8 @@ async def benchmark(settings, output, *, factory=create_adapter, clock=time.perf
         stage = "runtime"
         report["runtime_identity"] = verify_runtime(adapter, settings)
         report["graph_capture"] = graph_capture_figure(report["runtime_identity"])
-        report["streaming"] = {"generate_stream": hasattr(adapter, "generate_stream"), "first_frame_measured": False}
+        report["streaming"] = {"generate_stream": callable(getattr(adapter, "generate_stream", None)),
+                               "first_frame_measured": False}
         stage = "reference_preparation"
         hit = None
         with meter.stage(stage):
@@ -582,8 +583,6 @@ async def benchmark(settings, output, *, factory=create_adapter, clock=time.perf
         if meter is not None:
             report["stages"] = {name: asdict(m) for name, m in meter.stages.items()}
             report["stages_s"] = {name: m.wall_s for name, m in meter.stages.items()}
-            if report.get("graph_capture"):
-                report["stages_s"]["graph_capture"] = report["graph_capture"]["wall_s"]
         with output.open("results.json") as handle:
             handle.write(json.dumps(report, default=str, indent=2, allow_nan=False).encode() + b"\n")
     return report

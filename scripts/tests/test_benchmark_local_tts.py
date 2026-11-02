@@ -901,7 +901,8 @@ def test_cudagraph_run_records_runtime_identity_capture_and_generation_facts(set
     assert adapter.loads == ["0.6B-cudagraph"]
     assert result["runtime_identity"]["runtime"] == "cudagraph"
     assert result["graph_capture"] == {"wall_s": 4.5, "included_in_stage": "load", "source": "runtime_identity.graph_capture_s"}
-    assert result["stages_s"]["graph_capture"] == 4.5 and "graph_capture" not in result["stages"]
+    assert "graph_capture" not in result["stages_s"] and "graph_capture" not in result["stages"]
+    assert sum(result["stages_s"].values()) == sum(stage["wall_s"] for stage in result["stages"].values())
     assert [run["seed"] for run in result["runs"]] == [3, 5, 3, 5]
     assert [call[2]["seed"] for call in adapter.calls] == [3, 5, 3, 5]
     assert [run["steps"] for run in result["runs"]] == [41, 42, 43, 44]
@@ -910,6 +911,17 @@ def test_cudagraph_run_records_runtime_identity_capture_and_generation_facts(set
     assert result["warm"]["steps"] == {"count": 3, "p50": 43, "p95": 43.9}
     assert result["warm"]["hit_eos_count"] == 1 and result["warm"]["bound_count"] == 2
     assert result["streaming"] == {"generate_stream": False, "first_frame_measured": False}
+
+
+def test_streaming_is_reported_only_for_a_callable_generate_stream(settings, tmp_path):
+    """PyTorchTTSBackend exposes generate_stream as None while the stock model is resident."""
+    stock = FakeGraphAdapter(runtime="stock")
+    stock.generate_stream = None
+    assert run_fake(graph_settings(settings, tmp_path, model="0.6B"), stock)["streaming"]["generate_stream"] is False
+    native = FakeGraphAdapter()
+    native.generate_stream = lambda *args, **kwargs: iter(())
+    result = run_fake(graph_settings(settings, tmp_path, output_root=settings.output_root.with_name("run-native")), native)
+    assert result["streaming"] == {"generate_stream": True, "first_frame_measured": False}
 
 
 def test_stock_run_keeps_old_shape_with_null_generation_facts(settings):
