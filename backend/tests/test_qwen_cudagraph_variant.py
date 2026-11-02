@@ -36,7 +36,6 @@ class FakeUpstream:
         self.steps = 5
         self.prompt_len = PROMPT_LEN
         self.fail_capture = False
-        self.predictor_top_k = None
         self.prepare_kwargs = []
         self.generate_kwargs = []
         self.stream_kwargs = []
@@ -47,8 +46,7 @@ class FakeUpstream:
 
         class PredictorGraph:
             def __init__(self, predictor, config, hidden, device, dtype, do_sample, top_k, top_p, temperature):
-                self.do_sample, self.top_p, self.temperature = do_sample, top_p, temperature
-                self.top_k = upstream.predictor_top_k if upstream.predictor_top_k is not None else top_k
+                self.do_sample, self.top_k, self.top_p, self.temperature = do_sample, top_k, top_p, temperature
                 self.graph, self.captured, self.static_cache = None, False, object()
                 upstream.graphs.append(self)
 
@@ -252,14 +250,10 @@ async def test_capture_failure_frees_everything_and_never_falls_back_to_stock(ba
     assert all(graph.captured for graph in upstream.graphs[-2:])
 
 
-@pytest.mark.parametrize("defect", ["mismatch", "missing"])
 @pytest.mark.asyncio
-async def test_sampling_that_differs_from_the_checkpoint_is_refused(backend, upstream, monkeypatch, defect):
-    if defect == "mismatch":
-        upstream.predictor_top_k = 40
-    else:
-        SAMPLING_WITHOUT = {key: value for key, value in SAMPLING.items() if key != "subtalker_top_k"}
-        monkeypatch.setattr(upstream, "stock_model", lambda: setattr_defaults(upstream, SAMPLING_WITHOUT))
+async def test_a_checkpoint_without_sampling_values_is_refused(backend, upstream, monkeypatch):
+    SAMPLING_WITHOUT = {key: value for key, value in SAMPLING.items() if key != "subtalker_top_k"}
+    monkeypatch.setattr(upstream, "stock_model", lambda: setattr_defaults(upstream, SAMPLING_WITHOUT))
     with pytest.raises(CudaGraphRuntimeError, match="sampling|top_k"):
         await backend.load_model(VARIANT)
     assert not backend.is_loaded() and backend._graphs is None

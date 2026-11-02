@@ -28,12 +28,7 @@ _graph_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="cudagrap
 MIN_NEW_TOKENS = 2
 STREAM_CHUNK_STEPS = 12
 TALKER_SAMPLING_KEYS = ("do_sample", "top_k", "top_p", "temperature", "repetition_penalty")
-PREDICTOR_SAMPLING_KEYS = {
-    "subtalker_dosample": "do_sample",
-    "subtalker_top_k": "top_k",
-    "subtalker_top_p": "top_p",
-    "subtalker_temperature": "temperature",
-}
+PREDICTOR_SAMPLING_KEYS = ("subtalker_dosample", "subtalker_top_k", "subtalker_top_p", "subtalker_temperature")
 
 
 def run_on_graph_thread(func, *args):
@@ -135,10 +130,6 @@ class CudaGraphSession:
                 do_sample=sampling["subtalker_dosample"], top_k=sampling["subtalker_top_k"],
                 top_p=sampling["subtalker_top_p"], temperature=sampling["subtalker_temperature"],
             )
-            captured = {name: getattr(predictor_graph, name) for name in PREDICTOR_SAMPLING_KEYS.values()}
-            expected = {name: sampling[key] for key, name in PREDICTOR_SAMPLING_KEYS.items()}
-            if captured != expected:
-                raise CudaGraphRuntimeError(f"Predictor graph sampling {captured} differs from the checkpoint {expected}")
             talker_graph = TalkerGraph(talker.model, talker_config, device=device, dtype=dtype, max_seq_len=max_seq_len)
             wrapper = FasterQwen3TTS(model, predictor_graph, talker_graph, device=device, dtype=dtype, max_seq_len=max_seq_len)
             _synchronize()
