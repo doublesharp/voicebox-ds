@@ -10,6 +10,7 @@ import asyncio
 import gc
 import logging
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -83,7 +84,7 @@ class CudaGraphSession:
         talker = model.model.talker
         talker_config = model.model.config.talker_config
         dtype = torch.bfloat16
-        wrapper = None
+        wrapper = predictor_graph = talker_graph = None
         try:
             predictor_graph = PredictorGraph(
                 talker.code_predictor, talker.code_predictor.model.config, talker_config.hidden_size,
@@ -109,7 +110,10 @@ class CudaGraphSession:
         except BaseException as error:
             if wrapper is not None:
                 cls._free(wrapper)
-            del wrapper
+            # The traceback's frames would otherwise keep the graphs and the
+            # model's modules resident for as long as the exception lives.
+            traceback.clear_frames(error.__traceback__)
+            wrapper = predictor_graph = talker_graph = talker = model = None
             _release_cuda_memory()
             if isinstance(error, CudaGraphRuntimeError):
                 raise
