@@ -294,3 +294,10 @@ def test_load_wav_returns_float_mono_and_refuses_stereo(tmp_path):
         target.writeframes(b"\0\0\0\0" * 3)
     with pytest.raises(ValueError, match="mono"):
         score.load_wav(tmp_path / "stereo.wav")
+
+
+def test_resampled_changes_rate_only_when_needed():
+    pytest.importorskip("torchaudio")
+    samples = np.zeros(48, dtype=np.float32)
+    assert score.resampled(samples, 48, 48) is samples
+    assert score.resampled(samples, 48, 16).shape == (16,)

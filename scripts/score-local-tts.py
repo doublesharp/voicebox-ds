@@ -191,6 +191,16 @@ def cosine(left, right):
     return float(left @ right / (np.linalg.norm(left) * np.linalg.norm(right)))
 
 
+def resampled(samples, rate, target_rate):
+    """float32 mono at target_rate through torchaudio; librosa's resampler
+    needs resampy, which the stack does not ship."""
+    if rate == target_rate:
+        return samples
+    import torch
+    import torchaudio.functional
+    return torchaudio.functional.resample(torch.from_numpy(samples), rate, target_rate).numpy()
+
+
 class WhisperTranscriber:
     """Greedy single-window Whisper decoding from the admitted snapshot."""
 
@@ -202,11 +212,8 @@ class WhisperTranscriber:
         self.model = WhisperForConditionalGeneration.from_pretrained(snapshot, local_files_only=True).to(device).eval()
 
     def transcribe(self, samples, rate, language):
-        import torchaudio.functional
-        audio = self.torch.from_numpy(samples)
-        if rate != WHISPER_SAMPLE_RATE:
-            audio = torchaudio.functional.resample(audio, rate, WHISPER_SAMPLE_RATE)
-        inputs = self.processor(audio.numpy(), sampling_rate=WHISPER_SAMPLE_RATE, return_tensors="pt").to(self.device)
+        audio = resampled(samples, rate, WHISPER_SAMPLE_RATE)
+        inputs = self.processor(audio, sampling_rate=WHISPER_SAMPLE_RATE, return_tensors="pt").to(self.device)
         with self.torch.inference_mode():
             ids = self.model.generate(inputs["input_features"], language=language, task="transcribe",
                                       num_beams=1, do_sample=False)
@@ -228,8 +235,10 @@ class TurboVoiceEncoder:
 
     def embed(self, samples, rate):
         import numpy as np
+        target = self.encoder.hp.sample_rate
+        audio = resampled(samples, rate, target)
         with self.torch.inference_mode():
-            return np.asarray(self.encoder.embeds_from_wavs([samples], sample_rate=rate, as_spk=True), dtype=np.float32)
+            return np.asarray(self.encoder.embeds_from_wavs([audio], sample_rate=target, as_spk=True), dtype=np.float32)
 
 
 DECODING = {"model": WHISPER_REPO, "greedy": True, "num_beams": 1, "task": "transcribe", "window": "single 30 s window",
