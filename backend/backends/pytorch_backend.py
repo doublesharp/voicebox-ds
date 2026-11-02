@@ -23,9 +23,13 @@ from .base import (
     combine_voice_prompts as _combine_voice_prompts,
     model_load_progress,
 )
+from .qwen_cuda_variants import QWEN_CUDA_GRAPH_REQUIRED_FILES, QWEN_CUDA_GRAPH_VARIANTS, CudaGraphRuntimeError
 from ..utils.cache import get_cache_key, get_cached_voice_prompt, cache_voice_prompt
 from ..utils.audio import load_audio
 from ..utils.async_work import run_blocking
+
+STOCK_RUNTIME_IDENTITY = {"runtime": "stock"}
+NO_GENERATION = {"steps": None, "hit_eos": None, "max_new_tokens": None}
 
 
 def _serialize_qwen_voice_prompt(items: list) -> dict:
@@ -91,6 +95,8 @@ class PyTorchTTSBackend:
         self.model_size = model_size
         self.device = self._get_device()
         self._current_model_size = None
+        self._graphs = None
+        self.last_generation = dict(NO_GENERATION)
 
     def _get_device(self) -> str:
         """Get the best available device."""
@@ -99,6 +105,11 @@ class PyTorchTTSBackend:
     def is_loaded(self) -> bool:
         """Check if model is loaded."""
         return self.model is not None
+
+    @property
+    def runtime_identity(self) -> dict:
+        """The runtime that actually renders: captured graphs or the stock decode loop."""
+        return self._graphs.identity if self._graphs is not None else dict(STOCK_RUNTIME_IDENTITY)
 
     def _get_model_path(self, model_size: str) -> str:
         """
@@ -114,6 +125,9 @@ class PyTorchTTSBackend:
             "1.7B": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
             "0.6B": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
         }
+        variant = QWEN_CUDA_GRAPH_VARIANTS.get(model_size)
+        if variant is not None:
+            return variant.hf_repo_id
 
         if model_size not in hf_model_map:
             raise ValueError(f"Unknown model size: {model_size}")
@@ -121,6 +135,11 @@ class PyTorchTTSBackend:
         return hf_model_map[model_size]
 
     def _is_model_cached(self, model_size: str) -> bool:
+        variant = QWEN_CUDA_GRAPH_VARIANTS.get(model_size)
+        if variant is not None:
+            return is_model_cached(
+                variant.hf_repo_id, revision=variant.revision, required_files=list(QWEN_CUDA_GRAPH_REQUIRED_FILES)
+            )
         return is_model_cached(self._get_model_path(model_size))
 
     async def load_model_async(self, model_size: Optional[str] = None):
@@ -141,6 +160,13 @@ class PyTorchTTSBackend:
         if self.model is not None and self._current_model_size != model_size:
             self.unload_model()
 
+        if model_size in QWEN_CUDA_GRAPH_VARIANTS:
+            # Graph capture and every later replay share one thread.
+            from .qwen_cudagraph import run_on_graph_thread
+
+            await run_on_graph_thread(self._load_model_sync, model_size)
+            return
+
         # Run blocking load in thread pool
         await asyncio.to_thread(self._load_model_sync, model_size)
 
@@ -151,6 +177,11 @@ class PyTorchTTSBackend:
         """Synchronous model loading."""
         model_name = f"qwen-tts-{model_size}"
         is_cached = self._is_model_cached(model_size)
+        variant = QWEN_CUDA_GRAPH_VARIANTS.get(model_size)
+        if variant is not None:
+            from .qwen_cudagraph import CudaGraphSession, require_cuda_device
+
+            require_cuda_device(self.device)
 
         with model_load_progress(model_name, is_cached):
             from qwen_tts import Qwen3TTSModel
@@ -172,6 +203,15 @@ class PyTorchTTSBackend:
                     torch_dtype=torch.float32,
                     low_cpu_mem_usage=False,
                 )
+            elif variant is not None:
+                self.model = Qwen3TTSModel.from_pretrained(
+                    model_path,
+                    cache_dir=tts_cache_dir,
+                    revision=variant.revision,
+                    device_map=self.device,
+                    torch_dtype=torch.bfloat16,
+                    attn_implementation="sdpa",
+                )
             else:
                 self.model = Qwen3TTSModel.from_pretrained(
                     model_path,
@@ -180,6 +220,14 @@ class PyTorchTTSBackend:
                     torch_dtype=torch.bfloat16,
                 )
 
+        if variant is not None:
+            try:
+                self._graphs = CudaGraphSession.capture(self.model, self.device)
+            except BaseException:
+                self.model = None
+                empty_device_cache(self.device)
+                raise
+
         self._current_model_size = model_size
         self.model_size = model_size
         logger.info("TTS model %s loaded successfully", model_size)
@@ -187,6 +235,9 @@ class PyTorchTTSBackend:
     def unload_model(self):
         """Unload the model to free memory."""
         if self.model is not None:
+            if self._graphs is not None:
+                self._graphs.close()
+                self._graphs = None
             del self.model
             self.model = None
             self._current_model_size = None
@@ -270,6 +321,13 @@ class PyTorchTTSBackend:
         """
         # Load model
         await self.load_model_async(None)
+        language_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
+
+        if self._graphs is not None:
+            from .qwen_cudagraph import run_on_graph_thread
+
+            # Stock Base ignores instruct, so the graphs never receive it.
+            return await run_on_graph_thread(self._generate_graphs_sync, text, voice_prompt, language_name, seed)
 
         def _generate_sync():
             """Run synchronous generation in thread pool."""
@@ -283,15 +341,29 @@ class PyTorchTTSBackend:
                 wavs, sample_rate = self.model.generate_voice_clone(
                     text=text,
                     voice_clone_prompt=voice_prompt,
-                    language=LANGUAGE_CODE_TO_NAME.get(language, "auto"),
+                    language=language_name,
                     instruct=instruct,
                 )
+            defaults = getattr(self.model, "generate_defaults", None)
+            self.last_generation = {
+                **NO_GENERATION,
+                "max_new_tokens": defaults.get("max_new_tokens") if isinstance(defaults, dict) else None,
+            }
             return wavs[0], sample_rate
 
         # Run blocking inference in thread pool to avoid blocking event loop
         audio, sample_rate = await asyncio.to_thread(_generate_sync)
 
         return audio, sample_rate
+
+    def _generate_graphs_sync(self, text, voice_prompt, language_name, seed):
+        graphs = self._graphs
+        if seed is not None:
+            manual_seed(seed, self.device)
+        try:
+            return graphs.generate(text, voice_prompt, language_name)
+        finally:
+            self.last_generation = dict(graphs.last_outcome or NO_GENERATION)
 
 
 class PyTorchSTTBackend:
