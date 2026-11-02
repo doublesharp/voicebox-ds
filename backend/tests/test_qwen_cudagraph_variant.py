@@ -76,8 +76,10 @@ class FakeUpstream:
 
             def warmup(self, prefill_len=100):
                 upstream.events.append(("warmup", threading.get_ident(), prefill_len))
-                if upstream.fail_capture:
+                if upstream.fail_capture is True:
                     raise RuntimeError("capture exploded")
+                if upstream.fail_capture:
+                    raise upstream.fail_capture("capture interrupted")
                 self.predictor_graph.capture()
                 self.talker_graph.capture(prefill_len=prefill_len)
 
@@ -248,6 +250,14 @@ async def test_capture_failure_frees_everything_and_never_falls_back_to_stock(ba
     await backend.load_model(VARIANT)
     assert backend.runtime_identity["runtime"] == "cudagraph"
     assert all(graph.captured for graph in upstream.graphs[-2:])
+
+
+@pytest.mark.parametrize("interrupt", [KeyboardInterrupt, SystemExit])
+def test_an_interrupt_during_capture_frees_the_graphs_and_stays_an_interrupt(upstream, interrupt):
+    upstream.fail_capture = interrupt
+    with pytest.raises(interrupt):
+        qc.CudaGraphSession.capture(upstream.stock_model(), "cuda")
+    assert len(upstream.graphs) == 2 and all(graph.static_cache is None for graph in upstream.graphs)
 
 
 @pytest.mark.asyncio

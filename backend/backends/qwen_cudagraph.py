@@ -149,7 +149,7 @@ class CudaGraphSession:
             traceback.clear_frames(error.__traceback__)
             wrapper = predictor_graph = talker_graph = talker = model = None
             _release_cuda_memory()
-            if isinstance(error, CudaGraphRuntimeError):
+            if isinstance(error, CudaGraphRuntimeError) or not isinstance(error, Exception):
                 raise
             raise CudaGraphRuntimeError(f"CUDA graph capture failed: {error}") from error
         logger.info("CUDA graphs captured in %.2fs (max_seq_len=%d)", graph_capture_s, max_seq_len)
