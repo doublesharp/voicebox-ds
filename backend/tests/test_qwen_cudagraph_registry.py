@@ -144,6 +144,26 @@ def test_studio_identity_of_the_variant_changes_with_the_graph_runtime_sources(m
     assert after["0.6B-cudagraph"]["registry_identity"]["adapter_sha256"] != before["0.6B-cudagraph"]["registry_identity"]["adapter_sha256"]
 
 
+def test_studio_identity_does_not_fabricate_a_hash_when_a_source_is_absent(monkeypatch):
+    """Frozen builds may ship without .py sources; the variant's hash covers three of them."""
+    from pathlib import Path
+
+    from backend.utils import platform_detect
+
+    monkeypatch.setattr(platform_detect, "get_backend_type", lambda: "pytorch")
+    configs = listed(monkeypatch)
+    original = Path.read_bytes
+
+    def absent(path):
+        if path.name == "qwen_cuda_variants.py":
+            raise FileNotFoundError(path)
+        return original(path)
+
+    monkeypatch.setattr(Path, "read_bytes", absent)
+    assert capabilities.capability_for_config(configs["0.6B-cudagraph"])["registry_identity"]["adapter_sha256"] is None
+    assert capabilities.capability_for_config(configs["0.6B"])["registry_identity"]["adapter_sha256"] is not None
+
+
 def test_studio_identity_reports_a_missing_runtime_package_as_unknown(monkeypatch):
     from backend.utils import platform_detect
 
