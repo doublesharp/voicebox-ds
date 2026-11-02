@@ -197,6 +197,7 @@ class CudaGraphSession:
         """Return (mono float32 audio, sample rate); raises at the sequence bound."""
         from faster_qwen3_tts.generate import fast_generate
 
+        self.last_outcome = None
         with torch.inference_mode():
             (m, talker, config, tie, tam, tth, tpe, ref_codes), prompt_len = self._prepare(text, items, language)
             budget = self._token_budget(prompt_len)
@@ -224,6 +225,7 @@ class CudaGraphSession:
 
     def stream(self, text: str, items: list, language: str, chunk_steps: int = STREAM_CHUNK_STEPS):
         """Yield (audio, sample rate) per decoded window; raises after the frames at the bound."""
+        self.last_outcome = None
         with torch.inference_mode():
             _, prompt_len = self._prepare(text, items, language)
             budget = self._token_budget(prompt_len)

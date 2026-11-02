@@ -328,6 +328,7 @@ class PyTorchTTSBackend:
         """
         # Load model
         await self.load_model_async(None)
+        self.last_generation = dict(NO_GENERATION)
         language_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
 
         if self._graphs is not None:
@@ -382,6 +383,7 @@ class PyTorchTTSBackend:
         graphs = self._graphs
         if graphs is None:
             raise CudaGraphRuntimeError("No CUDA-graph variant is loaded")
+        self.last_generation = dict(NO_GENERATION)
         language_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
 
         def frames():

@@ -228,6 +228,16 @@ async def test_prompt_that_does_not_fit_is_refused_before_decoding(backend, upst
 
 
 @pytest.mark.asyncio
+async def test_a_refused_prompt_does_not_report_the_previous_request(backend, upstream):
+    await backend.generate("Hello", ["voice"], seed=1)
+    assert backend.last_generation["steps"] == 5
+    upstream.prompt_len = 2047
+    with pytest.raises(CudaGraphRuntimeError, match="shorten"):
+        await backend.generate("Hello", ["voice"], seed=1)
+    assert backend.last_generation == {"steps": None, "hit_eos": None, "max_new_tokens": None}
+
+
+@pytest.mark.asyncio
 async def test_capture_failure_frees_everything_and_never_falls_back_to_stock(backend, upstream):
     upstream.fail_capture = True
     with pytest.raises(CudaGraphRuntimeError, match="capture"):
@@ -396,9 +406,12 @@ class TestNativeStreaming:
 
         upstream.stream_chunks = chunks()
         await backend.load_model(VARIANT)
+        await backend.generate("Hello", ["voice"], seed=1)
+        assert backend.last_generation["steps"] == 5
         stream = backend.generate_stream("Hello", ["voice"], "en", None, None)
         async with aclosing(stream):
             await anext(stream)
             assert started.wait(5)
             release.set()
         assert finished == [True]
+        assert backend.last_generation == {"steps": None, "hit_eos": None, "max_new_tokens": None}
