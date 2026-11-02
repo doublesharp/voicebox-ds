@@ -299,12 +299,12 @@ def compare(settings, output, *, runner=run_process, gpu_snapshot=nvidia_smi_sna
     root = output.path
     report = {"schema_version": 1, "status": "failed", "config": asdict(settings), "provenance": get_provenance(),
               "method": METHOD, "corpus": {text_id: CORPUS[text_id] for text_id in settings.texts},
-              "models": {label: admit(benchmark_settings(settings, label)) for label in LABELS},
-              "references": {key: bench.reference_info(reference(settings, key)[0]) for key in settings.references},
               "plan": [{"name": job.name, **asdict(job)} for job in jobs], "jobs": [], "failures": [],
               "notes": {"small_sample": SMALL_SAMPLE}, "quality": None, "audition": None}
     results = {}
     try:
+        report["models"] = {label: admit(benchmark_settings(settings, label)) for label in LABELS}
+        report["references"] = {key: bench.reference_info(reference(settings, key)[0]) for key in settings.references}
         for job in jobs:
             record = {"name": job.name, "idle_gpu_before": gpu_snapshot(gpu_index(settings.device)), "status": "error",
                       "returncode": None, "error": None, "stderr_tail": None, "wall_s": None}

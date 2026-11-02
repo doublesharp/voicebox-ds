@@ -118,6 +118,8 @@ def test_repetition_and_omission_flags_come_from_alignment_and_repeated_phrases(
     stutter = long_reference[:10] + ["no", "no", "no"] + long_reference[10:]
     assert score.flags(long_reference, stutter)["repetition"] is True, "a short run is below the insertion ratio"
     assert score.flags(long_reference, long_reference[:10] + ["no", "yes", "no"] + long_reference[10:])["repetition"] is False
+    echoed = long_reference[:10] + long_reference[7:10] + long_reference[10:]
+    assert score.flags(long_reference, echoed)["repetition"] is True, "a phrase said twice is a repetition below the insertion ratio"
 
 
 def test_audio_facts_measure_duration_finite_clipping_and_level(tmp_path):
@@ -245,6 +247,16 @@ def test_manifest_shape_is_validated_before_scoring(settings, manifest):
     manifest.write_text(json.dumps({"language": "xx", "references": {"a": {"wav": "a.wav", "text": "t"}}, "rows": [{}]}))
     with pytest.raises(ValueError, match="language"):
         score.read_manifest(manifest)
+    manifest.write_text(json.dumps({"language": "en", "references": {"a": {"wav": "a.wav"}}, "rows": []}))
+    with pytest.raises(ValueError, match="needs wav and text"):
+        score.read_manifest(manifest)
+    manifest.write_text(json.dumps({"language": "en", "references": {"a": {"wav": "a.wav", "text": "t"}}, "rows": {}}))
+    with pytest.raises(ValueError, match="list"):
+        score.read_manifest(manifest)
+    row = {"id": "same", "wav": "x.wav", "text": "t", "group": "g"}
+    manifest.write_text(json.dumps({"language": "en", "references": {"a": {"wav": "a.wav", "text": "t"}}, "rows": [row, row]}))
+    with pytest.raises(ValueError, match="repeated"):
+        score.read_manifest(manifest)
 
 
 def test_cosine_similarity_of_unit_vectors():
@@ -301,3 +313,47 @@ def test_resampled_changes_rate_only_when_needed():
     samples = np.zeros(48, dtype=np.float32)
     assert score.resampled(samples, 48, 48) is samples
     assert score.resampled(samples, 48, 16).shape == (16,)
+
+
+def test_score_row_refuses_nonfinite_audio_before_transcribing():
+    transcriber = FakeTranscriber(["never"])
+    with pytest.raises(ValueError, match="nonfinite"):
+        score.score_row({"id": "x", "text": "t"}, np.array([0.0, float("nan")], dtype=np.float32), 2, "en", transcriber, FakeEncoder(), {})
+    assert transcriber.calls == []
+
+
+def test_main_reports_a_failed_scoring_run(settings, monkeypatch, capsys):
+    import functools
+    monkeypatch.setattr(score.bench, "configure_offline", lambda *args: None)
+
+    class Broken(FakeTranscriber):
+        def transcribe(self, samples, rate, language):
+            raise RuntimeError("decoder exploded")
+
+    monkeypatch.setattr(score, "score", functools.partial(
+        score.score, transcriber_factory=lambda *a: Broken([]), encoder_factory=lambda *a: FakeEncoder(),
+        admit_asr=lambda *a: {}, admit_encoder=lambda *a: {}, identify=lambda *a: {}, get_provenance=lambda: {}))
+    assert score.main(["--manifest", str(settings.manifest), "--device", "cpu", "--cache-root", str(settings.cache_root),
+                       "--output-root", str(settings.output_root)]) == 2
+    assert "decoder exploded" in capsys.readouterr().err
+
+
+def test_real_whisper_and_voice_encoder_from_a_local_cache(tmp_path):
+    """Opt-in: VOICEBOX_SCORER_CACHE names a hub with openai/whisper-base at the
+    pinned revision and ResembleAI/chatterbox-turbo; skipped otherwise."""
+    import os
+    hub = os.environ.get("VOICEBOX_SCORER_CACHE")
+    if not hub:
+        pytest.skip("VOICEBOX_SCORER_CACHE not set")
+    pytest.importorskip("torch")
+    settings = score.Settings(tmp_path / "unused.json", Path(hub), tmp_path / "out", "cpu")
+    whisper = score.WhisperTranscriber(score.admit_whisper(settings)["snapshot"], "cpu")
+    encoder = score.TurboVoiceEncoder(score.admit_voice_encoder(settings)["snapshot"], "cpu")
+    rate = 24000
+    t = np.arange(rate) / rate
+    tone = (0.2 * np.sin(2 * np.pi * 220 * t) * np.sin(2 * np.pi * 3 * t)).astype(np.float32)
+    assert isinstance(whisper.transcribe(tone, rate, "en"), str)
+    assert whisper.normalize("Dr. Smith paid $1,250!") == "doctor smith paid $1250"
+    embedding = encoder.embed(tone, rate)
+    assert embedding.shape == (256,) and np.isfinite(embedding).all()
+    assert score.cosine(embedding, embedding) == pytest.approx(1.0)

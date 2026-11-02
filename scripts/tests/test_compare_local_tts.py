@@ -309,3 +309,41 @@ def test_real_gpu_snapshot_tolerates_a_missing_tool(monkeypatch):
 def test_provenance_hashes_driver_benchmark_and_scorer():
     result = compare.provenance()
     assert len({result["runner_sha256"], result["benchmark_module_sha256"], result["scorer_sha256"]}) == 3
+
+
+def test_run_process_captures_a_real_child():
+    completed = compare.run_process([sys.executable, "-c", "import sys; print('out'); print('err', file=sys.stderr)"], 30)
+    assert completed.returncode == 0 and completed.stdout.strip() == "out" and completed.stderr.strip() == "err"
+
+
+def test_admission_failure_inside_compare_is_recorded(settings):
+    def refuse(_):
+        raise ValueError("model not locally ready: fake")
+
+    output = compare.Output(settings.output_root)
+    try:
+        report = compare.compare(settings, output, runner=FakeRunner(), gpu_snapshot=snapshots(), admit=refuse,
+                                 get_provenance=lambda: {})
+    finally:
+        output.close()
+    assert report["status"] == "failed" and report["error"]["type"] == "ValueError" and report["jobs"] == []
+
+
+def test_main_success_and_in_process_refusal(settings, monkeypatch, capsys):
+    import functools
+    monkeypatch.setattr(compare, "validate", lambda s, admit=None: None)
+    monkeypatch.setattr(compare, "compare", functools.partial(
+        compare.compare, runner=FakeRunner(), gpu_snapshot=snapshots(), admit=lambda s: {}, get_provenance=lambda: {}))
+    argv = ["--device", "cuda", "--cache-root", str(settings.cache_root), "--output-root", str(settings.output_root),
+            "--baseline-model", "0.6B", "--candidate-model", "0.6B-cudagraph",
+            "--reference-a", str(settings.reference_a), "--reference-a-text", "A.",
+            "--reference-b", str(settings.reference_b), "--reference-b-text", "B.", "--rounds", "1", "--texts", "short"]
+    assert compare.main(argv) == 0
+    assert json.loads((settings.output_root / "comparison.json").read_text())["status"] == "ok"
+
+    def refuse(s, admit=None):
+        raise ValueError("rounds must be 1..20")
+
+    monkeypatch.setattr(compare, "validate", refuse)
+    assert compare.main(argv[:5] + [str(settings.output_root.with_name("cmp2"))] + argv[6:]) == 2
+    assert "comparison refused: rounds" in capsys.readouterr().err

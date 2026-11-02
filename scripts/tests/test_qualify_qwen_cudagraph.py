@@ -81,15 +81,21 @@ class FakeGraphBackend:
         self.vram.allocated = 2_400_000_000 if model_size.startswith("0.6B") else 4_600_000_000
         try:
             self.graph = self.graph_class()
-            self.graph.capture_begin()
-            self.graph.capture_end()
+            if self.defect != "no_recapture" or len(self.loads) == 1:
+                self.graph.capture_begin()
+                self.graph.capture_end()
         except RuntimeError as exc:
-            if self.defect != "leaky_capture_failure":
-                self.vram.allocated = 0
-                self.graph = None
+            if self.defect == "ignores_capture_fault":
+                self.graph.capture_end()
+            elif self.defect == "wrong_capture_error":
+                raise ValueError("capture failed") from exc
             else:
-                self.model = Qwen3TTSModel()
-            raise CudaGraphRuntimeError(f"graph capture failed: {exc}") from exc
+                if self.defect != "leaky_capture_failure":
+                    self.vram.allocated = 0
+                    self.graph = None
+                else:
+                    self.model = Qwen3TTSModel()
+                raise CudaGraphRuntimeError(f"graph capture failed: {exc}") from exc
         self.model = Qwen3TTSModel()
         self._current_model_size = model_size
         self.runtime_identity = {"runtime": "stock"} if self.defect == "stock_identity" else {
@@ -112,6 +118,8 @@ class FakeGraphBackend:
     async def generate(self, text, voice_prompt, language="en", seed=None, instruct=None):
         if self.oom_next:
             self.oom_next = False
+            if self.defect == "oom_unloads":
+                self.unload_model()
             raise RuntimeError("CUDA out of memory. Tried to allocate 20.00 MiB")
         if len(text) > MAX_SEQ_LEN * 4 and self.defect != "no_bound":
             raise CudaGraphRuntimeError(f"prompt does not fit: max_seq_len={MAX_SEQ_LEN}")
@@ -152,13 +160,13 @@ class FakeCuda:
 class FakeFiller:
     """Stands in for the VRAM filler: makes the backend's next generation raise OOM."""
 
-    def __init__(self, backend, provoke=True):
-        self.backend, self.provoke, self.held = backend, provoke, 0
+    def __init__(self, backend, provoke=True, harmless=False):
+        self.backend, self.provoke, self.harmless, self.held = backend, provoke, harmless, 0
 
     def fill(self):
         if not self.provoke:
             return {"provoked": False, "reason": "fixture declined"}
-        self.backend.oom_next = True
+        self.backend.oom_next = not self.harmless
         self.held = 7_000_000_000
         return {"provoked": True, "held_bytes": self.held}
 
@@ -176,7 +184,7 @@ def settings(tmp_path):
                             make_reference(tmp_path / "b.wav", 200), "Reference B.", seed=42)
 
 
-def harness(defect=None, provoke_oom=True, graph_class=FakeCUDAGraph):
+def harness(defect=None, provoke_oom=True, graph_class=FakeCUDAGraph, harmless_oom=False):
     vram = SimpleNamespace(allocated=0)
     backends = []
 
@@ -188,7 +196,7 @@ def harness(defect=None, provoke_oom=True, graph_class=FakeCUDAGraph):
     return SimpleNamespace(
         factory=factory, backends=backends, vram=vram,
         meter_factory=lambda device: qualify.telemetry.StageMeter(device, cuda=FakeCuda(vram), process=None),
-        filler_factory=lambda backend: FakeFiller(backend, provoke=provoke_oom))
+        filler_factory=lambda backend: FakeFiller(backend, provoke=provoke_oom, harmless=harmless_oom))
 
 
 def run(settings, fixture, **kwargs):
@@ -426,3 +434,75 @@ def test_loaded_adapter_and_cleanup_failure_are_refused(settings):
     report = run(dataclasses.replace(settings, output_root=settings.output_root.with_name("run-cleanup")), fixture,
                  factory=failing_unload, checks=[])
     assert report["status"] == "failed" and report["cleanup_error"]["message"] == "unload failed"
+
+
+def test_capture_fault_swallowed_or_misreported_fails_recovery(settings):
+    checks = by_name(run(settings, harness(defect="ignores_capture_fault")))
+    error = checks["capture_failure_recovery"]["error"]
+    assert "load succeeded although capture failed" in error and "capture completed despite the fault" in error
+    checks = by_name(run(dataclasses.replace(settings, output_root=settings.output_root.with_name("run-wrong")),
+                         harness(defect="wrong_capture_error")))
+    assert "raised ValueError, not CudaGraphRuntimeError" in checks["capture_failure_recovery"]["error"]
+
+
+def test_oom_that_never_happens_or_that_unloads_is_handled(settings):
+    checks = by_name(run(settings, harness(harmless_oom=True)))
+    evidence = checks["oom_recovery"]["evidence"]
+    assert checks["oom_recovery"]["passed"] is True and evidence["provoked"] is False and "no OOM" in evidence["reason"]
+    checks = by_name(run(dataclasses.replace(settings, output_root=settings.output_root.with_name("run-unloads")),
+                         harness(defect="oom_unloads")))
+    assert checks["oom_recovery"]["passed"] is True and checks["oom_recovery"]["evidence"]["recovered"]["bit_exact"] is True
+
+
+def test_reload_without_recapture_fails_lifecycle(settings):
+    checks = by_name(run(dataclasses.replace(settings, lifecycle_cycles=1), harness(defect="no_recapture")))
+    assert checks["lifecycle_cycles"]["passed"] is False and "did not recapture" in checks["lifecycle_cycles"]["error"]
+
+
+def test_missing_runtime_package_fails_identity(settings):
+    import importlib.metadata
+
+    def missing(name):
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    checks = by_name(run(settings, harness(), package_version=missing))
+    assert checks["runtime_identity_truthful"]["passed"] is False and "installed None" in checks["runtime_identity_truthful"]["error"]
+
+
+def test_vram_filler_uses_torch_allocator_when_present(monkeypatch):
+    allocations = []
+    fake_torch = SimpleNamespace(
+        uint8="u8",
+        cuda=SimpleNamespace(mem_get_info=lambda device: (10**9, 2 * 10**9)),
+        empty=lambda size, dtype, device: allocations.append((size, dtype, device)) or "block")
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    meter = SimpleNamespace(cuda=SimpleNamespace(empty_cache=lambda: allocations.append("emptied")), device="cuda:0")
+    filler = qualify.VramFiller(meter, headroom_bytes=1000)
+    assert filler.fill() == {"provoked": True, "held_bytes": 10**9 - 1000} and filler.block == "block"
+    filler.release()
+    assert filler.block is None and allocations == [(10**9 - 1000, "u8", "cuda:0"), "emptied"]
+    fake_torch.cuda.mem_get_info = lambda device: (500, 2 * 10**9)
+    assert filler.fill() == {"provoked": False, "reason": "only 500 bytes free"}
+
+    def refuse(size, dtype, device):
+        raise RuntimeError("CUDA out of memory")
+
+    fake_torch.cuda.mem_get_info = lambda device: (10**9, 2 * 10**9)
+    fake_torch.empty = refuse
+    assert filler.fill()["reason"].startswith("filler allocation failed")
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(CUDAGraph=FakeCUDAGraph)))
+    assert qualify.cuda_graph_class() is FakeCUDAGraph
+
+
+def test_main_success_exit_status(settings, monkeypatch):
+    import functools
+    fixture = harness()
+    monkeypatch.setattr(qualify.bench, "configure_offline", lambda *args: None)
+    admitted = {"repo_id": "Qwen/Qwen3-TTS-12Hz-0.6B-Base", "revision": "a" * 40, "snapshot": "fake"}
+    monkeypatch.setattr(qualify, "qualify", functools.partial(
+        qualify.qualify, factory=fixture.factory, admit=lambda _: admitted, identify=lambda _: {"fixture": True},
+        verify_residency=lambda roots, device: {"fixture": True}, meter_factory=fixture.meter_factory,
+        filler_factory=fixture.filler_factory, graph_class=FakeCUDAGraph, package_version=lambda name: "0.3.2"))
+    assert qualify.main(["--device", "cuda", "--cache-root", str(settings.cache_root), "--output-root", str(settings.output_root),
+                         "--reference-a", str(settings.reference_a), "--reference-a-text", "A.",
+                         "--reference-b", str(settings.reference_b), "--reference-b-text", "B.", "--lifecycle-cycles", "1"]) == 0
