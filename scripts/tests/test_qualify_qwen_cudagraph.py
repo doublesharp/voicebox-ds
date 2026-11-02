@@ -113,29 +113,42 @@ class FakeGraphBackend:
     async def create_voice_prompt(self, audio_path, reference_text, use_cache=True):
         assert use_cache is False, "qualification must bypass the shared prompt cache"
         speaker = int.from_bytes(hashlib.sha256(Path(audio_path).read_bytes()).digest()[:2], "big") / 65535
-        return {"speaker": speaker, "ref_text": reference_text}, False
+        with wave.open(str(audio_path), "rb") as audio:
+            frames = round(audio.getnframes() / audio.getframerate() * 12)
+        return {"speaker": speaker, "ref_text": reference_text, "frames": frames}, False
 
     async def generate(self, text, voice_prompt, language="en", seed=None, instruct=None):
+        self.last_generation = {"steps": None, "hit_eos": None, "max_new_tokens": None}
         if self.oom_next:
             self.oom_next = False
             if self.defect == "oom_unloads":
                 self.unload_model()
             raise RuntimeError("CUDA out of memory. Tried to allocate 20.00 MiB")
-        if len(text) > MAX_SEQ_LEN * 4 and self.defect != "no_bound":
-            raise CudaGraphRuntimeError(f"prompt does not fit: max_seq_len={MAX_SEQ_LEN}")
+        # The reference's codec frames fill the prefill; the text trails and drives the step count.
+        prompt_len = voice_prompt["frames"] + 16
+        max_new_tokens = MAX_SEQ_LEN - prompt_len
+        if max_new_tokens < 2:
+            if self.defect == "no_prompt_bound":
+                max_new_tokens = MAX_SEQ_LEN
+            else:
+                if self.defect == "refuses_after_replay":
+                    self.graph.replay()
+                raise CudaGraphRuntimeError(f"The prompt occupies {prompt_len} of the {MAX_SEQ_LEN} talker positions; shorten the reference")
         speaker = voice_prompt["speaker"]
         if self.defect == "speaker_leak" and self.generations:
             speaker = self.generations[-1]["speaker"]
         effective_seed = 0 if self.defect == "frozen_rng" else seed
-        steps = min(MAX_SEQ_LEN, 12 + len(text) // 8)
+        steps = min(max_new_tokens, 12 + len(text) // 8)
         if self.defect != "stock_path":
             for _ in range(steps):
                 self.graph.replay()
         rng = random.Random(f"{speaker:.5f}|{text}|{effective_seed}")
         samples = np.array([rng.uniform(-0.5, 0.5) for _ in range(steps * 20)], dtype=np.float32)
-        hit_eos = steps < MAX_SEQ_LEN
-        self.last_generation = {"steps": steps, "hit_eos": hit_eos, "max_new_tokens": MAX_SEQ_LEN}
+        hit_eos = steps < max_new_tokens
+        self.last_generation = {"steps": steps, "hit_eos": hit_eos or self.defect == "misreported_bound", "max_new_tokens": max_new_tokens}
         self.generations.append({"speaker": speaker, "text": text, "seed": seed})
+        if not hit_eos and self.defect != "no_bound":
+            raise CudaGraphRuntimeError(f"Generation reached the CUDA-graph bound of {max_new_tokens} codec steps")
         return samples, 240
 
 
@@ -239,9 +252,16 @@ def test_every_check_passes_against_the_contract_fake(settings):
     assert all(entry["hit_eos"] is True for key, entry in lengths.items() if isinstance(entry, dict) and "hit_eos" in entry)
     speakers = checks["two_speakers_no_leak"]["evidence"]
     assert speakers["a_vs_a_after_b"]["bit_exact"] is True and speakers["a_vs_b"]["bit_exact"] is False
-    bound = checks["max_sequence_bound_raises"]["evidence"]
-    assert bound["probe"] == "oversized_prompt" and bound["raised"] == "CudaGraphRuntimeError"
+    bound = checks["generation_bound_raises"]["evidence"]
+    assert bound["probe"] == "long_text" and bound["generation_bound_probed"] is True and bound["raised"] == "CudaGraphRuntimeError"
     assert bound["chars"] > MAX_SEQ_LEN * 4 and bound["state_intact_after_error"]["bit_exact"] is True
+    assert bound["last_generation"]["hit_eos"] is False and bound["last_generation"]["steps"] == bound["last_generation"]["max_new_tokens"]
+    assert bound["replays_during_error"] == bound["last_generation"]["steps"]
+    refusal = checks["prompt_too_long_is_refused_before_replay"]["evidence"]
+    assert refusal["probe"] == "long_reference_prompt" and refusal["raised"] == "CudaGraphRuntimeError"
+    assert refusal["reference_duration_s"] > MAX_SEQ_LEN / 12 and refusal["replays_during_error"] == 0
+    assert refusal["last_generation"] == {"steps": None, "hit_eos": None, "max_new_tokens": None}
+    assert refusal["state_intact_after_error"]["bit_exact"] is True
     recovery = checks["capture_failure_recovery"]["evidence"]
     assert recovery["raised"] == "CudaGraphRuntimeError" and recovery["loaded_after_failure"] is False
     assert recovery["vram_released_after_failure"] is True and recovery["captures_after_recovery"] >= 1
@@ -289,7 +309,19 @@ def test_speaker_leak_fails_two_speakers(settings):
 
 def test_silent_bound_truncation_fails_bound_check(settings):
     checks = by_name(run(settings, harness(defect="no_bound")))
-    assert checks["max_sequence_bound_raises"]["passed"] is False and "did not raise" in checks["max_sequence_bound_raises"]["error"]
+    assert checks["generation_bound_raises"]["passed"] is False and "did not raise" in checks["generation_bound_raises"]["error"]
+
+
+def test_a_bound_error_whose_last_generation_claims_eos_fails_bound_check(settings):
+    checks = by_name(run(settings, harness(defect="misreported_bound")))
+    assert checks["generation_bound_raises"]["passed"] is False and "hit_eos" in checks["generation_bound_raises"]["error"]
+
+
+@pytest.mark.parametrize("defect, message", [("no_prompt_bound", "did not raise"), ("refuses_after_replay", "replay")])
+def test_a_prompt_that_is_not_refused_before_replay_fails_the_prompt_check(settings, defect, message):
+    checks = by_name(run(settings, harness(defect=defect)))
+    check = checks["prompt_too_long_is_refused_before_replay"]
+    assert check["passed"] is False and message in check["error"]
 
 
 def test_capture_failure_that_leaves_state_fails_recovery(settings):
@@ -348,9 +380,17 @@ def test_graph_spy_counts_and_calls_through():
     assert spy.counts() == {"captures": 1, "replays": 2} and graph.events[-2:] == ["begin", "replay"]
 
 
-def test_oversized_prompt_exceeds_the_bound_in_characters():
-    text = qualify.oversized_text(MAX_SEQ_LEN)
+def test_long_text_needs_more_codec_steps_than_the_graphs_hold():
+    text = qualify.long_text(MAX_SEQ_LEN)
     assert len(text) > MAX_SEQ_LEN * 4 and text.count(".") > 10
+
+
+def test_long_reference_loops_the_source_past_the_requested_seconds(tmp_path):
+    source = make_reference(tmp_path / "src.wav", 10, frames=1600, rate=800)
+    duration, repeats = qualify.long_reference(source, tmp_path / "long.wav", 7.0)
+    with wave.open(str(tmp_path / "long.wav"), "rb") as audio:
+        assert audio.getnframes() == 1600 * 4 and audio.getframerate() == 800 and audio.getnchannels() == 1
+    assert duration == 8.0 and repeats == 4
 
 
 def test_vram_filler_declines_without_cuda():

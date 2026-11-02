@@ -17,14 +17,15 @@ from dataclasses import asdict, dataclass
 import hashlib
 import importlib.metadata
 import importlib.util
-import inspect
 import json
+import math
 from pathlib import Path
 import shutil
 import sys
 import time
 import traceback
 from typing import Literal
+import wave
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -173,12 +174,29 @@ class VramFiller:
             self.meter.cuda.empty_cache()
 
 
-def oversized_text(max_seq_len):
-    """More characters than max_seq_len tokens can hold, so the prefill
-    cannot fit whatever the tokenizer does (English averages 4 chars/token)."""
+CODEC_HZ = 12
+
+
+def long_text(max_seq_len):
+    """Text whose speech needs more codec steps than the graphs hold. qwen_tts
+    places only the reference's codec frames in the prefill and trails the text,
+    so a long text reaches the generation bound rather than the prompt bound."""
     sentence = "The committee reviewed every numbered paragraph of the proposal before voting. "
     repeats = (max_seq_len * 8) // len(sentence) + 1
     return sentence * repeats
+
+
+def long_reference(source, destination, seconds):
+    """Loop a PCM WAV until it lasts at least `seconds`; returns (duration_s, repeats).
+    The reference's codec frames fill the prefill, so this is what exceeds max_seq_len."""
+    with wave.open(str(source), "rb") as audio:
+        params, frames = audio.getparams(), audio.readframes(audio.getnframes())
+    duration = params.nframes / params.framerate
+    repeats = math.ceil(seconds / duration)
+    with wave.open(str(destination), "wb") as target:
+        target.setparams(params)
+        target.writeframes(frames * repeats)
+    return duration * repeats, repeats
 
 
 def compare_audio(left, right):
@@ -337,26 +355,55 @@ async def check_two_speakers_no_leak(s):
     return {"a_vs_b": a_vs_b, "a_vs_a_after_b": a_vs_a}
 
 
-async def check_max_sequence_bound_raises(s):
-    max_seq_len = s.load_evidence["runtime_identity"]["max_seq_len"]
-    text = oversized_text(max_seq_len)
-    configurable = "max_seq_len" in inspect.signature(type(s.adapter)).parameters
+async def graph_refusal(s, label, text, prompt):
+    """Run one generation that must raise CudaGraphRuntimeError; returns (raised name, replays during it)."""
     replays_before = s.spy.replays
-    raised = None
     try:
-        with s.stage("generate_oversized_prompt"):
-            await s.adapter.generate(text, s.prompt_a, language="en", seed=s.settings.seed)
+        with s.stage(label):
+            await s.adapter.generate(text, prompt, language="en", seed=s.settings.seed)
     except Exception as exc:
-        expect(is_cudagraph_error(exc), f"oversized prompt raised {type(exc).__name__}, not CudaGraphRuntimeError: {exc}")
-        raised = type(exc).__name__
-    expect(raised is not None, "oversized prompt did not raise; the bound was silently truncated or ignored")
-    expect(s.adapter.is_loaded(), "adapter unloaded itself after a prompt that does not fit")
-    intact, _ = await s.generate("a_after_bound_error", s.prompt_a, seed=s.settings.seed)
+        expect(is_cudagraph_error(exc), f"{label} raised {type(exc).__name__}, not CudaGraphRuntimeError: {exc}")
+        return type(exc).__name__, s.spy.replays - replays_before
+    raise AssertionError(f"{label} did not raise; the bound was silently truncated or ignored")
+
+
+async def state_after_error(s, label):
+    expect(s.adapter.is_loaded(), f"adapter unloaded itself after {label}")
+    intact, _ = await s.generate(label, s.prompt_a, seed=s.settings.seed)
     state = compare_audio(s.samples["speaker_a_1"], intact)
-    expect(state["bit_exact"], f"state corrupted after the bound error: {state}")
-    return {"probe": "oversized_prompt", "chars": len(text), "max_seq_len": max_seq_len, "raised": raised,
-            "replays_during_error": s.spy.replays - replays_before, "constructor_exposes_max_seq_len": configurable,
-            "generation_bound_probed": False, "state_intact_after_error": state}
+    expect(state["bit_exact"], f"state corrupted after {label}: {state}")
+    return state
+
+
+async def check_generation_bound_raises(s):
+    """A text too long for the remaining positions decodes up to max_new_tokens and then raises."""
+    max_seq_len = s.load_evidence["runtime_identity"]["max_seq_len"]
+    text = long_text(max_seq_len)
+    raised, replays = await graph_refusal(s, "generate_long_text", text, s.prompt_a)
+    last = dict(s.adapter.last_generation or {})
+    expect(last.get("steps") is not None and last["steps"] == last.get("max_new_tokens"),
+           f"the generation bound was not reached: last_generation {last}")
+    expect(last.get("hit_eos") is False, f"a bound error reported hit_eos {last.get('hit_eos')!r}, not False")
+    expect(replays > 0, "no replay happened before the generation bound")
+    state = await state_after_error(s, "a_after_bound_error")
+    return {"probe": "long_text", "generation_bound_probed": True, "chars": len(text), "max_seq_len": max_seq_len,
+            "raised": raised, "replays_during_error": replays, "last_generation": last, "state_intact_after_error": state}
+
+
+async def check_prompt_too_long_is_refused_before_replay(s):
+    """A reference whose codec frames exceed the graphs' positions is refused before any replay."""
+    max_seq_len = s.load_evidence["runtime_identity"]["max_seq_len"]
+    path = s.work_a.with_name("a_long.wav")
+    duration, repeats = long_reference(s.work_a, path, max_seq_len / CODEC_HZ * 1.25)
+    prompt = await s.prepare(path, " ".join([s.settings.reference_a_text] * repeats), "prepare_a_long")
+    raised, replays = await graph_refusal(s, "generate_long_reference", s.settings.text, prompt)
+    expect(replays == 0, f"{replays} replays ran before the prompt was refused")
+    last = dict(s.adapter.last_generation or {})
+    expect(all(value is None for value in last.values()), f"a refused prompt reported a generation: {last}")
+    state = await state_after_error(s, "a_after_prompt_refusal")
+    return {"probe": "long_reference_prompt", "reference_duration_s": duration, "reference_repeats": repeats,
+            "reference_frames_at_12hz": int(duration * CODEC_HZ), "max_seq_len": max_seq_len, "raised": raised,
+            "replays_during_error": replays, "last_generation": last, "state_intact_after_error": state}
 
 
 async def check_capture_failure_recovery(s):
@@ -490,7 +537,8 @@ CHECKS = [
     check_seed_behavior,
     check_variable_text_and_reference_lengths,
     check_two_speakers_no_leak,
-    check_max_sequence_bound_raises,
+    check_generation_bound_raises,
+    check_prompt_too_long_is_refused_before_replay,
     check_capture_failure_recovery,
     check_oom_recovery,
     check_model_size_change,
