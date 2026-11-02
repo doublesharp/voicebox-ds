@@ -106,7 +106,15 @@ def _adapter_runtime(engine):
 
 
 def capability_for_config(cfg):
+    from ..backends.qwen_cuda_variants import CUDA_GRAPH_RUNTIME, is_cuda_graph_variant
+
     runtime = _adapter_runtime(cfg.engine)
+    if cfg.engine == "qwen" and is_cuda_graph_variant(cfg.model_size):
+        try:
+            runtime["packages"][CUDA_GRAPH_RUNTIME.package] = importlib.metadata.version(CUDA_GRAPH_RUNTIME.package)
+        except importlib.metadata.PackageNotFoundError:
+            runtime["packages"][CUDA_GRAPH_RUNTIME.package] = None
+        runtime["runtime"] = CUDA_GRAPH_RUNTIME.identity()
     identity = {
         "engine": cfg.engine,
         "model_size": cfg.model_size,
