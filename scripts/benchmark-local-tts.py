@@ -40,6 +40,17 @@ TURBO_REPO = "ResembleAI/chatterbox-turbo"
 # admission must not import the backend (and torch) before the offline guard.
 TURBO_WEIGHT_FILES = ("t3_turbo_v1.safetensors", "s3gen_meanflow.safetensors", "ve.safetensors",
                       "tokenizer_config.json", "vocab.json", "merges.txt", "conds.pt")
+# Opt-in CUDA-graph runtime variants of Qwen Base: same repository and
+# revision as the stock size, a different in-process runtime (C1 contract).
+CUDAGRAPH_MODELS = {"0.6B-cudagraph": "0.6B", "1.7B-cudagraph": "1.7B"}
+
+
+def stock_model(model):
+    return CUDAGRAPH_MODELS.get(model, model)
+
+
+def expected_runtime(model):
+    return "cudagraph" if model in CUDAGRAPH_MODELS else "stock"
 
 
 @dataclass(frozen=True)
@@ -60,6 +71,8 @@ class Settings:
     seed: int = 0
     warm_repeats: int = 3
     max_audio_seconds: float = 30.0
+    seeds: tuple[int, ...] = ()
+    warmup_repeats: int = 0
 
 
 def torch_device(settings):
@@ -82,12 +95,16 @@ def validate(settings):
         raise ValueError("pytorch backend requires --device cpu, cuda or cuda:N; nothing is auto-selected")
     if settings.model not in spec.models:
         raise ValueError("unsupported model size for this engine")
+    if settings.model in CUDAGRAPH_MODELS and (settings.backend != "pytorch" or not settings.device.startswith("cuda")):
+        raise ValueError("cudagraph models run only with --backend pytorch on --device cuda")
     if settings.language not in spec.languages:
         raise ValueError("unsupported language; automatic language fallback is disabled")
     if not settings.text.strip() or len(settings.text) > 2000:
         raise ValueError("text must contain 1..2000 characters")
-    if not 0 <= settings.warm_repeats <= 20 or not 0 <= settings.seed < 2**32:
-        raise ValueError("warm repeats must be 0..20; seed must be 0..2**32-1")
+    if not 0 <= settings.warm_repeats <= 20 or not 0 <= settings.warmup_repeats <= 20:
+        raise ValueError("warm and warmup repeats must be 0..20")
+    if len(settings.seeds) > 20 or any(not 0 <= seed < 2**32 for seed in (settings.seed, *settings.seeds)):
+        raise ValueError("seeds must be at most 20 values in 0..2**32-1")
     if not math.isfinite(settings.max_audio_seconds) or not 0 < settings.max_audio_seconds <= 120:
         raise ValueError("max audio seconds must be finite and in (0, 120]")
     for value in (settings.instruct, settings.reference_text, settings.design_prompt):
@@ -154,9 +171,10 @@ def admit_local_snapshot(cache_root, repo_id, check):
 def admit_cached_model(settings):
     variant = {"qwen": "Base", "qwen_custom_voice": "CustomVoice",
                "qwen_voice_design": "VoiceDesign"}[settings.engine]
-    repo_id = f"Qwen/Qwen3-TTS-12Hz-{settings.model}-{variant}"
+    size = stock_model(settings.model)
+    repo_id = f"Qwen/Qwen3-TTS-12Hz-{size}-{variant}"
     if settings.backend == "mlx":
-        repo_id = f"mlx-community/Qwen3-TTS-12Hz-{settings.model}-{variant}-bf16"
+        repo_id = f"mlx-community/Qwen3-TTS-12Hz-{size}-{variant}-bf16"
 
     def check(snapshot, required):
         for name in ("config.json", "generation_config.json", "tokenizer_config.json",
@@ -226,7 +244,7 @@ class EngineSpec:
 
 
 ENGINES = {
-    "qwen": EngineSpec(("mlx", "pytorch"), ("1.7B", "0.6B"), LANGUAGES, "reference", admit_cached_model,
+    "qwen": EngineSpec(("mlx", "pytorch"), ("1.7B", "0.6B", *CUDAGRAPH_MODELS), LANGUAGES, "reference", admit_cached_model,
                        {"mlx": ("mlx_backend", "MLXTTSBackend"), "pytorch": ("pytorch_backend", "PyTorchTTSBackend")},
                        True, False, qwen_inference_roots),
     "qwen_custom_voice": EngineSpec(("mlx", "pytorch"), ("1.7B", "0.6B"), LANGUAGES, "preset", admit_cached_model,
@@ -389,6 +407,45 @@ def provenance():
             "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
 
 
+def verify_runtime(adapter, settings):
+    """The loaded runtime must be the requested one: a cudagraph model that
+    runs stock, or a stock model that runs graphs, would be a silent fallback
+    or a silent upgrade, and either misattributes every later number."""
+    identity = getattr(adapter, "runtime_identity", None)
+    expected = expected_runtime(settings.model)
+    actual = "stock" if identity is None else identity.get("runtime")
+    if actual != expected:
+        raise ValueError(f"silent runtime substitution: {settings.model} expects runtime {expected!r}, "
+                         f"adapter reports {identity!r}")
+    return identity
+
+
+def graph_capture_figure(identity):
+    """Capture happens inside load_model, so its time is reported beside the
+    load stage rather than as a measured stage of its own."""
+    if identity is None or "graph_capture_s" not in identity:
+        return None
+    return {"wall_s": identity["graph_capture_s"], "included_in_stage": "load",
+            "source": "runtime_identity.graph_capture_s"}
+
+
+def run_seed(settings, index):
+    return settings.seeds[index % len(settings.seeds)] if settings.seeds else settings.seed
+
+
+def generation_facts(adapter):
+    """steps/hit_eos/max_new_tokens from the adapter's last_generation; None
+    each when the adapter does not report them."""
+    last = getattr(adapter, "last_generation", None) or {}
+    return {key: last.get(key) for key in ("steps", "hit_eos", "max_new_tokens")}
+
+
+def run_kind(index, warmup_repeats):
+    if index == 0:
+        return "cold"
+    return "warmup" if index <= warmup_repeats else "warm"
+
+
 def distribution(values):
     if not values:
         return None
@@ -466,6 +523,10 @@ async def benchmark(settings, output, *, factory=create_adapter, clock=time.perf
             report["residency"] = verify_residency(spec.inference_roots(adapter), torch_device(settings))
         if spec.loaded_revision is not None:
             report["adapter"]["loaded_revision"] = spec.loaded_revision(adapter, report["model"])
+        stage = "runtime"
+        report["runtime_identity"] = verify_runtime(adapter, settings)
+        report["graph_capture"] = graph_capture_figure(report["runtime_identity"])
+        report["streaming"] = {"generate_stream": hasattr(adapter, "generate_stream"), "first_frame_measured": False}
         stage = "reference_preparation"
         hit = None
         with meter.stage(stage):
@@ -481,26 +542,32 @@ async def benchmark(settings, output, *, factory=create_adapter, clock=time.perf
         if hit:
             raise ValueError("first reference preparation reported a cache hit in a fresh run-isolated cache")
         artifact_bytes = 0
-        for index in range(settings.warm_repeats + 1):
+        for index in range(settings.warmup_repeats + settings.warm_repeats + 1):
             stage = f"generation_{index}"
+            seed = run_seed(settings, index)
             with meter.stage(stage):
                 audio, rate = await adapter.generate(settings.text, prompt, language=settings.language,
-                                                      seed=settings.seed, instruct=settings.instruct)
+                                                      seed=seed, instruct=settings.instruct)
             samples, metrics = audio_metrics(audio, rate, meter.stages[stage].wall_s, settings.max_audio_seconds)
             artifact_bytes += samples.size * 2 + 44
             if artifact_bytes > MAX_ARTIFACT_BYTES:
                 raise ValueError("WAV artifacts exceed 128 MiB run budget")
-            name = f"{'cold' if index == 0 else 'warm'}-{index:02d}.wav"
+            kind = run_kind(index, settings.warmup_repeats)
+            name = f"{kind}-{index:02d}.wav"
             save_wav(output, name, samples, rate)
-            report["runs"].append({"kind": "cold" if index == 0 else "warm", "index": index,
-                                   "wav": name, **metrics})
+            report["runs"].append({"kind": kind, "index": index, "seed": seed, "wav": name, **metrics,
+                                   **generation_facts(adapter)})
         cold = report["runs"][0]
         report["cold_load_reference_generation_rtf"] = (
             meter.stages["load"].wall_s + meter.stages["reference_preparation"].wall_s + cold["generation_s"]
         ) / cold["duration_s"]
-        warm = report["runs"][1:]
+        warm = [r for r in report["runs"] if r["kind"] == "warm"]
+        reported_eos = [r["hit_eos"] for r in warm if r["hit_eos"] is not None]
         report["warm"] = {"generation_s": distribution([r["generation_s"] for r in warm]),
                           "wall_audio_rtf": distribution([r["wall_audio_rtf"] for r in warm]),
+                          "steps": distribution([r["steps"] for r in warm if r["steps"] is not None]),
+                          "hit_eos_count": sum(reported_eos) if reported_eos else None,
+                          "bound_count": len(reported_eos) - sum(reported_eos) if reported_eos else None,
                           "percentile_method": "linear interpolation at (n-1)*q"}
         report["status"] = "ok"
     except (Exception, KeyboardInterrupt) as exc:
@@ -515,6 +582,8 @@ async def benchmark(settings, output, *, factory=create_adapter, clock=time.perf
         if meter is not None:
             report["stages"] = {name: asdict(m) for name, m in meter.stages.items()}
             report["stages_s"] = {name: m.wall_s for name, m in meter.stages.items()}
+            if report.get("graph_capture"):
+                report["stages_s"]["graph_capture"] = report["graph_capture"]["wall_s"]
         with output.open("results.json") as handle:
             handle.write(json.dumps(report, default=str, indent=2, allow_nan=False).encode() + b"\n")
     return report
@@ -528,9 +597,20 @@ def parse_args(argv):
     for name in ("reference-text", "preset-voice", "design-prompt", "instruct"):
         parser.add_argument("--" + name)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--seeds", type=seed_list, default=(),
+                        help="comma-separated seeds cycled across generations; overrides --seed")
     parser.add_argument("--warm-repeats", type=int, default=3)
+    parser.add_argument("--warmup-repeats", type=int, default=0,
+                        help="generations after the cold one that are recorded but excluded from warm statistics")
     parser.add_argument("--max-audio-seconds", type=float, default=30)
     return Settings(**vars(parser.parse_args(argv)))
+
+
+def seed_list(text):
+    try:
+        return tuple(int(part) for part in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError("seeds must be comma-separated integers") from None
 
 
 def main(argv=None):
