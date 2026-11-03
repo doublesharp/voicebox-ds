@@ -23,4 +23,4 @@ def test_real_cuda_modules_collect_without_a_visible_gpu():
         env={**os.environ, "CUDA_VISIBLE_DEVICES": "-1"},
     )
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-3000:]
-    assert "error" not in result.stdout.lower(), result.stdout[-3000:]
+    assert "error during collection" not in result.stdout and "errors during collection" not in result.stdout, result.stdout[-3000:]

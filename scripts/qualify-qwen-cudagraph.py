@@ -181,7 +181,7 @@ class VramFiller:
             self.meter.cuda.empty_cache()
 
 
-CODEC_HZ = 12
+CODEC_HZ = 12.5
 
 
 def long_text(max_seq_len):
@@ -413,7 +413,7 @@ async def check_prompt_too_long_is_refused_before_replay(s):
     expect(all(value is None for value in last.values()), f"a refused prompt reported a generation: {last}")
     state = await state_after_error(s, "a_after_prompt_refusal")
     return {"probe": "long_reference_prompt", "reference_duration_s": duration, "reference_repeats": repeats,
-            "reference_frames_at_12hz": int(duration * CODEC_HZ), "max_seq_len": max_seq_len, "raised": raised,
+            "reference_frames_at_12_5hz": int(duration * CODEC_HZ), "max_seq_len": max_seq_len, "raised": raised,
             "replays_during_error": replays, "last_generation": last, "state_intact_after_error": state}
 
 
