@@ -7,8 +7,10 @@ decode loop: a capture failure frees the graphs and raises.
 """
 
 import asyncio
+import contextlib
 import gc
 import logging
+import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -50,6 +52,47 @@ def _checkpoint_sampling(model) -> dict:
     if missing:
         raise CudaGraphRuntimeError(f"The checkpoint generation config lacks sampling values {missing}")
     return {key: defaults[key] for key in (*TALKER_SAMPLING_KEYS, *PREDICTOR_SAMPLING_KEYS)}
+
+
+_capture_streams: dict = {}
+
+
+class _CudaOneStream:
+    def Stream(self, *args, **kwargs):
+        if args or kwargs:
+            return torch.cuda.Stream(*args, **kwargs)
+        device = torch.cuda.current_device()
+        if device not in _capture_streams:
+            _capture_streams[device] = torch.cuda.Stream(device=device)
+        return _capture_streams[device]
+
+    def __getattr__(self, name):
+        return getattr(torch.cuda, name)
+
+
+class _TorchOneStream:
+    cuda = _CudaOneStream()
+
+    def __getattr__(self, name):
+        return getattr(torch, name)
+
+
+@contextlib.contextmanager
+def _capture_on_one_stream(*graphs):
+    """Upstream warms each graph up on a new side stream before capturing it, and
+    PyTorch keeps a cuBLAS workspace per stream for the life of the process: about
+    16 MiB per load. Give the upstream graph modules one reused stream per device."""
+    modules = {sys.modules[type(graph).__module__] for graph in graphs}
+    modules = [module for module in modules if getattr(module, "torch", None) is torch]
+    if len(modules) < len({type(graph).__module__ for graph in graphs}):
+        logger.warning("faster-qwen3-tts graph modules no longer expose `torch`; each load may keep a cuBLAS workspace")
+    for module in modules:
+        module.torch = _TorchOneStream()
+    try:
+        yield
+    finally:
+        for module in modules:
+            module.torch = torch
 
 
 def _release_cuda_memory() -> None:
@@ -100,7 +143,7 @@ class CudaGraphSession:
             wrapper = FasterQwen3TTS(model, predictor_graph, talker_graph, device=device, dtype=dtype, max_seq_len=max_seq_len)
             _synchronize()
             started = time.perf_counter()
-            with torch.inference_mode():
+            with torch.inference_mode(), _capture_on_one_stream(predictor_graph, talker_graph):
                 wrapper.warmup(prefill_len=warmup_prefill_len)
                 # The first request would otherwise rebuild the per-position mask table.
                 unpadded = torch.ones(1, warmup_prefill_len, dtype=torch.long, device=talker_graph.cache_position.device)
