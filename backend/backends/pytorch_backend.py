@@ -326,9 +326,8 @@ class PyTorchTTSBackend:
         Returns:
             Tuple of (audio_array, sample_rate)
         """
-        # Load model
-        await self.load_model_async(None)
         self.last_generation = dict(NO_GENERATION)
+        await self.load_model_async(None)
         language_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
 
         if self._graphs is not None:

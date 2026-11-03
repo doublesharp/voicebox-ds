@@ -238,6 +238,17 @@ async def test_a_refused_prompt_does_not_report_the_previous_request(backend, up
 
 
 @pytest.mark.asyncio
+async def test_a_failed_load_does_not_report_the_previous_request(backend, upstream):
+    await backend.generate("Hello", ["voice"], seed=1)
+    assert backend.last_generation["steps"] == 5
+    backend.unload_model()
+    upstream.fail_capture = True
+    with pytest.raises(CudaGraphRuntimeError, match="capture"):
+        await backend.generate("Hello", ["voice"], seed=1)
+    assert backend.last_generation == {"steps": None, "hit_eos": None, "max_new_tokens": None}
+
+
+@pytest.mark.asyncio
 async def test_capture_failure_frees_everything_and_never_falls_back_to_stock(backend, upstream):
     upstream.fail_capture = True
     with pytest.raises(CudaGraphRuntimeError, match="capture"):
