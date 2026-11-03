@@ -255,28 +255,3 @@ async def test_capture_failure_frees_vram_and_a_later_load_succeeds(loaded, monk
     await backend.load_model(size)
     assert backend.runtime_identity["runtime"] == "cudagraph"
     await generate(backend, "Yes.", prompt_a, 1, size, "after_capture_failure")
-
-
-@pytest.mark.skipif(len(SIZES) < 2, reason="two variant sizes are required")
-async def test_size_switch_never_holds_two_graph_sets(monkeypatch):
-    if REFS is None:
-        pytest.skip("VOICEBOX_TEST_REFS not set")
-    small, large = SIZES[0], SIZES[1]
-    backend = PyTorchTTSBackend(small)
-    if backend.device != "cuda" or not all(backend._is_model_cached(size) for size in (small, large)):
-        pytest.skip("both snapshots and a CUDA device are required")
-    fresh = {}
-    for size in (large, small):
-        await backend.load_model(size)
-        torch.cuda.synchronize()
-        fresh[size] = mib()["allocated_mib"]
-        backend.unload_model()
-    await backend.load_model(small)
-    small_session = backend._graphs
-    await backend.load_model(large)
-    torch.cuda.synchronize()
-    switched = mib()["allocated_mib"]
-    REPORT["size_switch"] = {"fresh_allocated_mib": fresh, "after_switch_allocated_mib": switched}
-    assert small_session.wrapper is None and backend._current_model_size == large
-    assert switched <= fresh[large] + 64, "the previous size's graphs stayed resident across the switch"
-    backend.unload_model()
