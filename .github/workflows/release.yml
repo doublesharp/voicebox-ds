@@ -87,6 +87,21 @@ jobs:
           workspaces: tauri/src-tauri -> target
           shared-key: fork-${{ matrix.target }}
 
+      - name: Configure Cargo Steward wrapper
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [[ -n "${RUSTC_WRAPPER:-}" && "$RUSTC_WRAPPER" != cargo-steward ]]; then
+            printf 'CARGO_STEWARD_INNER=%s\n' "$RUSTC_WRAPPER" >> "$GITHUB_ENV"
+          fi
+          echo "RUSTC_WRAPPER=cargo-steward" >> "$GITHUB_ENV"
+      - name: Track Cargo build cache (tauri/src-tauri)
+        if: runner.os != 'Windows'
+        uses: 0xdoublesharp/cargo-steward@v0.2.2
+        with:
+          mode: start
+          working-directory: tauri/src-tauri
+          target-dir: ${{ github.workspace }}/tauri/src-tauri/target
       - name: Install backend dependencies when a binary needs rebuilding
         if: steps.server-cache.outputs.cache-hit != 'true' || (runner.os == 'Windows' && steps.cuda-cache.outputs.cache-hit != 'true')
         run: |
@@ -205,3 +220,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+      - name: Trim Cargo build cache (tauri/src-tauri)
+        if: runner.os != 'Windows'
+        uses: 0xdoublesharp/cargo-steward@v0.2.2
+        with:
+          mode: trim
+          working-directory: tauri/src-tauri
+          target-dir: ${{ github.workspace }}/tauri/src-tauri/target
+          budget: 4GiB
