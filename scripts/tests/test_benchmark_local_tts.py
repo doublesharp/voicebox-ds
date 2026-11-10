@@ -100,7 +100,9 @@ def run_fake(settings, adapter, **kwargs):
                 settings, output, clock=lambda: next(ticks),
                 get_provenance=lambda: {"fixture": True},
                 **{"factory": lambda *args: adapter, "identify": lambda _: {"fixture": True},
-                   "verify_residency": lambda roots, device: {"fixture": True}, **kwargs},
+                   "verify_residency": lambda roots, device: {"fixture": True},
+                   "meter_factory": lambda device, clock: bench.telemetry.StageMeter.for_device("cpu", clock),
+                   **kwargs},
             ))
         saved = json.loads((settings.output_root / "results.json").read_text())
         assert saved["status"] == result["status"]
@@ -835,3 +837,139 @@ def test_socketpair_emulation_gate_admits_only_loopback_connects_from_cpython_em
     assert bench.inside_socketpair_emulation() is False
     with pytest.raises(OSError, match="network connections"):
         bench.deny_network("socket.connect", connect)
+
+
+class FakeGraphAdapter(FakeAdapter):
+    """Fake Qwen adapter honoring the C1 runtime contract: runtime_identity
+    after load, last_generation after every generate."""
+
+    def __init__(self, runtime="cudagraph", **kwargs):
+        super().__init__(**kwargs)
+        self.runtime = runtime
+        self.model = SimpleNamespace()
+        self.runtime_identity = None
+        self.last_generation = None
+
+    async def load_model(self, model):
+        await super().load_model(model)
+        if self.runtime == "cudagraph":
+            self.runtime_identity = {"runtime": "cudagraph", "package": "faster-qwen3-tts", "version": "0.3.2",
+                                     "commit": "a" * 40, "dtype": "bfloat16", "attn": "sdpa", "max_seq_len": 2048,
+                                     "graph_capture_s": 4.5}
+        else:
+            self.runtime_identity = {"runtime": "stock"}
+
+    async def generate(self, text, prompt, **kwargs):
+        audio = await super().generate(text, prompt, **kwargs)
+        self.last_generation = {"steps": 40 + len(self.calls), "hit_eos": len(self.calls) % 2 == 1, "max_new_tokens": 2048}
+        return audio
+
+
+def graph_settings(settings, tmp_path, model="0.6B-cudagraph", **changes):
+    ref = make_reference(tmp_path / "ref.wav")
+    return replace(settings, engine="qwen", device="cuda", model=model, preset_voice=None,
+                   reference=ref, reference_text="Reference speech.", **changes)
+
+
+@pytest.mark.parametrize("model", ["0.6B-cudagraph", "1.7B-cudagraph"])
+def test_cudagraph_models_are_admitted_on_cuda_pytorch_qwen_only(settings, tmp_path, model):
+    selected = graph_settings(settings, tmp_path, model=model)
+    bench.validate(selected)
+    bench.validate(replace(selected, device="cuda:1"))
+    for change in ({"device": "cpu"}, {"backend": "mlx", "device": "mlx"}, {"engine": "qwen_custom_voice", "reference": None,
+                   "reference_text": None, "preset_voice": "Ryan"}):
+        with pytest.raises(ValueError):
+            bench.validate(replace(selected, **change))
+    assert bench.stock_model(model) == model.removesuffix("-cudagraph")
+    assert bench.expected_runtime(model) == "cudagraph" and bench.expected_runtime("0.6B") == "stock"
+
+
+def test_cudagraph_admission_uses_the_stock_repository(settings, cached, tmp_path):
+    repo, snapshot = cached
+    base_repo = repo.with_name("models--Qwen--Qwen3-TTS-12Hz-1.7B-Base")
+    repo.rename(base_repo)
+    (base_repo / "snapshots" / snapshot.name / "config.json").write_text('{"tts_model_type": "base"}')
+    admitted = bench.admit_cached_model(graph_settings(settings, tmp_path, model="1.7B-cudagraph"))
+    assert admitted["repo_id"] == "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+
+
+def test_cudagraph_run_records_runtime_identity_capture_and_generation_facts(settings, tmp_path):
+    selected = graph_settings(settings, tmp_path, seeds=(3, 5), warm_repeats=3)
+    adapter = FakeGraphAdapter()
+    result = run_fake(selected, adapter)
+    assert result["status"] == "ok", result.get("error")
+    assert adapter.loads == ["0.6B-cudagraph"]
+    assert result["runtime_identity"]["runtime"] == "cudagraph"
+    assert result["graph_capture"] == {"wall_s": 4.5, "included_in_stage": "load", "source": "runtime_identity.graph_capture_s"}
+    assert "graph_capture" not in result["stages_s"] and "graph_capture" not in result["stages"]
+    assert sum(result["stages_s"].values()) == sum(stage["wall_s"] for stage in result["stages"].values())
+    assert [run["seed"] for run in result["runs"]] == [3, 5, 3, 5]
+    assert [call[2]["seed"] for call in adapter.calls] == [3, 5, 3, 5]
+    assert [run["steps"] for run in result["runs"]] == [41, 42, 43, 44]
+    assert [run["hit_eos"] for run in result["runs"]] == [True, False, True, False]
+    assert all(run["max_new_tokens"] == 2048 for run in result["runs"])
+    assert result["warm"]["steps"] == {"count": 3, "p50": 43, "p95": 43.9}
+    assert result["warm"]["hit_eos_count"] == 1 and result["warm"]["bound_count"] == 2
+    assert result["streaming"] == {"generate_stream": False, "first_frame_measured": False}
+
+
+def test_streaming_is_reported_only_for_a_callable_generate_stream(settings, tmp_path):
+    """PyTorchTTSBackend exposes generate_stream as None while the stock model is resident."""
+    stock = FakeGraphAdapter(runtime="stock")
+    stock.generate_stream = None
+    assert run_fake(graph_settings(settings, tmp_path, model="0.6B"), stock)["streaming"]["generate_stream"] is False
+    native = FakeGraphAdapter()
+    native.generate_stream = lambda *args, **kwargs: iter(())
+    result = run_fake(graph_settings(settings, tmp_path, output_root=settings.output_root.with_name("run-native")), native)
+    assert result["streaming"] == {"generate_stream": True, "first_frame_measured": False}
+
+
+def test_stock_run_keeps_old_shape_with_null_generation_facts(settings):
+    result = run_fake(settings, FakeAdapter())
+    assert result["runtime_identity"] is None and result["graph_capture"] is None
+    assert "graph_capture" not in result["stages_s"]
+    assert [run["seed"] for run in result["runs"]] == [0, 0, 0]
+    assert result["runs"][0]["steps"] is None and result["runs"][0]["hit_eos"] is None
+    assert result["warm"]["steps"] is None and result["warm"]["hit_eos_count"] is None
+
+
+def test_stock_adapter_reporting_cudagraph_or_cudagraph_reporting_stock_fails_before_generation(settings, tmp_path):
+    adapter = FakeGraphAdapter(runtime="stock")
+    result = run_fake(graph_settings(settings, tmp_path), adapter)
+    assert result["status"] == "failed" and result["error"]["stage"] == "runtime"
+    assert "silent" in result["error"]["message"] and adapter.calls == [] and adapter.unloads == 1
+    adapter = FakeGraphAdapter(runtime="cudagraph")
+    result = run_fake(graph_settings(settings, tmp_path, model="0.6B", output_root=settings.output_root.with_name("stock")), adapter)
+    assert result["status"] == "failed" and result["error"]["stage"] == "runtime" and adapter.calls == []
+
+
+def test_warmup_repeats_are_recorded_but_excluded_from_warm(settings):
+    result = run_fake(replace(settings, warmup_repeats=2, warm_repeats=2), FakeAdapter())
+    assert [run["kind"] for run in result["runs"]] == ["cold", "warmup", "warmup", "warm", "warm"]
+    assert result["warm"]["generation_s"]["count"] == 2
+    assert [run["wav"] for run in result["runs"]][:3] == ["cold-00.wav", "warmup-01.wav", "warmup-02.wav"]
+
+
+@pytest.mark.parametrize("change", [{"seeds": (2**32,)}, {"seeds": (-1,)}, {"seeds": tuple(range(21))},
+                                    {"warmup_repeats": -1}, {"warmup_repeats": 21}])
+def test_seed_list_and_warmup_bounds_are_validated(settings, change):
+    with pytest.raises(ValueError):
+        bench.validate(replace(settings, **change))
+
+
+def test_cli_parses_seed_list_and_warmup(settings):
+    parsed = bench.parse_args(["--engine", "qwen", "--backend", "pytorch", "--device", "cuda", "--model", "0.6B-cudagraph",
+                               "--language", "en", "--text", "Hi", "--cache-root", str(settings.cache_root),
+                               "--output-root", str(settings.output_root), "--seeds", "1, 2,3", "--warmup-repeats", "1"])
+    assert parsed.seeds == (1, 2, 3) and parsed.warmup_repeats == 1 and parsed.seed == 0
+    assert bench.parse_args(["--engine", "qwen", "--backend", "pytorch", "--device", "cpu", "--model", "0.6B",
+                             "--language", "en", "--text", "Hi", "--cache-root", "c", "--output-root", "o"]).seeds == ()
+    with pytest.raises(SystemExit):
+        bench.parse_args(["--engine", "qwen", "--backend", "pytorch", "--device", "cpu", "--model", "0.6B",
+                          "--language", "en", "--text", "Hi", "--cache-root", "c", "--output-root", "o", "--seeds", "1,x"])
+
+
+def test_run_seed_cycles_seed_list_or_falls_back_to_seed():
+    assert bench.run_seed(replace(bench.Settings("qwen", "pytorch", "cpu", "0.6B", "en", "t", Path("c"), Path("o")), seed=9), 4) == 9
+    cycled = replace(bench.Settings("qwen", "pytorch", "cpu", "0.6B", "en", "t", Path("c"), Path("o")), seeds=(4, 8))
+    assert [bench.run_seed(cycled, index) for index in range(3)] == [4, 8, 4]

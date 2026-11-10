@@ -91,22 +91,39 @@ def _adapter_runtime(engine):
             versions[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
             versions[package] = None
-    source = Path(__file__).resolve().parent.parent / "backends" / f"{module}.py"
-    try:
-        adapter_hash = hashlib.sha256(source.read_bytes()).hexdigest()
-    except OSError:
-        # Frozen builds may omit Python source. Do not fabricate its identity.
-        adapter_hash = None
     return {
         "backend": backend,
         "adapter": f"backend.backends.{module}.{adapter}",
-        "adapter_sha256": adapter_hash,
+        "adapter_sha256": _sources_sha256(module),
         "packages": versions,
     }
 
 
+def _sources_sha256(*modules):
+    """One digest over the named backend modules, in order; None when any source is absent."""
+    digest = hashlib.sha256()
+    for module in modules:
+        source = Path(__file__).resolve().parent.parent / "backends" / f"{module}.py"
+        try:
+            digest.update(source.read_bytes())
+        except OSError:
+            # Frozen builds may omit Python source. Do not fabricate its identity.
+            return None
+    return digest.hexdigest()
+
+
 def capability_for_config(cfg):
+    from ..backends.qwen_cuda_variants import CUDA_GRAPH_RUNTIME, is_cuda_graph_variant
+
     runtime = _adapter_runtime(cfg.engine)
+    if cfg.engine == "qwen" and is_cuda_graph_variant(cfg.model_size):
+        try:
+            runtime["packages"][CUDA_GRAPH_RUNTIME.package] = importlib.metadata.version(CUDA_GRAPH_RUNTIME.package)
+        except importlib.metadata.PackageNotFoundError:
+            runtime["packages"][CUDA_GRAPH_RUNTIME.package] = None
+        runtime["runtime"] = CUDA_GRAPH_RUNTIME.identity()
+        runtime["adapter_sources"] = ["pytorch_backend", "qwen_cudagraph", "qwen_cuda_variants"]
+        runtime["adapter_sha256"] = _sources_sha256(*runtime["adapter_sources"])
     identity = {
         "engine": cfg.engine,
         "model_size": cfg.model_size,
