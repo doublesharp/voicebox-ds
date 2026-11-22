@@ -19,6 +19,7 @@ from typing import List, Tuple
 import numpy as np
 
 from ..services.inference_scheduler import check_inference_cancelled
+from .audio_leveling import match_chunk_loudness
 from .inference import serialized_inference
 
 logger = logging.getLogger("voicebox.chunked-tts")
@@ -430,7 +431,7 @@ async def _generate_chunked(
 
             return (
                 concatenate_audio_chunks(
-                    retry_audio,
+                    match_chunk_loudness(retry_audio, sample_rate),
                     sample_rate,
                     crossfade_ms=crossfade_ms,
                 ),
@@ -443,16 +444,13 @@ async def _generate_chunked(
 
     if _PAUSE_MARKER_RE.search(text):
         parts = split_pause_segments(text)
-        rendered: List[np.ndarray] = []
+        timeline: list[tuple[str, float | np.ndarray]] = []
+        speech_indices: list[int] = []
         sample_rate: int | None = None
-        pending_pauses: list[float] = []
         segment_index = 0
         for kind, value in parts:
             if kind == "pause":
-                if sample_rate is None:
-                    pending_pauses.append(float(value))
-                else:
-                    rendered.append(np.zeros(int(round(float(value) * sample_rate)), dtype=np.float32))
+                timeline.append(("pause", float(value)))
                 continue
             seg_seed = (seed + segment_index * 100) if seed is not None else None
             segment_index += 1
@@ -471,14 +469,22 @@ async def _generate_chunked(
             )
             if sample_rate is None:
                 sample_rate = seg_sr
-                for lead in pending_pauses:
-                    rendered.append(np.zeros(int(round(lead * sample_rate)), dtype=np.float32))
-                pending_pauses.clear()
-            rendered.append(_apply_edge_fades(seg_audio, sample_rate))
+            elif sample_rate != seg_sr:
+                raise ValueError("The audio sample rate changed during generation")
+            speech_indices.append(len(timeline))
+            timeline.append(("speech", seg_audio))
         if sample_rate is None:
             sample_rate = 24000
-            for lead in pending_pauses:
-                rendered.append(np.zeros(int(round(lead * sample_rate)), dtype=np.float32))
+        if len(speech_indices) > 1:
+            matched_speech = match_chunk_loudness([timeline[idx][1] for idx in speech_indices], sample_rate)
+            for idx, matched in zip(speech_indices, matched_speech, strict=True):
+                timeline[idx] = ("speech", matched)
+        rendered: list[np.ndarray] = [
+            np.zeros(round(float(val) * sample_rate), dtype=np.float32)
+            if kind == "pause"
+            else _apply_edge_fades(val, sample_rate)
+            for kind, val in timeline
+        ]
         if not rendered:
             return np.zeros(0, dtype=np.float32), sample_rate
         return np.concatenate(rendered).astype(np.float32), sample_rate
@@ -522,5 +528,9 @@ async def _generate_chunked(
         elif sample_rate != chunk_sr:
             raise ValueError("The audio sample rate changed during generation")
 
-    audio = concatenate_audio_chunks(audio_chunks, sample_rate, crossfade_ms=crossfade_ms)
+    audio = concatenate_audio_chunks(
+        match_chunk_loudness(audio_chunks, sample_rate),
+        sample_rate,
+        crossfade_ms=crossfade_ms,
+    )
     return audio, sample_rate

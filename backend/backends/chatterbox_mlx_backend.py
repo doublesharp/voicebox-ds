@@ -20,6 +20,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from ..utils.audio_leveling import match_chunk_loudness
 from . import CHATTERBOX_MLX_S3_TOKENIZER_REPO
 from .base import (
     combine_voice_prompts as _combine_voice_prompts,
@@ -191,10 +192,13 @@ class ChatterboxMLXTTSBackend:
                         **sampling,
                     )
                 ]
-                audio = np.concatenate(chunks).astype(np.float32) if chunks else np.zeros(0, dtype=np.float32)
-
-                sample_rate = getattr(model, "sr", None) or 24000
-                return audio, int(sample_rate)
+                sample_rate = int(getattr(model, "sr", None) or 24000)
+                audio = (
+                    np.concatenate(match_chunk_loudness(chunks, sample_rate)).astype(np.float32)
+                    if chunks
+                    else np.zeros(0, dtype=np.float32)
+                )
+                return audio, sample_rate
             finally:
                 del model
                 if self.model is None:

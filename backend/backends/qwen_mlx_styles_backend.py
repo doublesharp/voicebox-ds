@@ -10,6 +10,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from ..utils.audio_leveling import match_chunk_loudness
 from . import LANGUAGE_CODE_TO_NAME
 from .base import combine_voice_prompts as _combine_voice_prompts, empty_mlx_cache, is_model_cached, model_load_progress
 from .mlx_backend import _run_on_mlx_thread
@@ -156,7 +157,7 @@ class _QwenMLXStylesBackend:
                     chunks.append(np.asarray(result.audio, dtype=np.float32).reshape(-1))
                 if not chunks:
                     raise RuntimeError("Qwen returned no audio")
-                return np.concatenate(chunks), sample_rate
+                return np.concatenate(match_chunk_loudness(chunks, sample_rate)), sample_rate
             finally:
                 del model
                 if self.model is None:

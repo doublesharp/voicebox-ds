@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 
 from ..services.inference_scheduler import check_inference_cancelled, serialized_inference
+from ..utils.audio_leveling import match_chunk_loudness
 from .base import combine_voice_prompts as _combine_voice_prompts, model_load_progress
 
 TTS_REPO = "OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX"
@@ -309,8 +310,8 @@ class MossTTSBackend:
             model = self._model_sync()
             model.rng = np.random.default_rng(seed)
             chunks = _text_chunks(text, model.encode_text)
-            waveforms = []
-            for index, chunk in enumerate(chunks):
+            speech_chunks = []
+            for chunk in chunks:
                 rows = model.build_voice_clone_request_rows(codes.tolist(), model.encode_text(chunk))
                 frames = model.generate_audio_frames(rows, on_frame=lambda *_: check_inference_cancelled())
                 if not frames:
@@ -321,8 +322,12 @@ class MossTTSBackend:
                 audio = np.asarray(channels, dtype=np.float32).mean(axis=0)
                 if audio.ndim != 1 or not len(audio) or not np.isfinite(audio).all():
                     raise RuntimeError("MOSS-TTS returned invalid audio")
+                speech_chunks.append(audio)
+            matched = match_chunk_loudness(speech_chunks, 48000)
+            waveforms = []
+            for index, audio in enumerate(matched):
                 waveforms.append(audio)
-                if index < len(chunks) - 1:
+                if index < len(matched) - 1:
                     waveforms.append(np.zeros(11520, dtype=np.float32))
             return np.concatenate(waveforms), 48000
 

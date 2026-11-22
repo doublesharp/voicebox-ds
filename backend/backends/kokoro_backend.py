@@ -22,6 +22,7 @@ from typing import Optional
 
 import numpy as np
 
+from ..utils.audio_leveling import match_chunk_loudness
 from . import TTSBackend
 from .base import (
     get_torch_device,
@@ -290,7 +291,7 @@ class KokoroTTSBackend:
                 # Return 1 second of silence as fallback
                 return np.zeros(KOKORO_SAMPLE_RATE, dtype=np.float32), KOKORO_SAMPLE_RATE
 
-            audio = np.concatenate(audio_chunks).astype(np.float32)
+            audio = np.concatenate(match_chunk_loudness(audio_chunks, KOKORO_SAMPLE_RATE)).astype(np.float32)
             from ..utils.audio import trim_tts_output
 
             # Edge-only trim: Kokoro pads ~0.3s before and ~0.7s after speech.

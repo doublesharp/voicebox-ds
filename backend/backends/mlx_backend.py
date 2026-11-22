@@ -43,6 +43,7 @@ from .base import (  # noqa: E402
 from ..utils.cache import get_cache_key, get_cached_voice_prompt, cache_voice_prompt  # noqa: E402
 from ..utils.mlx_reference_cache import MLXReferenceCache  # noqa: E402
 from ..utils.async_work import run_owned  # noqa: E402
+from ..utils.audio_leveling import match_chunk_loudness  # noqa: E402
 
 
 class VoiceCloningError(RuntimeError):
@@ -357,7 +358,11 @@ class MLXTTSBackend:
 
                 # Concatenate all chunks
                 if audio_chunks:
-                    audio = np.concatenate([np.asarray(chunk, dtype=np.float32) for chunk in audio_chunks])
+                    matched = match_chunk_loudness(
+                        [np.asarray(chunk, dtype=np.float32).reshape(-1) for chunk in audio_chunks],
+                        int(sample_rate),
+                    )
+                    audio = np.concatenate(matched)
                 else:
                     # Fallback: empty audio
                     audio = np.array([], dtype=np.float32)

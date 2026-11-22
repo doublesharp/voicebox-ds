@@ -41,6 +41,7 @@ from typing import ClassVar, List, Optional, Tuple
 
 import numpy as np
 
+from ..utils.audio_leveling import match_chunk_loudness
 from . import CHATTERBOX_MLX_S3_TOKENIZER_REPO, LANGUAGE_CODE_TO_NAME
 from .base import (
     combine_voice_prompts as _combine_voice_prompts,
@@ -91,7 +92,8 @@ def _collect_mlx_audio(results, default_sr: int = 24000) -> Tuple[np.ndarray, in
             sample_rate = int(sr)
     if not chunks:
         return np.zeros(0, dtype=np.float32), int(sample_rate)
-    return np.concatenate(chunks).astype(np.float32), int(sample_rate)
+    matched = match_chunk_loudness(chunks, int(sample_rate))
+    return np.concatenate(matched).astype(np.float32), int(sample_rate)
 
 
 def _filtered_kwargs(fn, candidates: dict) -> dict:

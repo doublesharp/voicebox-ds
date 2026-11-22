@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from .audio import normalize_audio, protect_audio_peak
+from .audio_leveling import level_speech_audio
 from .speech_delivery import apply_speed
 
 
@@ -43,7 +44,7 @@ def process_generated_audio(
     Normalization disabled still means no automatic boost to quiet recordings.
     """
     audio = apply_speed(audio, sample_rate, speed)
-    clean = normalize_audio(audio) if normalize else protect_audio_peak(audio)
+    clean = normalize_audio(level_speech_audio(audio, sample_rate)) if normalize else protect_audio_peak(audio)
     if not effects_chain or not any(effect.get("enabled", True) for effect in effects_chain):
         return clean, clean
 
