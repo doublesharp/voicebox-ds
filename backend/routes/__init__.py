@@ -1,5 +1,6 @@
 """Route registration for the voicebox API."""
 
+import copy
 from fastapi import FastAPI
 from pathlib import Path
 from threading import Lock
@@ -12,9 +13,19 @@ class _StudioProxy:
         self.runtime = runtime
         self.name = name
 
+    def _resolve(self):
+        runtime = object.__getattribute__(self, "runtime")
+        name = object.__getattribute__(self, "name")
+        runtime.initialize()
+        return getattr(runtime, name)
+
     def __getattr__(self, name):
-        self.runtime.initialize()
-        return getattr(getattr(self.runtime, self.name), name)
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        return getattr(self._resolve(), name)
+
+    def __copy__(self):
+        return copy.copy(self._resolve())
 
 
 class StudioRuntime:

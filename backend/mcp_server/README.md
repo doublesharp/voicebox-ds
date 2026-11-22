@@ -23,13 +23,13 @@ Preferred — direct HTTP:
 ```
 
 Fallback — stdio shim (when the client doesn't speak HTTP MCP). The
-`voicebox-mcp` binary ships inside the DoubleSharp VoiceboxDS.app bundle:
+`voicebox-mcp` binary ships inside the DoubleSharp `Voicebox DS.app` bundle:
 
 ```json
 {
   "mcpServers": {
     "voicebox": {
-      "command": "/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp",
+      "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp",
       "env": { "VOICEBOX_CLIENT_ID": "claude-code" }
     }
   }

@@ -10,7 +10,7 @@ To reduce repeated work, the workflow caches Python downloads, Rust dependencies
 
 ## macOS
 
-The artifact contains a zipped Apple Silicon `VoiceboxDS.app`. It is a local test build without Developer ID notarization. If a stdio MCP client points to the older `/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp` path, update it to `/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp` after installing the renamed app. Runtime/model locations come from the target installation's configuration; build and deployment instructions must use explicit portable paths.
+The artifact contains a zipped Apple Silicon `Voicebox DS.app`. It is a local test build without Developer ID notarization. If a stdio MCP client points to the older `/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp` or `/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp` path, update it to `/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp` after installing the renamed app. Runtime/model locations come from the target installation's configuration; build and deployment instructions must use explicit portable paths.
 
 ## Windows and CUDA
 

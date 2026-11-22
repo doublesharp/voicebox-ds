@@ -56,7 +56,7 @@ per-client voice binding — not a secret, not a credential.
 ### Clients that only speak stdio
 
 A stdio shim binary `voicebox-mcp` is bundled with the desktop app. Point
-the client at that binary's absolute path. The macOS example uses the DoubleSharp `VoiceboxDS.app` bundle; upstream Voicebox uses `Voicebox.app`:
+the client at that binary's absolute path. The macOS example uses the DoubleSharp `Voicebox DS.app` bundle; upstream Voicebox uses `Voicebox.app`:
 
 <Tabs items={["macOS", "Windows", "Linux"]}>
   <Tab value="macOS">
@@ -64,7 +64,7 @@ the client at that binary's absolute path. The macOS example uses the DoubleShar
   {
     "mcpServers": {
       "voicebox": {
-        "command": "/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp",
+        "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp",
         "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
       }
     }

@@ -78,7 +78,7 @@ test('stdio setup points to the installed bundle for each desktop platform', asy
   const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   try {
     for (const [platform, agent, expected] of [
-      ['MacIntel', 'Macintosh', '/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp'],
+      ['MacIntel', 'Macintosh', '/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp'],
       ['Win32', 'Windows', 'C:\\Program Files\\Voicebox DS\\voicebox-mcp.exe'],
       ['Linux', 'Linux', '/opt/voicebox/voicebox-mcp'],
     ]) {

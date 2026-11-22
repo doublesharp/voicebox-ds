@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "VoiceboxDS",
+  "productName": "Voicebox DS",
   "bundle": {
     "macOS": {
       "files": {
