@@ -21,7 +21,7 @@
     "update:icons": "./scripts/update-icons.sh",
     "convert:assets": "./scripts/convert-assets.sh",
     "lint": "biome lint .",
-    "typecheck": "bunx tsc -p app/tsconfig.json --noEmit && cd web && bunx tsc --noEmit",
+    "typecheck": "bunx tsc -p app/tsconfig.json --noEmit && bunx tsc -p web/tsconfig.json --noEmit && bunx tsc -p tauri/tsconfig.json --noEmit",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "format:check": "biome format .",

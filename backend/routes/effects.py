@@ -233,15 +233,19 @@ async def apply_effects_to_generation(
     )
     label = data.label or f"version-{next_number}"
 
-    version = versions_mod.create_version(
-        generation_id=generation_id,
-        label=label,
-        audio_path=config.to_storage_path(processed_path),
-        db=db,
-        effects_chain=chain_dicts,
-        is_default=data.set_as_default,
-        source_version_id=source_version_id,
-    )
+    try:
+        version = versions_mod.create_version(
+            generation_id=generation_id,
+            label=label,
+            audio_path=config.to_storage_path(processed_path),
+            db=db,
+            effects_chain=chain_dicts,
+            is_default=data.set_as_default,
+            source_version_id=source_version_id,
+        )
+    except BaseException:
+        processed_path.unlink(missing_ok=True)
+        raise
 
     return version
 

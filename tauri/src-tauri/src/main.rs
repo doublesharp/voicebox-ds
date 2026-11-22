@@ -1888,6 +1888,15 @@ pub fn run() {
                         let _ = pid;
                     });
                 }
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen { has_visible_windows, .. } => {
+                    if !has_visible_windows {
+                        if let Some(main_win) = app.get_webview_window("main") {
+                            let _ = main_win.show();
+                            let _ = main_win.set_focus();
+                        }
+                    }
+                }
                 RunEvent::ExitRequested { api, .. } => {
                     println!("RunEvent::ExitRequested received");
                     // Don't prevent exit, just log it

@@ -140,17 +140,21 @@ export function StoryContent() {
     return [...story.items].sort((a, b) => a.start_time_ms - b.start_time_ms);
   }, [story?.items]);
 
-  // Find the currently playing item based on timecode
+  // Find the currently playing item based on timecode (using effective trimmed duration)
   const currentlyPlayingItemId = useMemo(() => {
     if (!isPlaying || playbackStoryId !== story?.id || !sortedItems.length) {
       return null;
     }
     const playingItem = sortedItems.find((item) => {
       const itemStart = item.start_time_ms;
-      const itemEnd = item.start_time_ms + item.duration * 1000;
+      const effectiveDurationMs = Math.max(
+        0,
+        item.duration * 1000 - (item.trim_start_ms || 0) - (item.trim_end_ms || 0),
+      );
+      const itemEnd = itemStart + effectiveDurationMs;
       return currentTimeMs >= itemStart && currentTimeMs < itemEnd;
     });
-    return playingItem?.generation_id ?? null;
+    return playingItem?.id ?? null;
   }, [isPlaying, playbackStoryId, story?.id, sortedItems, currentTimeMs]);
 
   // Auto-scroll to the currently playing item
@@ -211,8 +215,8 @@ export function StoryContent() {
 
     if (!story || !over || active.id === over.id) return;
 
-    const oldIndex = sortedItems.findIndex((item) => item.generation_id === active.id);
-    const newIndex = sortedItems.findIndex((item) => item.generation_id === over.id);
+    const oldIndex = sortedItems.findIndex((item) => item.id === active.id);
+    const newIndex = sortedItems.findIndex((item) => item.id === over.id);
 
     if (oldIndex === -1 || newIndex === -1) return;
 
@@ -538,7 +542,7 @@ export function StoryContent() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={sortedItems.map((item) => item.generation_id)}
+              items={sortedItems.map((item) => item.id)}
               strategy={verticalListSortingStrategy}
             >
               <div className="space-y-3">
@@ -547,9 +551,9 @@ export function StoryContent() {
                     key={item.id}
                     ref={(el) => {
                       if (el) {
-                        itemRefsMap.current.set(item.generation_id, el);
+                        itemRefsMap.current.set(item.id, el);
                       } else {
-                        itemRefsMap.current.delete(item.generation_id);
+                        itemRefsMap.current.delete(item.id);
                       }
                     }}
                   >

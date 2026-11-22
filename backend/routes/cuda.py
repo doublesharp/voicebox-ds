@@ -35,7 +35,7 @@ async def download_cuda_backend():
 
     progress_manager = get_progress_manager()
     existing = progress_manager.get_progress(cuda.PROGRESS_KEY)
-    if existing and existing.get("status") == "downloading":
+    if existing and existing.get("status") in {"downloading", "extracting"}:
         raise HTTPException(status_code=409, detail="CUDA backend download already in progress")
 
     async def _download():

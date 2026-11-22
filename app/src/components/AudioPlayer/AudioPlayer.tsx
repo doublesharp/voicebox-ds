@@ -25,6 +25,25 @@ export function AudioPlayer() {
   ) : null;
 }
 
+function getWaveSurferAudioContext(wavesurfer: WaveSurfer | null): AudioContext | null {
+  if (!wavesurfer) return null;
+  const media = wavesurfer.getMediaElement() as
+    | (HTMLMediaElement & { getGainNode?: () => GainNode })
+    | null;
+  const ctx = media?.getGainNode?.()?.context as AudioContext | undefined;
+  return ctx ?? null;
+}
+
+async function resumeWaveSurferAudioContext(wavesurfer: WaveSurfer | null): Promise<void> {
+  const ctx = getWaveSurferAudioContext(wavesurfer);
+  if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+  try {
+    await ctx.resume();
+  } catch (err) {
+    debug.error('Failed to resume WebAudio context:', err);
+  }
+}
+
 function AudioPlayerSession() {
   const platform = usePlatform();
   const volumeLabelId = useId();
@@ -195,11 +214,14 @@ function AudioPlayerSession() {
           !disposed && sourceIsCurrent() && wavesurferRef.current === wavesurfer;
         const restartLoop = () => {
           wavesurfer.seekTo(0);
-          wavesurfer.play().catch((error) => {
-            if (!ownsSource()) return;
-            debug.error('Loop play failed:', error);
-            setIsPlaying(false);
-            setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
+          void resumeWaveSurferAudioContext(wavesurfer).then(() => {
+            if (!ownsSource() || wavesurferRef.current !== wavesurfer) return;
+            wavesurfer.play().catch((error) => {
+              if (!ownsSource()) return;
+              debug.error('Loop play failed:', error);
+              setIsPlaying(false);
+              setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
+            });
           });
         };
 
@@ -281,7 +303,8 @@ function AudioPlayerSession() {
           });
           wavesurfer.on('dragend', () => {
             seekGain.gain.cancelScheduledValues(ctx.currentTime);
-            seekGain.gain.setTargetAtTime(1, ctx.currentTime, 0.01);
+            const targetGain = nativeRoutingRef.current ? 0 : usePlayerStore.getState().volume;
+            seekGain.gain.setTargetAtTime(targetGain, ctx.currentTime, 0.01);
           });
         }
         wavesurfer.on('finish', () => {
@@ -477,16 +500,31 @@ function AudioPlayerSession() {
 
     const wavesurfer = wavesurferRef.current;
     if (playing && wavesurfer.isPlaying() === false) {
-      wavesurfer.play().catch((error) => {
+      void resumeWaveSurferAudioContext(wavesurfer).then(() => {
         if (!sourceIsCurrent() || wavesurferRef.current !== wavesurfer) return;
-        debug.error('Failed to play:', error);
-        setIsPlaying(false);
-        setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
+        if (!usePlayerStore.getState().isPlaying || nativeRoutingRef.current) return;
+        wavesurfer.play().catch((error) => {
+          if (!sourceIsCurrent() || wavesurferRef.current !== wavesurfer) return;
+          debug.error('Failed to play:', error);
+          setIsPlaying(false);
+          setError(`Playback error: ${error instanceof Error ? error.message : String(error)}`);
+        });
       });
     } else if (!playing && wavesurfer.isPlaying()) {
       wavesurfer.pause();
     }
   }, [isPlaying, sourceIsCurrent, setIsPlaying, duration]);
+
+  // Recover a macOS/WKWebView AudioContext suspended while backgrounded.
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!usePlayerStore.getState().isPlaying || nativeRoutingRef.current) return;
+      void resumeWaveSurferAudioContext(wavesurferRef.current);
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, []);
 
   // Sync volume
   useEffect(() => {
@@ -602,6 +640,8 @@ function AudioPlayerSession() {
     wavesurfer.setVolume(usePlayerStore.getState().volume);
     wavesurfer.setTime(position);
     try {
+      await resumeWaveSurferAudioContext(wavesurfer);
+      if (!sourceIsCurrent() || wavesurferRef.current !== wavesurfer) return;
       await wavesurfer.play();
     } catch (error) {
       if (!sourceIsCurrent() || wavesurferRef.current !== wavesurfer) return;

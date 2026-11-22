@@ -67,6 +67,12 @@ def _validate_generation(passage, assets):
         raise ValueError("invalid generation chunk size")
     if _nonnegative_integer(direction.get("crossfade_ms"), "crossfade") > 10000:
         raise ValueError("invalid generation crossfade")
+    if "speed" in direction:
+        _finite(direction["speed"], "generation speed", 0.5, 2.0)
+    if "chapter" in passage and passage["chapter"] is not None:
+        ch = passage["chapter"]
+        if not isinstance(ch, str) or len(ch.strip()) > 120 or "\n" in ch or "\r" in ch:
+            raise ValueError("invalid passage chapter")
     voice = passage.get("voice_snapshot")
     if voice is None:
         return
@@ -182,6 +188,11 @@ def _validate_document(doc, assets, takes):
     _finite(mix.get("master_gain", 1), "master gain", 0, 16)
     if type(mix.get("limiter", False)) is not bool:
         raise ValueError("invalid sample peak limiter")
+    if type(mix.get("duck_music", False)) is not bool:
+        raise ValueError("invalid music ducking")
+    _finite(mix.get("duck_db", -14.0), "ducking depth", -30, 0)
+    _finite(mix.get("duck_attack_ms", 80.0), "ducking attack", 5, 1000)
+    _finite(mix.get("duck_release_ms", 350.0), "ducking release", 20, 3000)
 
 
 def _validate_project(project, assets):

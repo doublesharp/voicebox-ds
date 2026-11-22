@@ -47,7 +47,7 @@ jobs:
       - name: Fingerprint backend inputs
         id: source
         run: |
-          echo "backend=${{ hashFiles('backend/*.py', 'backend/backends/**', 'backend/services/**', 'backend/routes/**', 'backend/utils/**', 'backend/database/**', 'backend/vendor/**', 'backend/mcp_server/**', 'backend/requirements*.txt') }}" >> "$GITHUB_OUTPUT"
+          echo "backend=${{ hashFiles('backend/*.py', 'backend/backends/**', 'backend/services/**', 'backend/routes/**', 'backend/utils/**', 'backend/database/**', 'backend/vendor/**', 'backend/mcp_server/**', 'backend/mcp_shim/**', 'backend/studio/**', 'backend/pyi_hooks/**', 'backend/requirements*.txt') }}" >> "$GITHUB_OUTPUT"
 
       - name: Reuse unchanged CPU and MCP binaries
         id: server-cache
@@ -127,7 +127,9 @@ jobs:
           for name in voicebox-server voicebox-mcp; do
             if [ "$RUNNER_OS" = "macOS" ] && [ "$name" = "voicebox-server" ]; then
               cp -R "backend/dist/${name}" "tauri/src-tauri/binaries/${name}"
-              codesign --force --deep --sign - --timestamp=none "tauri/src-tauri/binaries/${name}/_internal/Python.framework"
+              if [ -d "tauri/src-tauri/binaries/${name}/_internal/Python.framework" ]; then
+                codesign --force --deep --sign - --timestamp=none "tauri/src-tauri/binaries/${name}/_internal/Python.framework"
+              fi
               cp "backend/dist/${name}/${name}" "tauri/src-tauri/binaries/${name}-${TARGET}"
             else
               cp "backend/dist/${name}${suffix}" "tauri/src-tauri/binaries/${name}-${TARGET}${suffix}"
@@ -177,7 +179,9 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: |
           mkdir -p release-assets
-          ditto -c -k --sequesterRsrc --keepParent "tauri/src-tauri/target/$TARGET/release/bundle/macos/VoiceboxDS.app" release-assets/Voicebox-doublesharp-macos-arm64.zip
+          APP_BUNDLE=$(find "tauri/src-tauri/target/$TARGET/release/bundle/macos" -maxdepth 1 -name '*.app' -print -quit)
+          test -n "$APP_BUNDLE"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" release-assets/Voicebox-doublesharp-macos-arm64.zip
 
       - name: Package Windows installer and complete CUDA backend
         if: runner.os == 'Windows'

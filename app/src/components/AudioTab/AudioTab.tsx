@@ -178,14 +178,21 @@ export function AudioTab() {
               {allChannels.map((channel) => {
                 const isSelected = selectedChannelId === channel.id;
                 return (
-                  <button
+                  <div
                     key={channel.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     className={cn(
                       'group border rounded-lg p-4 transition-colors cursor-pointer text-left w-full',
                       isSelected && 'ring-2 ring-primary bg-primary/5 border-primary',
                     )}
                     onClick={() => setSelectedChannelId(isSelected ? null : channel.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedChannelId(isSelected ? null : channel.id);
+                      }
+                    }}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
@@ -261,7 +268,7 @@ export function AudioTab() {
                         </div>
                       )}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

@@ -64,14 +64,16 @@ def to_storage_path(path: str | Path) -> str:
     """Convert a filesystem path to a DB-safe path relative to the data dir."""
     resolved_path = Path(path).resolve()
 
+    try:
+        return str(resolved_path.relative_to(_data_dir))
+    except ValueError:
+        pass
+
     relative_to_any_data_dir = _path_relative_to_any_data_dir(resolved_path)
     if relative_to_any_data_dir is not None:
         return str(relative_to_any_data_dir)
 
-    try:
-        return str(resolved_path.relative_to(_data_dir))
-    except ValueError:
-        return str(resolved_path)
+    return str(resolved_path)
 
 
 def resolve_storage_path(path: str | Path | None) -> Path | None:

@@ -68,8 +68,8 @@ def test_commercial_generation_policy_is_checked_before_any_job_is_queued(tmp_pa
     asset = store.add_asset(project["id"], source)
     passage = project["document"]["passages"][0]
     passage["voice_snapshot"] = {
-        "engine": "qwen",
-        "model_size": "1.7B",
+        "engine": "omnivoice",
+        "model_size": "default",
         "voice_type": "cloned",
         "samples": [{"asset_id": asset["id"], "reference_text": "Words"}],
     }
@@ -95,6 +95,47 @@ def test_commercial_generation_policy_is_checked_before_any_job_is_queued(tmp_pa
                 json={**request, "commercial_only": False},
             )
             assert response.status_code == 202
+    finally:
+        for coro in pending:
+            coro.close()
+
+
+def test_commercial_generation_allows_verified_apache_engines(tmp_path):
+    import numpy as np
+    import soundfile as sf
+
+    store = StudioStore(tmp_path / "studio")
+    project = store.create_project("YouTube narration", script="Words")
+    source = tmp_path / "reference.wav"
+    sf.write(source, np.zeros(2400), 24000)
+    asset = store.add_asset(project["id"], source)
+    passage = project["document"]["passages"][0]
+    passage["voice_snapshot"] = {
+        "engine": "qwen",
+        "model_size": "1.7B",
+        "voice_type": "cloned",
+        "samples": [{"asset_id": asset["id"], "reference_text": "Words"}],
+    }
+    with store.connect() as db:
+        db.execute("UPDATE projects SET document=? WHERE id=?", (encode(project["document"]), project["id"]))
+    pending = []
+    jobs = StudioJobs(store, enqueue=lambda ident, coro: pending.append(coro))
+    app = FastAPI()
+    app.include_router(make_router(store, jobs))
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/studio/v1/projects/{project['id']}/generation-jobs",
+                json={
+                    "idempotency_key": "yt-job",
+                    "passage_ids": [passage["id"]],
+                    "count": 1,
+                    "adopt": False,
+                    "commercial_only": True,
+                },
+            )
+            assert response.status_code == 202
+            assert len(pending) == 1
     finally:
         for coro in pending:
             coro.close()

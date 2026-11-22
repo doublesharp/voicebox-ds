@@ -114,7 +114,7 @@ export function FloatingGenerateBox({
 
   // Fetch effect presets for the dropdown
   const { data: effectPresets } = useQuery({
-    queryKey: ['effectPresets'],
+    queryKey: ['effect-presets'],
     queryFn: () => apiClient.listEffectPresets(),
   });
 
@@ -225,10 +225,20 @@ export function FloatingGenerateBox({
     if (selectedProfile?.language && languageUnchanged) {
       form.setValue('language', selectedProfile.language as LanguageCode);
     }
-    // Auto-switch engine to match the profile
+    // Auto-switch engine to match the profile and restore valid default modelSize.
+    const defaultSizeForEngine = (targetEngine: EngineValue) => {
+      if (targetEngine === 'qwen' || targetEngine === 'qwen_custom_voice') return '1.7B' as const;
+      if (targetEngine === 'tada') return '1B' as const;
+      return undefined;
+    };
     const engine = selectedProfile?.default_engine ?? selectedProfile?.preset_engine;
     if (engine && engineUnchanged) {
-      form.setValue('engine', engine as EngineValue);
+      const target = engine as EngineValue;
+      form.setValue('engine', target);
+      const nextSize = defaultSizeForEngine(target);
+      if (nextSize !== undefined || form.getValues('modelSize') !== undefined) {
+        form.setValue('modelSize', nextSize);
+      }
     } else if (
       engineUnchanged &&
       selectedProfile &&
@@ -242,6 +252,9 @@ export function FloatingGenerateBox({
       const presetEngines = new Set(['kokoro', 'qwen_custom_voice', 'qwen_voice_design']);
       if (currentEngine && presetEngines.has(currentEngine)) {
         form.setValue('engine', 'qwen');
+        if (!form.getValues('modelSize')) {
+          form.setValue('modelSize', '1.7B');
+        }
       }
     }
     // Persona toggle only applies when the profile has a personality prompt.

@@ -62,7 +62,8 @@ function textToHTML(text: string): string {
 }
 
 /** Serialize the contentEditable innerHTML back to plain text with [tag] syntax. */
-function htmlToText(container: HTMLElement): string {
+export function htmlToText(container: HTMLElement): string {
+  const blockTags = new Set(['DIV', 'P', 'LI']);
   let result = '';
   let previousBlock = false;
   let previousBlockEmpty = false;
@@ -90,7 +91,7 @@ function htmlToText(container: HTMLElement): string {
         result += '\n';
         previousBlock = false;
         previousBlockEmpty = false;
-      } else if (el.tagName === 'DIV' || el.tagName === 'P') {
+      } else if (blockTags.has(el.tagName)) {
         separateBlock();
         // Browsers use a lone BR as a placeholder for an empty editable line.
         const placeholder =

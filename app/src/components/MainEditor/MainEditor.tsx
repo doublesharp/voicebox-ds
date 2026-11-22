@@ -173,7 +173,7 @@ export function MainEditor() {
           <FloatingGenerateBox layout="docked" />
         </section>
         <section className="min-w-0" aria-labelledby="recent-takes-title">
-          <h2 id="recent-takes-title" className="mb-3 text-[15px] font-semibold">
+          <h2 id="recent-takes-title" className="mb-1 text-[15px] font-semibold">
             Recent takes
           </h2>
           <HistoryTable embedded />

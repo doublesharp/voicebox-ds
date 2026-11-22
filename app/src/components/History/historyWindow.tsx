@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { usePlayerStore } from '@/stores/playerStore';
 
-const ESTIMATED_HEIGHT = 152;
+const ESTIMATED_HEIGHT = 116;
 const OVERSCAN = 500;
 
 /** A row observes only its own selection/play state, never the playback clock. */

@@ -5,6 +5,19 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
+  "files": {
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/target",
+      "!**/.tauri",
+      "!app/src/lib/api",
+      "!**/*.config.js",
+      "!**/*.config.ts",
+      "!**/index.css"
+    ]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

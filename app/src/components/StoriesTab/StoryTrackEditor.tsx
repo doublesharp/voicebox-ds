@@ -403,9 +403,9 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
   }, []);
 
   // Calculate effective duration (accounting for trims)
-  const getEffectiveDuration = (item: StoryItemDetail) => {
+  const getEffectiveDuration = useCallback((item: StoryItemDetail) => {
     return item.duration * 1000 - (item.trim_start_ms || 0) - (item.trim_end_ms || 0);
-  };
+  }, []);
 
   // Calculate total duration (using effective durations)
   const totalDurationMs = useMemo(() => {

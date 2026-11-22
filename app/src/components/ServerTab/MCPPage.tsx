@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useToast } from '@/components/ui/use-toast';
 import { APP_BRANDING } from '@/lib/constants/branding';
 import { useMCPBindings } from '@/lib/hooks/useMCPBindings';
 import { useProfiles } from '@/lib/hooks/useProfiles';
@@ -39,6 +40,7 @@ function getStdioShimCommand(): string {
  */
 export function MCPPage() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const serverUrl = useServerStore((s) => s.serverUrl);
   const { bindings, upsertAsync, removeAsync, isRemoving } = useMCPBindings();
   const { data: profiles } = useProfiles();
@@ -70,8 +72,13 @@ export function MCPPage() {
       setNewClientId('');
       setNewLabel('');
       setNewProfileId('');
-    } catch {
+    } catch (error) {
       setBindingError(saveError);
+      toast({
+        title: t('common.error'),
+        description: error instanceof Error ? error.message : t('common.unknownError'),
+        variant: 'destructive',
+      });
     } finally {
       setAdding(false);
     }
@@ -198,7 +205,15 @@ export function MCPPage() {
                         client_id: b.client_id,
                         label: b.label,
                         profile_id: v === '__default__' ? null : v,
-                      }).catch(() => setBindingError(saveError));
+                      }).catch((error) => {
+                        setBindingError(saveError);
+                        toast({
+                          title: t('common.error'),
+                          description:
+                            error instanceof Error ? error.message : t('common.unknownError'),
+                          variant: 'destructive',
+                        });
+                      });
                     }}
                   >
                     <SelectTrigger className="w-[180px]">

@@ -99,6 +99,10 @@ async def get_generation(
         raise HTTPException(status_code=404, detail="Generation not found")
 
     gen, profile_name = result
+    from ..services import versions as versions_mod
+
+    gen_versions = versions_mod.list_versions(gen.id, db)
+    active_version = next((v for v in gen_versions if v.is_default), None)
     return models.HistoryResponse(
         id=gen.id,
         profile_id=gen.profile_id,
@@ -115,6 +119,8 @@ async def get_generation(
         error=gen.error,
         is_favorited=bool(gen.is_favorited),
         created_at=gen.created_at,
+        versions=gen_versions if gen_versions else None,
+        active_version_id=active_version.id if active_version else None,
     )
 
 
@@ -213,7 +219,26 @@ async def export_generation_audio(
     headers = {"Content-Disposition": safe_content_disposition("attachment", filename)}
 
     if fmt == "wav":
-        return FileResponse(audio_path, media_type="audio/wav", headers=headers)
+        if audio_path.suffix.lower() == ".wav":
+            return FileResponse(audio_path, media_type="audio/wav", headers=headers)
+        # Non-WAV imported audio (e.g. .mp3, .flac, .ogg): decode and emit real WAV bytes.
+        from ..utils.audio import load_audio, save_audio
+
+        fd, tmp_name = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        tmp_path = Path(tmp_name)
+        try:
+            def _to_wav() -> bytes:
+                samples, sr = load_audio(str(audio_path), sample_rate=None)
+                save_audio(samples, str(tmp_path), sr)
+                return tmp_path.read_bytes()
+
+            wav_bytes = await asyncio.to_thread(_to_wav)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to convert audio to WAV: {e}") from e
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        return Response(content=wav_bytes, media_type="audio/wav", headers=headers)
 
     fd, tmp_name = tempfile.mkstemp(suffix=".mp3")
     os.close(fd)

@@ -13,7 +13,7 @@ export interface VoiceProfileCreate {
   design_prompt?: string;
   default_engine?: string;
   /** Free-form character prompt used by compose and the `/generate` personality-rewrite path. */
-  personality?: string;
+  personality?: string | null;
 }
 
 export interface VoiceProfileResponse {

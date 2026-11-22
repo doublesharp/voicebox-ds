@@ -9,8 +9,10 @@ PLATFORM=$(rustc --print host-tuple 2>/dev/null || echo "unknown")
 echo "Building Voicebox sidecars for platform: $PLATFORM"
 
 # Build Python binary
-# Resolve PATH to absolute paths before changing directory
-export PATH="$(cd "$(dirname "$0")/.." && pwd)/backend/venv/bin:$PATH"
+# Prepend the project's backend virtualenv when present in the working checkout
+if [ -d "$PWD/backend/venv/bin" ]; then
+    export PATH="$PWD/backend/venv/bin:$PATH"
+fi
 # Resolve overrides relative to the invoking directory, matching the Python
 # driver, before this wrapper changes into backend/.
 for output_variable in VOICEBOX_PYINSTALLER_DISTPATH VOICEBOX_PYINSTALLER_WORKPATH VOICEBOX_PYINSTALLER_SPECPATH; do
@@ -76,8 +78,9 @@ copy_sidecar() {
         fi
         cp -R "${DIST_DIR}/${name}" "$bundle_dir"
         # PyInstaller re-signs Python's executable after rewriting its load
-        # paths. Refresh the enclosing framework's resource seal as well.
-        if [ "$(uname -s)" = "Darwin" ]; then
+        # paths. Refresh the enclosing framework's resource seal when built
+        # against a framework Python (standalone uv Python uses libpython dylib).
+        if [ "$(uname -s)" = "Darwin" ] && [ -d "$bundle_dir/_internal/Python.framework" ]; then
             codesign --force --deep --sign - --timestamp=none "$bundle_dir/_internal/Python.framework"
         fi
         cp "${DIST_DIR}/${name}/${name}" "$sidecar"

@@ -15,6 +15,7 @@ from ..utils.async_work import run_blocking, run_owned
 router = APIRouter()
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
+MAX_TRANSCRIBE_UPLOAD_BYTES = 200 * 1024 * 1024  # 200MB
 
 # Same set profiles.py accepts for voice samples. librosa picks its decoder from the
 # file extension, so the temp file has to keep the uploaded one.
@@ -34,9 +35,16 @@ async def transcribe_audio(
     tmp_path = None
     stt_path = None
     try:
+        total_bytes = 0
         with tempfile.NamedTemporaryFile(suffix=file_suffix, delete=False) as tmp:
             tmp_path = tmp.name
             while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_TRANSCRIBE_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Uploaded file exceeds {MAX_TRANSCRIBE_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+                    )
                 tmp.write(chunk)
 
         stt_path = tmp_path

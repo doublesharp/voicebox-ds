@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Edit2, Mic, X } from 'lucide-react';
+import { Download, Edit2, Mic, Trash2, X } from 'lucide-react';
 import { type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -43,6 +43,8 @@ function makeProfileSchema(t: (key: string) => string) {
     name: z.string().min(1, t('profileForm.validation.nameRequired')).max(100),
     description: z.string().max(500).optional(),
     language: z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]),
+    personality: z.string().max(2000).optional(),
+    design_prompt: z.string().max(2000).optional(),
   });
 }
 
@@ -50,6 +52,8 @@ type ProfileFormValues = {
   name: string;
   description?: string;
   language: LanguageCode;
+  personality?: string;
+  design_prompt?: string;
 };
 
 interface VoiceInspectorProps {
@@ -58,6 +62,8 @@ interface VoiceInspectorProps {
   overlay?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSavingChange?: (saving: boolean) => void;
+  onExport?: (profile: VoiceProfileResponse) => void;
+  onDelete?: (profile: VoiceProfileResponse) => void;
   actionsRef?: Ref<VoiceInspectorActions>;
 }
 
@@ -73,6 +79,8 @@ export function VoiceInspector({
   overlay = false,
   onDirtyChange,
   onSavingChange,
+  onExport,
+  onDelete,
   actionsRef,
 }: VoiceInspectorProps) {
   const formId = useId();
@@ -87,8 +95,18 @@ export function VoiceInspector({
   const { toast } = useToast();
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarBlobUrlRef = useRef<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const revokeAvatarBlobUrl = () => {
+    if (avatarBlobUrlRef.current) {
+      URL.revokeObjectURL(avatarBlobUrlRef.current);
+      avatarBlobUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => revokeAvatarBlobUrl, []);
 
   const [effectsChain, setEffectsChain] = useState<EffectConfig[]>([]);
   const [effectsDirty, setEffectsDirty] = useState(false);
@@ -117,6 +135,8 @@ export function VoiceInspector({
       name: '',
       description: '',
       language: 'en',
+      personality: '',
+      design_prompt: '',
     },
   });
 
@@ -132,6 +152,8 @@ export function VoiceInspector({
       name: profile.name,
       description: profile.description || '',
       language: profile.language as LanguageCode,
+      personality: profile.personality || '',
+      design_prompt: profile.design_prompt || '',
     };
     const awaitingForm = savedFormAwaitingRefetch.current;
     const confirmedForm =
@@ -158,6 +180,7 @@ export function VoiceInspector({
 
   // Avatar preview
   useEffect(() => {
+    revokeAvatarBlobUrl();
     if (profile?.avatar_path) {
       setAvatarPreview(`${serverUrl}/profiles/${profile.id}/avatar`);
     } else {
@@ -191,7 +214,10 @@ export function VoiceInspector({
       {
         onSuccess: () => {
           if (!isCurrent(epoch)) return;
-          setAvatarPreview(URL.createObjectURL(file));
+          revokeAvatarBlobUrl();
+          const nextBlobUrl = URL.createObjectURL(file);
+          avatarBlobUrlRef.current = nextBlobUrl;
+          setAvatarPreview(nextBlobUrl);
           toast({ title: t('voiceInspector.toast.avatarUpdated') });
         },
         onError: (err) => {
@@ -224,6 +250,7 @@ export function VoiceInspector({
       }
     }
     if (!isCurrent(epoch)) return;
+    revokeAvatarBlobUrl();
     setAvatarPreview(null);
     if (avatarInputRef.current) avatarInputRef.current.value = '';
   }
@@ -233,17 +260,28 @@ export function VoiceInspector({
     const revision = effectsRevision.current;
     setSaving(true);
     try {
+      const normalizedPersonality = data.personality?.trim() || null;
+      const normalizedDesignPrompt = data.design_prompt?.trim() || undefined;
       await updateProfile.mutateAsync({
         profileId,
         data: {
           name: data.name,
           description: data.description,
           language: data.language,
+          personality: normalizedPersonality,
+          ...(profile?.voice_type === 'designed' && normalizedDesignPrompt
+            ? { design_prompt: normalizedDesignPrompt }
+            : {}),
         },
       });
 
       if (isCurrent(epoch)) {
-        savedFormAwaitingRefetch.current = { ...data, description: data.description || '' };
+        savedFormAwaitingRefetch.current = {
+          ...data,
+          description: data.description || '',
+          personality: data.personality || '',
+          design_prompt: data.design_prompt || '',
+        };
         // Rebase against the acknowledged write while preserving any newer
         // typing, including a return to the original value during the request.
         const latest = form.getValues();
@@ -251,6 +289,8 @@ export function VoiceInspector({
         form.setValue('name', latest.name, { shouldDirty: true });
         form.setValue('description', latest.description, { shouldDirty: true });
         form.setValue('language', latest.language, { shouldDirty: true });
+        form.setValue('personality', latest.personality, { shouldDirty: true });
+        form.setValue('design_prompt', latest.design_prompt, { shouldDirty: true });
       }
 
       if (effectsDirty) {
@@ -320,6 +360,8 @@ export function VoiceInspector({
         name: profile.name,
         description: profile.description || '',
         language: profile.language as LanguageCode,
+        personality: profile.personality || '',
+        design_prompt: profile.design_prompt || '',
       },
     );
     effectsRevision.current++;
@@ -380,18 +422,44 @@ export function VoiceInspector({
         </button>
       }
       actions={
-        avatarPreview && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={handleRemoveAvatar}
-            disabled={deleteAvatar.isPending}
-            aria-label={t('voiceInspector.removeAvatar', { defaultValue: 'Remove avatar' })}
-          >
-            <X className="h-3.5 w-3.5" />
-          </Button>
-        )
+        <div className="flex items-center gap-1">
+          {avatarPreview && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleRemoveAvatar}
+              disabled={deleteAvatar.isPending}
+              aria-label={t('voiceInspector.removeAvatar', { defaultValue: 'Remove avatar' })}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {onExport && profile.voice_type !== 'preset' && profile.voice_type !== 'designed' && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onExport(profile)}
+              aria-label={t('profiles.actions.export', { defaultValue: 'Export voice' })}
+              title={t('profiles.actions.export', { defaultValue: 'Export voice' })}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-destructive hover:text-destructive"
+              onClick={() => onDelete(profile)}
+              aria-label={t('common.delete', { defaultValue: 'Delete' })}
+              title={t('common.delete', { defaultValue: 'Delete' })}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
       }
       footer={
         <>
@@ -493,6 +561,54 @@ export function VoiceInspector({
                       </SelectContent>
                     </Select>
                     <FormMessage className="col-start-2" />
+                  </FormItem>
+                )}
+              />
+
+              {profile.voice_type === 'designed' && (
+                <FormField
+                  control={form.control}
+                  name="design_prompt"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {t('profileForm.fields.designPrompt', {
+                          defaultValue: 'Voice design prompt',
+                        })}
+                      </FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('profileForm.fields.designPromptPlaceholder', {
+                            defaultValue: 'Describe the voice timbre, pacing, and character…',
+                          })}
+                          rows={2}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <FormField
+                control={form.control}
+                name="personality"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('profileForm.fields.personality', { defaultValue: 'Personality prompt' })}
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder={t('profileForm.fields.personalityPlaceholder', {
+                          defaultValue: 'Optional character instructions for persona rewriting…',
+                        })}
+                        rows={2}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
                   </FormItem>
                 )}
               />

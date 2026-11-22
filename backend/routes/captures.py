@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1 MB
+MAX_CAPTURE_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB
+_CAPTURE_AUDIO_MIME = {
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
+    ".aac": "audio/aac",
+    ".opus": "audio/opus",
+}
+_READINESS_WEIGHT_EXTS = (".safetensors", ".bin", ".pt", ".pth", ".npz")
 
 
 @router.post("/captures", response_model=models.CaptureCreateResponse)
@@ -31,7 +43,14 @@ async def create_capture_endpoint(
 ):
     """Upload audio, run STT, persist the capture."""
     chunks = []
+    total_bytes = 0
     while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+        total_bytes += len(chunk)
+        if total_bytes > MAX_CAPTURE_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Uploaded file exceeds {MAX_CAPTURE_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+            )
         chunks.append(chunk)
     audio_bytes = b"".join(chunks)
 
@@ -101,10 +120,12 @@ async def get_capture_audio_endpoint(capture_id: str, db: Session = Depends(get_
     if audio_path is None or not audio_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
 
+    suffix = audio_path.suffix.lower() or ".wav"
+    media_type = _CAPTURE_AUDIO_MIME.get(suffix, "audio/wav")
     return FileResponse(
         audio_path,
-        media_type="audio/wav",
-        filename=f"capture_{capture_id}.wav",
+        media_type=media_type,
+        filename=f"capture_{capture_id}{suffix}",
     )
 
 
@@ -184,7 +205,7 @@ async def capture_readiness_endpoint(db: Session = Depends(get_db)):
 
     return models.CaptureReadinessResponse(
         stt=models.ModelReadiness(
-            ready=is_model_cached(stt_cfg.hf_repo_id),
+            ready=is_model_cached(stt_cfg.hf_repo_id, weight_extensions=_READINESS_WEIGHT_EXTS),
             model_name=stt_cfg.model_name,
             display_name=stt_cfg.display_name,
             size=stt_cfg.model_size,
@@ -210,7 +231,7 @@ def _llm_readiness(saved, llm_cfg) -> models.ModelReadiness:
             size_mb=None,
         )
     return models.ModelReadiness(
-        ready=is_model_cached(llm_cfg.hf_repo_id),
+        ready=is_model_cached(llm_cfg.hf_repo_id, weight_extensions=_READINESS_WEIGHT_EXTS),
         model_name=llm_cfg.model_name,
         display_name=llm_cfg.display_name,
         size=llm_cfg.model_size,
@@ -226,10 +247,11 @@ async def retranscribe_capture_endpoint(
 ):
     saved = settings_service.get_capture_settings(db)
     resolved_stt = request.model or saved.stt_model
+    language_explicit = request.language is not None
     if request.language is None:
         resolved_language = None if saved.language == "auto" else saved.language
     else:
-        resolved_language = request.language
+        resolved_language = None if request.language == "auto" else request.language
 
     try:
         capture = await captures_service.retranscribe_capture(
@@ -237,6 +259,7 @@ async def retranscribe_capture_endpoint(
             stt_model=resolved_stt,
             language=resolved_language,
             db=db,
+            update_language=language_explicit or resolved_language is not None,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=410, detail=str(e))

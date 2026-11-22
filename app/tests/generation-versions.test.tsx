@@ -227,25 +227,28 @@ describe('generation version controls', () => {
     return renderer.root
       .findAllByProps({ role: 'button' })
       .find((node) =>
-        node.findAllByType('textarea').some((textarea) => textarea.props.value === text),
+        node
+          .findAllByProps({ 'data-history-transcript': true })
+          .some((transcript) => transcript.props.children === text),
       )!;
   }
   function clickRow(text: string, transcript = false, selectedText = false) {
     const node = row(text);
     const target = {
-      closest: (selector: string) =>
-        transcript && selector.includes('textarea')
-          ? { selectionStart: 0, selectionEnd: selectedText ? 5 : 0 }
-          : null,
-      tagName: transcript ? 'TEXTAREA' : 'DIV',
-      selectionStart: 0,
-      selectionEnd: selectedText ? 5 : 0,
+      closest: () => null,
+      tagName: transcript ? 'P' : 'DIV',
     };
+    const anchorNode = {};
+    const currentTarget = { contains: (n: unknown) => n === anchorNode };
     const originalWindow = globalThis.window;
-    globalThis.window = { getSelection: () => ({ toString: () => '' }) } as unknown as Window &
-      typeof globalThis;
+    globalThis.window = {
+      getSelection: () => ({
+        toString: () => (selectedText ? 'Hello' : ''),
+        anchorNode: selectedText ? anchorNode : null,
+      }),
+    } as unknown as Window & typeof globalThis;
     try {
-      (node.props.onClick ?? node.props.onMouseDown)({ target, button: 0 });
+      (node.props.onClick ?? node.props.onMouseDown)({ target, currentTarget, button: 0 });
     } finally {
       globalThis.window = originalWindow;
     }
@@ -528,7 +531,7 @@ test('large history collections mount only a bounded window of transcript cards'
     })),
   );
   const transcripts = renderer.root
-    .findAllByType('textarea')
+    .findAllByProps({ 'data-history-transcript': true })
     .filter((node) => String(node.props['aria-label']).startsWith('Transcript for sample'));
   expect(transcripts.length).toBeGreaterThan(0);
   expect(transcripts.length).toBeLessThan(30);
@@ -547,8 +550,28 @@ test('older history pages use the server cursor without a deep offset or repeate
     cursor: 'older-boundary',
     include_total: false,
   });
-  expect(renderer.root.findAllByType('textarea').map((node) => node.props.value)).toContain(
-    'Older take',
+  expect(
+    renderer.root
+      .findAllByProps({ 'data-history-transcript': true })
+      .map((node) => node.props.children),
+  ).toContain('Older take');
+});
+
+test('transcript cards render full selectable text without textarea clipping and toggle long takes', () => {
+  const longText = 'A '.repeat(150).trim();
+  mount([{ ...generation, text: longText }], 1, undefined, false);
+  expect(renderer.root.findAllByType('textarea')).toHaveLength(0);
+  const transcript = renderer.root.findByProps({ 'data-history-transcript': true });
+  expect(transcript.props.className).toContain('line-clamp-4');
+  const showMore = renderer.root
+    .findAllByType('button')
+    .find((node) => node.props.children === 'Show more');
+  expect(showMore).toBeDefined();
+  act(() => {
+    showMore!.props.onClick();
+  });
+  expect(renderer.root.findByProps({ 'data-history-transcript': true }).props.className).not.toContain(
+    'line-clamp-4',
   );
 });
 

@@ -83,8 +83,8 @@ export function EffectsDetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Auto-select the most recent generation as preview source
-  const { data: historyData } = useHistory({ limit: 1 });
+  // Auto-select the most recent completed generation as preview source
+  const { data: historyData } = useHistory({ limit: 20 });
   useEffect(() => {
     if (!previewGenId && historyData?.items?.length) {
       const first = historyData.items.find((g) => g.status === 'completed');
@@ -129,13 +129,13 @@ export function EffectsDetail() {
     }
   }, [preset, selectedPresetId, isCreatingNew]);
 
-  // Cleanup blob URL on unmount
+  // Cleanup blob URL on unmount unless the persistent global player is still playing it.
   useEffect(() => {
     return () => {
-      if (blobUrlRef.current) {
+      if (blobUrlRef.current && usePlayerStore.getState().audioUrl !== blobUrlRef.current) {
         URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
       }
+      blobUrlRef.current = null;
     };
   }, []);
 

@@ -9,8 +9,9 @@ export const webFilesystem: PlatformFilesystem = {
     a.download = filename;
     document.body.appendChild(a);
     a.click();
-    window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+    // Defer revocation so Safari/WebKit finishes initiating the download first.
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
     return { status: 'download_started' };
   },
 

@@ -7,6 +7,7 @@ import asyncio
 import logging
 import numpy as np
 from pathlib import Path
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,12 @@ class MLXTTSBackend:
         # so a concurrent request for a different model_size can't swap self.model
         # out from under an in-flight request between its load and its inference.
         self._op_lock = asyncio.Lock()
+        # Bounded in-memory cache of decoded reference waveforms / encoded voice
+        # prompts keyed by (model_size, path, mtime_ns, size, ref_text) so long
+        # scripts and multi-take batches don't re-read & resample ref_audio on
+        # every chunk. Cleared on unload_model().
+        self._ref_audio_cache: OrderedDict[tuple, object] = OrderedDict()
+        self._max_ref_cache_entries = 16
 
     def is_loaded(self) -> bool:
         """Check if model is loaded."""
@@ -174,12 +181,44 @@ class MLXTTSBackend:
         # Invalidate even if an in-flight worker still holds the old model.
         # Its epoch cannot publish encoded reference state after this point.
         self._reference_cache.clear()
+        if hasattr(self, "_ref_audio_cache"):
+            self._ref_audio_cache.clear()
         if self.model is not None:
             del self.model
             self.model = None
             self._current_model_size = None
             empty_mlx_cache()
             logger.info("MLX TTS model unloaded")
+
+    def _resolve_cached_ref_audio(self, model, ref_audio: str, ref_text: str):
+        """Return a cached decoded mx.array reference waveform when supported.
+
+        Avoids re-reading and resampling the reference WAV from disk on every
+        chunk/take of a long narration script. Falls back to the file path if
+        the loaded model or runtime cannot consume an array directly.
+        """
+        path = Path(ref_audio)
+        try:
+            stat = path.stat()
+        except OSError:
+            return ref_audio
+        target_sr = int(getattr(model, "sample_rate", 24000) or 24000)
+        cache_key = (self._current_model_size or self.model_size, str(path), stat.st_mtime_ns, stat.st_size, target_sr)
+        if cache_key in self._ref_audio_cache:
+            self._ref_audio_cache.move_to_end(cache_key)
+            return self._ref_audio_cache[cache_key]
+        try:
+            import mlx.core as mx
+            from ..utils.audio import load_audio
+
+            samples, _ = load_audio(str(path), sample_rate=target_sr, mono=True)
+            cached = mx.array(np.asarray(samples, dtype=np.float32))
+        except Exception:
+            return ref_audio
+        self._ref_audio_cache[cache_key] = cached
+        while len(self._ref_audio_cache) > self._max_ref_cache_entries:
+            self._ref_audio_cache.popitem(last=False)
+        return cached
 
     async def create_voice_prompt(
         self,

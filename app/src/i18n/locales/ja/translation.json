@@ -9,7 +9,8 @@
     "loading": "読み込み中…",
     "error": "エラー",
     "unknown": "不明",
-    "unknownError": "不明なエラー"
+    "unknownError": "不明なエラー",
+    "retry": "Retry"
   },
   "nav": {
     "generate": "生成",
@@ -401,8 +402,11 @@
       "updated": "サンプルを更新しました",
       "updatedDescription": "リファレンステキストを正常に更新しました。",
       "updateFailed": "更新に失敗しました",
-      "updateFailedFallback": "サンプルの更新に失敗しました"
-    }
+      "updateFailedFallback": "サンプルの更新に失敗しました",
+      "exportFailed": "Audio export failed"
+    },
+    "exportAudio": "Export audio",
+    "exportFormat": "Export {{format}}"
   },
   "profiles": {
     "card": {
@@ -549,6 +553,46 @@
         "params": {
           "semitones": "シフトする半音数"
         }
+      },
+      "low_shelf": {
+        "label": "Low-Shelf EQ",
+        "params": {
+          "cutoff_frequency_hz": "Cutoff frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Slope / Q factor"
+        }
+      },
+      "peak_filter": {
+        "label": "Parametric EQ (Peak)",
+        "params": {
+          "cutoff_frequency_hz": "Center frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Bandwidth / Q factor"
+        }
+      },
+      "high_shelf": {
+        "label": "High-Shelf EQ",
+        "params": {
+          "cutoff_frequency_hz": "Cutoff frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Slope / Q factor"
+        }
+      },
+      "noise_gate": {
+        "label": "Noise Gate",
+        "params": {
+          "threshold_db": "Gate threshold (dB)",
+          "ratio": "Attenuation ratio",
+          "attack_ms": "Attack time (ms)",
+          "release_ms": "Release time (ms)"
+        }
+      },
+      "limiter": {
+        "label": "Brickwall Limiter",
+        "params": {
+          "threshold_db": "Ceiling threshold (dB)",
+          "release_ms": "Release time (ms)"
+        }
       }
     },
     "builtinPresets": {
@@ -567,6 +611,10 @@
       "Deep Voice": {
         "name": "ディープボイス",
         "description": "低いピッチに暖かみを加えた音声"
+      },
+      "YouTube Narration": {
+        "name": "YouTube Narration",
+        "description": "Clean broadcast voiceover chain: 80 Hz rumble cut, warm body, subtle presence lift, gentle compression, and -1 dB ceiling limiter"
       }
     }
   },
@@ -698,6 +746,19 @@
       "sourcePlaceholder": "ソースバージョンを選択",
       "apply": "適用",
       "applying": "適用中…"
+    },
+    "versions": {
+      "actions": "Actions for {{name}}",
+      "edit": "Edit effects",
+      "editTitle": "Edit effects for {{name}}",
+      "editBody": "Change, disable, or remove effects, then save to replace this version. Clearing all effects restores its source audio. The original recording is preserved.",
+      "delete": "Delete version",
+      "deleteBody": "Permanently delete \"{{name}}\"? If it is active, another version will become active. The original recording is preserved.",
+      "usedAsSource": "Other versions use this audio as their source. Remove those versions before editing or deleting it.",
+      "updated": "Version effects updated",
+      "updateFailed": "Could not update version effects",
+      "deleted": "Version deleted",
+      "deleteFailed": "Could not delete version"
     }
   },
   "generation": {
@@ -717,7 +778,8 @@
       "show": "デリバリー指示を表示",
       "hide": "デリバリー指示を非表示",
       "tooltip": "デリバリー指示(トーン、感情、ペース)",
-      "placeholder": "デリバリー指示 — 例:暖かくゆっくり話す、はっきりと威厳をもって…"
+      "placeholder": "デリバリー指示 — 例:暖かくゆっくり話す、はっきりと威厳をもって…",
+      "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
     "voiceSelector": {
       "placeholder": "ボイスを選択…"
@@ -896,6 +958,10 @@
           "title": "エージェント対応。",
           "body": "プロファイル単位で制御できる REST API — クローンしたボイスをどの AI にも渡せます。"
         }
+      },
+      "saveError": {
+        "title": "生成設定を保存できませんでした",
+        "description": "変更は保存されませんでした。もう一度お試しください。"
       }
     },
     "captures": {
@@ -1074,6 +1140,10 @@
           "title": "Windows での注意点",
           "body": "Voicebox 自体や管理者として実行中のアプリにフォーカスがあるあいだは、ショートカットが反応しません。現在対応中です。"
         }
+      },
+      "saveError": {
+        "title": "Could not save capture settings",
+        "description": "Your changes were not saved. Try again."
       }
     },
     "mcp": {
@@ -1141,7 +1211,8 @@
         "description": "ダウンロード可能な CUDA バックエンドによる NVIDIA GPU アクセラレーション。",
         "downloading": "CUDA バックエンドをダウンロード中…",
         "downloadingShort": "ダウンロード中…",
-        "updating": "更新中…"
+        "updating": "更新中…",
+        "activeTitle": "CUDA Backend Active"
       },
       "restart": {
         "ready": "サーバーを正常に再起動しました",
@@ -1173,9 +1244,36 @@
         "downloadStart": "ダウンロードを開始できませんでした",
         "restartFailed": "再起動に失敗しました",
         "switchCpu": "CPU への切り替えに失敗しました",
-        "deleteCuda": "CUDA バックエンドの削除に失敗しました"
+        "deleteCuda": "CUDA バックエンドの削除に失敗しました",
+        "deleteRocm": "Failed to delete ROCm backend"
       },
-      "footer": "Voicebox はシステムで利用可能な最適な GPU を自動で検出し使用します。Apple Silicon Mac では、MLX バックエンドが Metal Performance Shaders(MPS)を介して Neural Engine と GPU 上でネイティブに動作し、追加のセットアップは不要です。Windows および Linux では、オプションの CUDA(NVIDIA)または ROCm(AMD)バックエンドをダウンロードしてハードウェアアクセラレーションによる推論が可能です。Intel XPU、DirectML も PyTorch を通じて利用可能な環境でサポートされます。GPU が検出されない場合、Voicebox は CPU にフォールバックし、すべてのエンジンはそのまま動作しますが速度は低下します。"
+      "footer": "Voicebox はシステムで利用可能な最適な GPU を自動で検出し使用します。Apple Silicon Mac では、MLX バックエンドが Metal Performance Shaders(MPS)を介して Neural Engine と GPU 上でネイティブに動作し、追加のセットアップは不要です。Windows および Linux では、オプションの CUDA(NVIDIA)または ROCm(AMD)バックエンドをダウンロードしてハードウェアアクセラレーションによる推論が可能です。Intel XPU、DirectML も PyTorch を通じて利用可能な環境でサポートされます。GPU が検出されない場合、Voicebox は CPU にフォールバックし、すべてのエンジンはそのまま動作しますが速度は低下します。",
+      "activeBackend": {
+        "description": "GPU acceleration is currently enabled."
+      },
+      "rocm": {
+        "title": "AMD ROCm Backend",
+        "activeTitle": "ROCm Backend Active",
+        "description": "AMD GPU acceleration via a downloadable ROCm backend.",
+        "downloading": "Downloading ROCm backend…",
+        "downloadingShort": "Downloading…",
+        "updating": "Updating…"
+      },
+      "downloadRocm": {
+        "title": "Download AMD ROCm backend",
+        "description": "~2-3 GB download. Requires an AMD Radeon GPU with ROCm support.",
+        "button": "Download"
+      },
+      "switchToRocm": {
+        "title": "Switch to ROCm backend",
+        "description": "ROCm backend is downloaded and ready. Restart to enable.",
+        "button": "Restart"
+      },
+      "removeRocm": {
+        "title": "Remove ROCm backend",
+        "description": "Delete the downloaded ROCm binary to free disk space.",
+        "button": "Remove"
+      }
     },
     "logs": {
       "title": "サーバーログ",
@@ -1195,7 +1293,8 @@
       "tagline": "オープンソースの音声合成スタジオ。ボイスのクローン、音声生成、エフェクトの適用、音声対応アプリの構築まで、すべてローカル環境で実行できます。",
       "createdBy": "作者",
       "buyCoffee": "コーヒーをおごる",
-      "license": "<link>MIT</link> ライセンス"
+      "license": "<link>MIT</link> ライセンス",
+      "builtWith": "Built with"
     }
   },
   "models": {
@@ -1284,5 +1383,18 @@
       "migrationFailedGeneric": "モデルの移行に失敗しました",
       "migrationConnectionLost": "移行中に接続が切断されました"
     }
+  },
+  "microphone": {
+    "label": "Microphone",
+    "systemDefault": "System default",
+    "recordingDefault": "Recording (default mic)",
+    "fallbackNotice": "The selected microphone is unavailable. Using the system default for this session. Your saved choice is unchanged.",
+    "enable": "Enable microphones",
+    "enabling": "Enabling…",
+    "refresh": "Refresh microphones",
+    "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
+    "input": "Microphone {{number}}",
+    "unavailable": "{{name}} (unavailable)",
+    "hint": "Used for recordings and dictation. Your choice is saved on this device."
   }
 }

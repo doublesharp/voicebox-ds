@@ -154,6 +154,13 @@ export function ModelManagement() {
   const customModelsDir = useServerStore((state) => state.customModelsDir);
   const setCustomModelsDir = useServerStore((state) => state.setCustomModelsDir);
   const [migrating, setMigrating] = useState(false);
+  const migrationEventSourceRef = useRef<EventSource | null>(null);
+  useEffect(() => {
+    return () => {
+      migrationEventSourceRef.current?.close();
+      migrationEventSourceRef.current = null;
+    };
+  }, []);
   const [migrationProgress, setMigrationProgress] = useState<{
     current: number;
     total: number;
@@ -617,10 +624,20 @@ export function ModelManagement() {
                   className="text-xs text-muted-foreground h-7 px-2"
                   disabled={migrating}
                   onClick={async () => {
-                    setCustomModelsDir(null);
-                    toast({ title: t('models.toast.resetToDefault') });
-                    await platform.lifecycle.restartServer('');
-                    queryClient.invalidateQueries();
+                    const prevDir = customModelsDir;
+                    try {
+                      setCustomModelsDir(null);
+                      await platform.lifecycle.restartServer('');
+                      queryClient.invalidateQueries();
+                      toast({ title: t('models.toast.resetToDefault') });
+                    } catch (err) {
+                      setCustomModelsDir(prevDir);
+                      toast({
+                        title: t('common.error'),
+                        description: err instanceof Error ? err.message : t('common.unknownError'),
+                        variant: 'destructive',
+                      });
+                    }
                   }}
                 >
                   <RotateCcw className="h-3 w-3" />
@@ -1155,9 +1172,14 @@ export function ModelManagement() {
 
                   // Connect to SSE for progress
                   await new Promise<void>((resolve, reject) => {
+                    migrationEventSourceRef.current?.close();
                     const es = new EventSource(apiClient.getMigrationProgressUrl());
+                    migrationEventSourceRef.current = es;
                     const cancel = () => {
                       es.close();
+                      if (migrationEventSourceRef.current === es) {
+                        migrationEventSourceRef.current = null;
+                      }
                       reject(new Error('Server connection changed'));
                     };
                     cancelMigrationStream.current = cancel;
@@ -1169,10 +1191,16 @@ export function ModelManagement() {
                         if (data.status === 'complete') {
                           es.close();
                           if (cancelMigrationStream.current === cancel) cancelMigrationStream.current = null;
+                          if (migrationEventSourceRef.current === es) {
+                            migrationEventSourceRef.current = null;
+                          }
                           resolve();
                         } else if (data.status === 'error') {
                           es.close();
                           if (cancelMigrationStream.current === cancel) cancelMigrationStream.current = null;
+                          if (migrationEventSourceRef.current === es) {
+                            migrationEventSourceRef.current = null;
+                          }
                           reject(new Error(data.error || t('models.toast.migrationFailed')));
                         }
                       } catch {
@@ -1182,6 +1210,9 @@ export function ModelManagement() {
                     es.onerror = () => {
                       es.close();
                       if (cancelMigrationStream.current === cancel) cancelMigrationStream.current = null;
+                      if (migrationEventSourceRef.current === es) {
+                        migrationEventSourceRef.current = null;
+                      }
                       reject(new Error(t('models.toast.migrationConnectionLost')));
                     };
                   });

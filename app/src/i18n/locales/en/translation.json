@@ -9,7 +9,8 @@
     "loading": "Loading…",
     "error": "Error",
     "unknown": "Unknown",
-    "unknownError": "Unknown error"
+    "unknownError": "Unknown error",
+    "retry": "Retry"
   },
   "nav": {
     "generate": "Generate",
@@ -552,6 +553,46 @@
         "params": {
           "semitones": "Semitones to shift"
         }
+      },
+      "low_shelf": {
+        "label": "Low-Shelf EQ",
+        "params": {
+          "cutoff_frequency_hz": "Cutoff frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Slope / Q factor"
+        }
+      },
+      "peak_filter": {
+        "label": "Parametric EQ (Peak)",
+        "params": {
+          "cutoff_frequency_hz": "Center frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Bandwidth / Q factor"
+        }
+      },
+      "high_shelf": {
+        "label": "High-Shelf EQ",
+        "params": {
+          "cutoff_frequency_hz": "Cutoff frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Slope / Q factor"
+        }
+      },
+      "noise_gate": {
+        "label": "Noise Gate",
+        "params": {
+          "threshold_db": "Gate threshold (dB)",
+          "ratio": "Attenuation ratio",
+          "attack_ms": "Attack time (ms)",
+          "release_ms": "Release time (ms)"
+        }
+      },
+      "limiter": {
+        "label": "Brickwall Limiter",
+        "params": {
+          "threshold_db": "Ceiling threshold (dB)",
+          "release_ms": "Release time (ms)"
+        }
       }
     },
     "builtinPresets": {
@@ -570,6 +611,10 @@
       "Deep Voice": {
         "name": "Deep Voice",
         "description": "Lower pitch with added warmth"
+      },
+      "YouTube Narration": {
+        "name": "YouTube Narration",
+        "description": "Clean broadcast voiceover chain: 80 Hz rumble cut, warm body, subtle presence lift, gentle compression, and -1 dB ceiling limiter"
       }
     }
   },

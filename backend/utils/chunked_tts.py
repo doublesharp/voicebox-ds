@@ -65,6 +65,48 @@ _ABBREVIATIONS = frozenset(
 # cut inside one of these.
 _PARA_TAG_RE = re.compile(r"\[[^\]]*\]")
 
+# Engine-agnostic inline pause markers, e.g. [pause 400ms] or [pause 0.75s].
+_PAUSE_MARKER_RE = re.compile(r"\[\s*pause\s+(\d+(?:\.\d+)?)\s*(ms|s)\s*\]", re.IGNORECASE)
+MAX_PAUSE_SECONDS = 10.0
+
+
+def split_pause_segments(text: str) -> List[Tuple[str, float]]:
+    """Split *text* into ordered ``('speech', segment)`` / ``('pause', seconds)`` items.
+
+    When no ``[pause ...]`` marker is present, returns a single speech entry
+    so callers can take the standard zero-overhead path.
+    """
+    if not _PAUSE_MARKER_RE.search(text):
+        return [("speech", text)] if text.strip() else []
+    segments: List[Tuple[str, float]] = []
+    cursor = 0
+    for match in _PAUSE_MARKER_RE.finditer(text):
+        before = text[cursor : match.start()].strip()
+        if before:
+            segments.append(("speech", before))
+        amount = float(match.group(1))
+        unit = match.group(2).lower()
+        seconds = amount / 1000.0 if unit == "ms" else amount
+        seconds = max(0.01, min(MAX_PAUSE_SECONDS, seconds))
+        segments.append(("pause", seconds))
+        cursor = match.end()
+    after = text[cursor:].strip()
+    if after:
+        segments.append(("speech", after))
+    return segments
+
+
+def _apply_edge_fades(audio: np.ndarray, sample_rate: int, fade_ms: int = 10) -> np.ndarray:
+    """Apply brief cosine edge fades around silence splices to prevent clicks."""
+    fade_samples = min(int(sample_rate * fade_ms / 1000), len(audio) // 2)
+    if fade_samples <= 0:
+        return audio
+    out = np.asarray(audio, dtype=np.float32).copy()
+    ramp = (0.5 - 0.5 * np.cos(np.linspace(0.0, np.pi, fade_samples, dtype=np.float32)))
+    out[:fade_samples] *= ramp
+    out[-fade_samples:] *= ramp[::-1]
+    return out
+
 
 def split_text_into_chunks(text: str, max_chars: int = DEFAULT_MAX_CHUNK_CHARS) -> List[str]:
     """Split *text* at natural boundaries into chunks of at most *max_chars*.
@@ -398,6 +440,48 @@ async def _generate_chunked(
         if trim_fn is not None:
             chunk_audio = trim_chunk(chunk_audio, chunk_sr, chunk_text)
         return np.asarray(chunk_audio, dtype=np.float32), chunk_sr
+
+    if _PAUSE_MARKER_RE.search(text):
+        parts = split_pause_segments(text)
+        rendered: List[np.ndarray] = []
+        sample_rate: int | None = None
+        pending_pauses: list[float] = []
+        segment_index = 0
+        for kind, value in parts:
+            if kind == "pause":
+                if sample_rate is None:
+                    pending_pauses.append(float(value))
+                else:
+                    rendered.append(np.zeros(int(round(float(value) * sample_rate)), dtype=np.float32))
+                continue
+            seg_seed = (seed + segment_index * 100) if seed is not None else None
+            segment_index += 1
+            seg_audio, seg_sr = await _generate_chunked(
+                backend,
+                str(value),
+                voice_prompt,
+                language=language,
+                seed=seg_seed,
+                instruct=instruct,
+                max_chunk_chars=max_chunk_chars,
+                crossfade_ms=crossfade_ms,
+                trim_fn=trim_fn,
+                runaway_detector=runaway_detector,
+                generation_options=generation_options,
+            )
+            if sample_rate is None:
+                sample_rate = seg_sr
+                for lead in pending_pauses:
+                    rendered.append(np.zeros(int(round(lead * sample_rate)), dtype=np.float32))
+                pending_pauses.clear()
+            rendered.append(_apply_edge_fades(seg_audio, sample_rate))
+        if sample_rate is None:
+            sample_rate = 24000
+            for lead in pending_pauses:
+                rendered.append(np.zeros(int(round(lead * sample_rate)), dtype=np.float32))
+        if not rendered:
+            return np.zeros(0, dtype=np.float32), sample_rate
+        return np.concatenate(rendered).astype(np.float32), sample_rate
 
     chunks = split_text_into_chunks(text, max_chunk_chars)
 

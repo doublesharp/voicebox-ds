@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from ..database import get_db
-from ..database.models import MCPClientBinding
+from ..database.models import MCPClientBinding, VoiceProfile
 
 
 router = APIRouter()
@@ -43,6 +43,10 @@ async def upsert_mcp_binding(
     db: Session = Depends(get_db),
 ):
     """Create-or-update a binding. Matches by client_id."""
+    if data.profile_id:
+        profile_exists = db.query(VoiceProfile.id).filter(VoiceProfile.id == data.profile_id).first()
+        if profile_exists is None:
+            raise HTTPException(status_code=404, detail=f"Voice profile '{data.profile_id}' not found")
     row = (
         db.query(MCPClientBinding)
         .filter(MCPClientBinding.client_id == data.client_id)

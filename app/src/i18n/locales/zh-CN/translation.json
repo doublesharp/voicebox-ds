@@ -9,7 +9,8 @@
     "loading": "加载中…",
     "error": "错误",
     "unknown": "未知",
-    "unknownError": "未知错误"
+    "unknownError": "未知错误",
+    "retry": "Retry"
   },
   "nav": {
     "generate": "生成",
@@ -401,8 +402,11 @@
       "updated": "样本已更新",
       "updatedDescription": "参考文本已成功更新。",
       "updateFailed": "更新失败",
-      "updateFailedFallback": "更新样本失败"
-    }
+      "updateFailedFallback": "更新样本失败",
+      "exportFailed": "Audio export failed"
+    },
+    "exportAudio": "Export audio",
+    "exportFormat": "Export {{format}}"
   },
   "profiles": {
     "card": {
@@ -549,6 +553,46 @@
         "params": {
           "semitones": "半音移动"
         }
+      },
+      "low_shelf": {
+        "label": "Low-Shelf EQ",
+        "params": {
+          "cutoff_frequency_hz": "Cutoff frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Slope / Q factor"
+        }
+      },
+      "peak_filter": {
+        "label": "Parametric EQ (Peak)",
+        "params": {
+          "cutoff_frequency_hz": "Center frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Bandwidth / Q factor"
+        }
+      },
+      "high_shelf": {
+        "label": "High-Shelf EQ",
+        "params": {
+          "cutoff_frequency_hz": "Cutoff frequency (Hz)",
+          "gain_db": "Gain (dB)",
+          "q": "Slope / Q factor"
+        }
+      },
+      "noise_gate": {
+        "label": "Noise Gate",
+        "params": {
+          "threshold_db": "Gate threshold (dB)",
+          "ratio": "Attenuation ratio",
+          "attack_ms": "Attack time (ms)",
+          "release_ms": "Release time (ms)"
+        }
+      },
+      "limiter": {
+        "label": "Brickwall Limiter",
+        "params": {
+          "threshold_db": "Ceiling threshold (dB)",
+          "release_ms": "Release time (ms)"
+        }
       }
     },
     "builtinPresets": {
@@ -567,6 +611,10 @@
       "Deep Voice": {
         "name": "低沉嗓音",
         "description": "降低音高并增添温暖"
+      },
+      "YouTube Narration": {
+        "name": "YouTube Narration",
+        "description": "Clean broadcast voiceover chain: 80 Hz rumble cut, warm body, subtle presence lift, gentle compression, and -1 dB ceiling limiter"
       }
     }
   },
@@ -698,6 +746,19 @@
       "sourcePlaceholder": "选择来源版本",
       "apply": "应用",
       "applying": "应用中…"
+    },
+    "versions": {
+      "actions": "Actions for {{name}}",
+      "edit": "Edit effects",
+      "editTitle": "Edit effects for {{name}}",
+      "editBody": "Change, disable, or remove effects, then save to replace this version. Clearing all effects restores its source audio. The original recording is preserved.",
+      "delete": "Delete version",
+      "deleteBody": "Permanently delete \"{{name}}\"? If it is active, another version will become active. The original recording is preserved.",
+      "usedAsSource": "Other versions use this audio as their source. Remove those versions before editing or deleting it.",
+      "updated": "Version effects updated",
+      "updateFailed": "Could not update version effects",
+      "deleted": "Version deleted",
+      "deleteFailed": "Could not delete version"
     }
   },
   "generation": {
@@ -717,7 +778,8 @@
       "show": "显示传达说明",
       "hide": "隐藏传达说明",
       "tooltip": "传达说明 (语气、情感、节奏)",
-      "placeholder": "传达说明——例如:温柔缓慢地说、威严清晰…"
+      "placeholder": "传达说明——例如:温柔缓慢地说、威严清晰…",
+      "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
     "voiceSelector": {
       "placeholder": "选择声音…"
@@ -896,6 +958,10 @@
           "title": "面向代理。",
           "body": "REST API 支持按档案控制——给任何 AI 一个您克隆的声音。"
         }
+      },
+      "saveError": {
+        "title": "无法保存生成设置",
+        "description": "您的更改未保存，请重试。"
       }
     },
     "captures": {
@@ -1005,6 +1071,21 @@
         "preserveTechnical": {
           "title": "保留技术术语",
           "description": "完全按原样保留代码标识符、命令名称和缩写。在向代码提示词中听写时建议开启。"
+        },
+        "customEndpoint": {
+          "title": "Custom LLM endpoint (advanced)",
+          "description": "Delegate refinement and personality rewrites to any OpenAI-compatible server — llama.cpp, vLLM, LM Studio, LocalAI, Ollama's shim, or the OpenAI API itself. Leave blank to use the built-in Qwen3.",
+          "endpointLabel": "Endpoint URL",
+          "endpointPlaceholder": "http://localhost:8090/v1",
+          "modelLabel": "Model name",
+          "modelPlaceholder": "Model name (e.g. qwen3-4b)",
+          "apiKeyLabel": "API key",
+          "apiKeyPlaceholder": "API key (optional)",
+          "apiKeyPlaceholderReplace": "Enter a new key to replace the stored one",
+          "apiKeyConfigured": "Stored",
+          "apiKeyClear": "Clear",
+          "statusBuiltin": "Using the built-in Qwen3 model selected above.",
+          "statusRemote": "Sending every refinement and personality rewrite to {{endpoint}}."
         }
       },
       "playback": {
@@ -1054,7 +1135,15 @@
         "windowsCaveat": {
           "title": "Windows 上的提示",
           "body": "当 Voicebox 自身或任何以管理员身份运行的应用处于焦点时,快捷键不会触发。我们正在解决这个问题。"
+        },
+        "remote": {
+          "title": "Refinement runs remotely.",
+          "body": "Whisper still transcribes on your hardware, but refined transcripts and personality rewrites are sent to {{endpoint}}. Voice audio itself never leaves the machine."
         }
+      },
+      "saveError": {
+        "title": "Could not save capture settings",
+        "description": "Your changes were not saved. Try again."
       }
     },
     "mcp": {
@@ -1122,7 +1211,8 @@
         "description": "通过可下载的 CUDA 后端实现 NVIDIA GPU 加速。",
         "downloading": "下载 CUDA 后端中…",
         "downloadingShort": "下载中…",
-        "updating": "更新中…"
+        "updating": "更新中…",
+        "activeTitle": "CUDA Backend Active"
       },
       "restart": {
         "ready": "服务器重启成功",
@@ -1154,9 +1244,36 @@
         "downloadStart": "启动下载失败",
         "restartFailed": "重启失败",
         "switchCpu": "切换到 CPU 失败",
-        "deleteCuda": "删除 CUDA 后端失败"
+        "deleteCuda": "删除 CUDA 后端失败",
+        "deleteRocm": "Failed to delete ROCm backend"
       },
-      "footer": "Voicebox 会自动检测并使用系统上可用的最佳 GPU。在 Apple Silicon Mac 上,MLX 后端通过 Metal Performance Shaders (MPS) 在神经引擎和 GPU 上原生运行,无需额外设置。在 Windows 和 Linux 上,您可以下载可选的 CUDA (NVIDIA) 或 ROCm (AMD) 后端以获得硬件加速推理。Intel XPU 和 DirectML 也通过 PyTorch 获得支持。未检测到 GPU 时,Voicebox 会退回到 CPU——所有引擎仍可工作,只是速度较慢。"
+      "footer": "Voicebox 会自动检测并使用系统上可用的最佳 GPU。在 Apple Silicon Mac 上,MLX 后端通过 Metal Performance Shaders (MPS) 在神经引擎和 GPU 上原生运行,无需额外设置。在 Windows 和 Linux 上,您可以下载可选的 CUDA (NVIDIA) 或 ROCm (AMD) 后端以获得硬件加速推理。Intel XPU 和 DirectML 也通过 PyTorch 获得支持。未检测到 GPU 时,Voicebox 会退回到 CPU——所有引擎仍可工作,只是速度较慢。",
+      "activeBackend": {
+        "description": "GPU acceleration is currently enabled."
+      },
+      "rocm": {
+        "title": "AMD ROCm Backend",
+        "activeTitle": "ROCm Backend Active",
+        "description": "AMD GPU acceleration via a downloadable ROCm backend.",
+        "downloading": "Downloading ROCm backend…",
+        "downloadingShort": "Downloading…",
+        "updating": "Updating…"
+      },
+      "downloadRocm": {
+        "title": "Download AMD ROCm backend",
+        "description": "~2-3 GB download. Requires an AMD Radeon GPU with ROCm support.",
+        "button": "Download"
+      },
+      "switchToRocm": {
+        "title": "Switch to ROCm backend",
+        "description": "ROCm backend is downloaded and ready. Restart to enable.",
+        "button": "Restart"
+      },
+      "removeRocm": {
+        "title": "Remove ROCm backend",
+        "description": "Delete the downloaded ROCm binary to free disk space.",
+        "button": "Remove"
+      }
     },
     "logs": {
       "title": "服务器日志",
@@ -1176,7 +1293,8 @@
       "tagline": "开源语音合成工作室。克隆声音、生成语音、应用效果、构建语音驱动的应用——全部在您的本地机器上运行。",
       "createdBy": "创建者",
       "buyCoffee": "请我喝杯咖啡",
-      "license": "采用 <link>MIT</link> 协议"
+      "license": "采用 <link>MIT</link> 协议",
+      "builtWith": "Built with"
     }
   },
   "models": {
@@ -1265,5 +1383,18 @@
       "migrationFailedGeneric": "迁移模型失败",
       "migrationConnectionLost": "迁移期间丢失连接"
     }
+  },
+  "microphone": {
+    "label": "Microphone",
+    "systemDefault": "System default",
+    "recordingDefault": "Recording (default mic)",
+    "fallbackNotice": "The selected microphone is unavailable. Using the system default for this session. Your saved choice is unchanged.",
+    "enable": "Enable microphones",
+    "enabling": "Enabling…",
+    "refresh": "Refresh microphones",
+    "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
+    "input": "Microphone {{number}}",
+    "unavailable": "{{name}} (unavailable)",
+    "hint": "Used for recordings and dictation. Your choice is saved on this device."
   }
 }

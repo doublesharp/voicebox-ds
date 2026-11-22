@@ -107,7 +107,7 @@ class GenerationRequest(SpeechDeliverySettings):
     text: str = Field(..., min_length=1, max_length=50000)
     language: str = Field(default="en", pattern="^(zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr)$")
     seed: Optional[int] = Field(None, ge=0)
-    model_size: Optional[str] = Field(default="1.7B", pattern="^(1\\.7B|0\\.6B|1B|3B|1\\.7B-(8|4)bit)$")
+    model_size: Optional[str] = Field(default=None, pattern="^(1\\.7B|0\\.6B|1B|3B|1\\.7B-(8|4)bit)$")
     instruct: Optional[str] = Field(None, max_length=500)
     engine: Optional[str] = Field(default=None, pattern="^(qwen|qwen_custom_voice|qwen_voice_design|luxtts|chatterbox|chatterbox_turbo|tada|kokoro|omnivoice|moss_tts)$")
     personality: bool = Field(
@@ -277,7 +277,7 @@ class CaptureRetranscribeRequest(BaseModel):
     """Request to re-run STT on a capture's audio with a different model."""
 
     model: Optional[str] = Field(None, pattern="^(base|small|medium|large|turbo)$")
-    language: Optional[str] = Field(None, pattern="^(zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr)$")
+    language: Optional[str] = Field(None, pattern="^(auto|zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr)$")
 
 
 class CaptureSettingsResponse(BaseModel):
@@ -435,6 +435,7 @@ class SpeakRequest(BaseModel):
         None,
         pattern="^(zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr)$",
     )
+    model_size: Optional[str] = Field(default=None, pattern="^(1\\.7B|0\\.6B|1B|3B)$")
 
 
 class LLMGenerateRequest(BaseModel):

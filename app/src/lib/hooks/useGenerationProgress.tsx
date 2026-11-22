@@ -11,6 +11,8 @@ import { useServerStore } from '@/stores/serverStore';
 
 interface GenerationStatusEvent {
   id: string;
+  profile_id?: string | null;
+  text?: string | null;
   status: 'loading_model' | 'generating' | 'completed' | 'failed' | 'not_found';
   duration?: number;
   error?: string;
@@ -132,7 +134,12 @@ export function useGenerationProgress() {
             const isAgentSpeak = data.source ? AGENT_SOURCES.has(data.source) : false;
             if (autoplayRef.current && !isPlayingRef.current && !isAgentSpeak) {
               const genAudioUrl = apiClient.getAudioUrl(id);
-              setAudioWithAutoPlay(genAudioUrl, id, '', '');
+              setAudioWithAutoPlay(
+                genAudioUrl,
+                id,
+                typeof data.profile_id === 'string' && data.profile_id ? data.profile_id : null,
+                typeof data.text === 'string' ? data.text : '',
+              );
             }
           } else if (data.status === 'failed' || data.status === 'not_found') {
             source.close();

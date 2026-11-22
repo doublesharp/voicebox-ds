@@ -166,35 +166,39 @@ class ChatterboxMLXTTSBackend:
             ref_audio = None
 
         def _generate_sync():
-            import mlx.core as mx  # lazy: heavy import
-
             # Load (if needed) and generate as ONE worker submission, as in
             # MLXTTSBackend._reload_and_generate_sync, so an unload cannot
             # land between the two; bind the model locally for the same reason.
             if self.model is None:
                 self._load_model_sync()
             model = self.model
+            try:
+                if seed is not None:
+                    import mlx.core as mx  # lazy: heavy import
 
-            if seed is not None:
-                mx.random.seed(seed)
+                    mx.random.seed(seed)
 
-            logger.info(f"[Chatterbox/MLX] Generating: lang={language}")
+                logger.info(f"[Chatterbox/MLX] Generating: lang={language}")
 
-            # mlx-audio yields GenerationResult chunks; the whole clip is their concatenation.
-            chunks = [
-                np.asarray(result.audio).squeeze()
-                for result in model.generate(
-                    text,
-                    ref_audio=ref_audio,
-                    lang_code=language,
-                    verbose=False,
-                    **sampling,
-                )
-            ]
-            audio = np.concatenate(chunks).astype(np.float32) if chunks else np.zeros(0, dtype=np.float32)
+                # mlx-audio yields GenerationResult chunks; the whole clip is their concatenation.
+                chunks = [
+                    np.asarray(result.audio).squeeze()
+                    for result in model.generate(
+                        text,
+                        ref_audio=ref_audio,
+                        lang_code=language,
+                        verbose=False,
+                        **sampling,
+                    )
+                ]
+                audio = np.concatenate(chunks).astype(np.float32) if chunks else np.zeros(0, dtype=np.float32)
 
-            sample_rate = getattr(model, "sr", None) or 24000
-            return audio, int(sample_rate)
+                sample_rate = getattr(model, "sr", None) or 24000
+                return audio, int(sample_rate)
+            finally:
+                del model
+                if self.model is None:
+                    empty_mlx_cache()
 
         async with self._op_lock:
             return await _run_on_mlx_thread(_generate_sync)

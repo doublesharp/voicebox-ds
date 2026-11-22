@@ -338,39 +338,50 @@ async def synthesize(request, store, set_phase=None):
     await ensure_model_cached_or_raise(engine, size)
     model = get_tts_backend_for_engine(engine)
     await load_engine_model(engine, size)
-    if voice["voice_type"] == "preset":
-        prompt = {k: voice[k] for k in ("voice_type", "preset_engine", "preset_voice_id")}
-    elif voice["voice_type"] == "designed":
-        prompt = {"voice_type": "designed", "design_prompt": voice["design_prompt"]}
-    else:
-        samples = voice.get("samples", [])
-        if not samples:
-            raise ValueError("Voice reference snapshot is missing")
-        paths = [str(store.asset_path(s["asset_id"])) for s in samples]
-        if len(paths) == 1:
-            prompt, _ = await model.create_voice_prompt(paths[0], samples[0]["reference_text"], use_cache=False)
+    combined_path = None
+    try:
+        if voice["voice_type"] == "preset":
+            prompt = {k: voice[k] for k in ("voice_type", "preset_engine", "preset_voice_id")}
+        elif voice["voice_type"] == "designed":
+            prompt = {"voice_type": "designed", "design_prompt": voice["design_prompt"]}
         else:
-            import soundfile as sf
+            samples = voice.get("samples", [])
+            if not samples:
+                raise ValueError("Voice reference snapshot is missing")
+            paths = [str(store.asset_path(s["asset_id"])) for s in samples]
+            if len(paths) == 1:
+                prompt, _ = await model.create_voice_prompt(paths[0], samples[0]["reference_text"], use_cache=False)
+            else:
+                import soundfile as sf
 
-            combined, reference_text = await model.combine_voice_prompts(paths, [s["reference_text"] for s in samples])
-            path = store.asset_dir / (".combined-" + uid())
-            try:
-                sf.write(str(path), combined, 24000, format="WAV")
-                prompt, _ = await model.create_voice_prompt(str(path), reference_text, use_cache=False)
-            finally:
-                path.unlink(missing_ok=True)
-    d = request.get("effective_direction", p["direction"])
-    if set_phase:
-        set_phase("generating")
-    return await generate_chunked(
-        model,
-        request.get("spoken_text", p["text"]),
-        prompt,
-        language=p["language"],
-        seed=d["seed"],
-        instruct=d["instruct"] or None,
-        max_chunk_chars=d["max_chunk_chars"],
-        crossfade_ms=d["crossfade_ms"],
-        trim_fn=trim_tts_output if engine_needs_trim(engine) else None,
-        runaway_detector=has_tts_runaway if engine_retries_runaway(engine) else None,
-    )
+                combined, reference_text = await model.combine_voice_prompts(paths, [s["reference_text"] for s in samples])
+                combined_path = store.asset_dir / (".combined-" + uid())
+                sf.write(str(combined_path), combined, 24000, format="WAV")
+                # Keep combined_path on disk until generate_chunked completes: MLX and
+                # Chatterbox backends store ref_audio lazily and read it inside generate().
+                prompt, _ = await model.create_voice_prompt(str(combined_path), reference_text, use_cache=False)
+        d = request.get("effective_direction", p["direction"])
+        if set_phase:
+            set_phase("generating")
+        audio, rate = await generate_chunked(
+            model,
+            request.get("spoken_text", p["text"]),
+            prompt,
+            language=p["language"],
+            seed=d["seed"],
+            instruct=d["instruct"] or None,
+            max_chunk_chars=d["max_chunk_chars"],
+            crossfade_ms=d["crossfade_ms"],
+            trim_fn=trim_tts_output if engine_needs_trim(engine) else None,
+            runaway_detector=has_tts_runaway if engine_retries_runaway(engine) else None,
+        )
+        speed = float(d.get("speed", 1.0) or 1.0)
+        if abs(speed - 1.0) >= 1e-3:
+            from ..utils.audio import protect_audio_peak
+            from ..utils.speech_delivery import apply_speed
+
+            audio = protect_audio_peak(apply_speed(audio, rate, speed))
+        return audio, rate
+    finally:
+        if combined_path is not None:
+            combined_path.unlink(missing_ok=True)

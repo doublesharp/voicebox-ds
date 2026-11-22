@@ -8,9 +8,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useStudio } from './context';
-import { splitScript } from './domain';
+import { splitScriptWithChapters } from './domain';
 import { EmptyState, Field, StudioButton } from './ui';
 
 export function ScriptEditor() {
@@ -20,7 +21,15 @@ export function ScriptEditor() {
   const [text, setText] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const passages = project.document.passages;
-  const paragraphs = splitScript(text);
+  const parsed = splitScriptWithChapters(text);
+  const missingOrStaleIds = passages
+    .filter((passage) => {
+      if (passage.locked) return false;
+      const take = project.takes.find((item) => item.id === passage.selected_take_id);
+      const current = save.drafts[passage.id]?.text ?? passage.text;
+      return !take || take.text !== current;
+    })
+    .map((passage) => passage.id);
   const move = (index: number, delta: number) => {
     const ids = passages.map((p) => p.id);
     [ids[index], ids[index + delta]] = [ids[index + delta], ids[index]];
@@ -34,6 +43,19 @@ export function ScriptEditor() {
           <h2>Script</h2>
         </div>
         <span>{passages.length} passages</span>
+        {missingOrStaleIds.length > 0 && (
+          <button
+            className="studio-quiet"
+            type="button"
+            disabled={!canMutate}
+            onClick={() => {
+              studio.setCheckedPassages(missingOrStaleIds);
+              studio.selectPassage(missingOrStaleIds[0]);
+            }}
+          >
+            Select missing / stale ({missingOrStaleIds.length})
+          </button>
+        )}
         <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
           <DialogTrigger asChild>
             <button className="studio-quiet" type="button" disabled={!canMutate}>
@@ -44,7 +66,8 @@ export function ScriptEditor() {
             <DialogHeader>
               <DialogTitle>Add passages</DialogTitle>
               <DialogDescription>
-                Separate passages with blank lines. They will be appended in this order.
+                Separate passages with blank lines. Prefix a section with{' '}
+                <code>## Chapter Name</code> to create YouTube chapter markers automatically.
               </DialogDescription>
             </DialogHeader>
             <Field label="New script">
@@ -56,23 +79,32 @@ export function ScriptEditor() {
               />
             </Field>
             <div className="studio-paste-preview">
-              <strong>{paragraphs.length} passages</strong>
+              <strong>{parsed.length} passages</strong>
               <ol>
-                {paragraphs.map((part, index) => (
-                  <li key={`${index}-${part.slice(0, 10)}`}>{part}</li>
+                {parsed.map((part, index) => (
+                  <li key={`${index}-${part.text.slice(0, 10)}`}>
+                    {part.chapter && <strong>[{part.chapter}] </strong>}
+                    {part.text}
+                  </li>
                 ))}
               </ol>
             </div>
             <StudioButton
               primary
-              disabled={!paragraphs.length || !canMutate}
+              disabled={!parsed.length || !canMutate}
               onClick={() => {
-                void session.command('add_passages', { texts: paragraphs }).then((ok) => {
-                  if (ok) {
-                    setText('');
-                    setPasteOpen(false);
-                  }
-                });
+                const hasChapters = parsed.some((item) => item.chapter !== null);
+                void session
+                  .command('add_passages', {
+                    texts: parsed.map((item) => item.text),
+                    ...(hasChapters ? { chapters: parsed.map((item) => item.chapter) } : {}),
+                  })
+                  .then((ok) => {
+                    if (ok) {
+                      setText('');
+                      setPasteOpen(false);
+                    }
+                  });
               }}
             >
               Add to script
@@ -160,6 +192,23 @@ export function ScriptEditor() {
                   {passage.locked ? <Lock size={14} /> : <Unlock size={14} />}
                 </button>
               </div>
+              {(studio.selectedPassageId === passage.id || passage.chapter) && (
+                <Input
+                  aria-label={`Passage ${index + 1} chapter`}
+                  placeholder="Optional YouTube chapter title (e.g. I2S & DMA Pipeline)"
+                  maxLength={120}
+                  value={
+                    draft?.chapter !== undefined ? (draft.chapter ?? '') : (passage.chapter ?? '')
+                  }
+                  disabled={passage.locked || save.status === 'recovery'}
+                  onFocus={() => studio.selectPassage(passage.id)}
+                  onChange={(event) =>
+                    session.editPassage(passage.id, {
+                      chapter: event.target.value || null,
+                    })
+                  }
+                />
+              )}
               <Textarea
                 aria-label={`Passage ${index + 1} text`}
                 className="studio-script-input"

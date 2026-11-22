@@ -372,8 +372,14 @@ async def _run_shutdown() -> None:
 
 
 async def _unload_models() -> None:
-    """Unload models on lifespan exit."""
+    """Unload all instantiated models on lifespan exit."""
     logger.info("Voicebox server shutting down...")
+    try:
+        from .backends import unload_all_models
+
+        unload_all_models()
+    except Exception:
+        logger.exception("Failed to unload backend registry models")
     try:
         tts.unload_tts_model()
     except Exception:

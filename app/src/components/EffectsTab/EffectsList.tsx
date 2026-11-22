@@ -183,7 +183,7 @@ function PresetCard({
         <span className="min-w-0 truncate text-[10px] text-muted-foreground/50">
           {preset.effects_chain
             .filter((e) => e.enabled)
-            .map((e) => e.type)
+            .map((e) => t(`effects.types.${e.type}.label`, { defaultValue: e.type }))
             .join(' → ')}
         </span>
       </div>

@@ -324,8 +324,14 @@ class ApiClient {
       body: form,
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => res.statusText);
-      throw new Error(detail || `HTTP ${res.status}`);
+      let detail: unknown;
+      try {
+        const body = await res.json();
+        detail = body?.detail;
+      } catch {
+        detail = await res.text().catch(() => res.statusText);
+      }
+      throw new Error(formatErrorDetail(detail, res.statusText || `HTTP ${res.status}`));
     }
     return res.json();
   }

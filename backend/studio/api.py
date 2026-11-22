@@ -71,6 +71,7 @@ def make_router(store, jobs=None):
     from .reviews import make_review_router
     from .cleanup import make_cleanup_router
     from .captions import make_caption_router
+    from .chapters import make_chapter_router
 
     router.include_router(make_preview_router(store))
     router.include_router(make_waveform_router(store))
@@ -78,6 +79,7 @@ def make_router(store, jobs=None):
     router.include_router(make_review_router(store))
     router.include_router(make_cleanup_router(store))
     router.include_router(make_caption_router(store))
+    router.include_router(make_chapter_router(store))
     jobs = jobs or StudioJobs(store)
 
     def get_delivery():
@@ -154,6 +156,22 @@ def make_router(store, jobs=None):
         from .voices import engines
 
         return {"items": engines(commercial_only=commercial_only)}
+
+    @router.get("/pronunciation-packs")
+    def get_pronunciation_packs():
+        from .pronunciation import BUILTIN_PRONUNCIATION_PACKS
+
+        return {"items": list(BUILTIN_PRONUNCIATION_PACKS.values())}
+
+    @router.get("/projects/{project_id}/pronunciation-scan")
+    def pronunciation_scan(project_id: str):
+        from .pronunciation import scan_script_jargon
+
+        project = call(store.get_project, project_id)
+        doc = project["document"]
+        return {
+            "items": scan_script_jargon(doc.get("passages", []), doc.get("pronunciation_rules", [])),
+        }
 
     @router.post("/projects/{project_id}/generation-jobs", status_code=202)
     async def generate(project_id: str, body: Generate):

@@ -1,9 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { hasMissingRegenerationReferences } from './ArchiveScopeControls';
 import { useStudio } from './context';
 import { engineForPassage } from './domain';
-import { previewPronunciation, pronunciationError, type PronunciationRule } from './pronunciation';
+import {
+  EMBEDDED_FIRMWARE_PACK,
+  type PronunciationRule,
+  parsePronunciationImport,
+  previewPronunciation,
+  pronunciationError,
+  scanScriptJargon,
+} from './pronunciation';
 import { errorMessage, operationId } from './session';
 import { useDurableSubmission } from './submissions';
 import type { StudioPassage } from './types';
@@ -56,6 +63,8 @@ export function PronunciationPanel({
   const [unreadable, setUnreadable] = useState(!!recovered.error);
   const [draft, setDraft] = useState<DictionaryDraft | null>(recovered.draft);
   const [notice, setNotice] = useState('');
+  const [importError, setImportError] = useState('');
+  const importInputRef = useRef<HTMLInputElement>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -68,6 +77,10 @@ export function PronunciationPanel({
   const conflict = !!draft && draft.base !== serialized && changed;
   const invalid = pronunciationError(rules);
   const preview = previewPronunciation(currentText, rules, passage.profile_id);
+  const jargonSuggestions = useMemo(
+    () => scanScriptJargon(project.document.passages, rules),
+    [project.document.passages, rules],
+  );
   const disabled = !studio.canMutate || studio.actionBusy || unreadable;
   const engine = engineForPassage(passage, profiles, engines);
   // Auditions own an independent pending request, so another generate action can
@@ -112,6 +125,79 @@ export function PronunciationPanel({
   const update = (id: string, change: Partial<PronunciationRule>) =>
     edit(rules.map((rule) => (rule.id === id ? { ...rule, ...change } : rule)));
 
+  const mergeFirmwarePack = () => {
+    setImportError('');
+    const existing = new Set(
+      rules.map((rule) => (rule.case_sensitive ? rule.source : rule.source.toLowerCase())),
+    );
+    const additions: PronunciationRule[] = [];
+    for (const entry of EMBEDDED_FIRMWARE_PACK) {
+      if (rules.length + additions.length >= 200) break;
+      const key = entry.case_sensitive ? entry.source : entry.source.toLowerCase();
+      if (existing.has(key) || existing.has(entry.source.toLowerCase())) continue;
+      additions.push({
+        id: operationId(),
+        source: entry.source,
+        replacement: entry.replacement,
+        profile_id: null,
+        case_sensitive: entry.case_sensitive,
+        whole_word: entry.whole_word,
+      });
+    }
+    if (!additions.length) {
+      setNotice('All Embedded & Firmware glossary terms are already in this dictionary.');
+      return;
+    }
+    edit([...rules, ...additions]);
+    setNotice(
+      `Added ${additions.length} Embedded & Firmware terms to your draft. Save dictionary to apply.`,
+    );
+  };
+
+  const exportRulesJson = () => {
+    const payload = JSON.stringify(
+      {
+        version: 1,
+        rules: rules.map(({ source, replacement, case_sensitive, whole_word }) => ({
+          source,
+          replacement,
+          case_sensitive,
+          whole_word,
+        })),
+      },
+      null,
+      2,
+    );
+    const blob = new Blob([payload], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${project.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 80) || 'studio'}-pronunciation.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImportError('');
+    try {
+      const imported = parsePronunciationImport(await file.text(), operationId);
+      const existing = new Set(
+        rules.map((rule) => (rule.case_sensitive ? rule.source : rule.source.toLowerCase())),
+      );
+      const additions = imported.filter((rule) => {
+        const key = rule.case_sensitive ? rule.source : rule.source.toLowerCase();
+        return !existing.has(key);
+      });
+      const merged = [...rules, ...additions].slice(0, 200);
+      edit(merged);
+      setNotice(
+        `Imported ${merged.length - rules.length} new rules into your draft. Save dictionary to apply.`,
+      );
+    } catch (error) {
+      setImportError(errorMessage(error));
+    }
+  };
+
   const saveRules = async () => {
     if (invalid || conflict) return;
     const ok = await session.command('set_pronunciation_rules', { rules });
@@ -151,6 +237,74 @@ export function PronunciationPanel({
         Write spoken aliases for names, acronyms, and technical terms. Rules apply once, using the
         longest match; a voice rule wins a tie. The script keeps its original spelling.
       </p>
+      <div className="studio-action-row">
+        <StudioButton
+          disabled={disabled || conflict || rules.length >= 200}
+          onClick={mergeFirmwarePack}
+        >
+          Load Embedded &amp; Firmware pack
+        </StudioButton>
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          aria-label="Import pronunciation JSON"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (file) void handleImportFile(file);
+          }}
+        />
+        <StudioButton
+          disabled={disabled || conflict || rules.length >= 200}
+          onClick={() => importInputRef.current?.click()}
+        >
+          Import JSON
+        </StudioButton>
+        <StudioButton disabled={!rules.length} onClick={exportRulesJson}>
+          Export JSON
+        </StudioButton>
+      </div>
+      {importError && (
+        <p role="alert" className="studio-error">
+          {importError}
+        </p>
+      )}
+      {jargonSuggestions.length > 0 && (
+        <details className="studio-advanced">
+          <summary>Uncovered acronyms &amp; firmware terms ({jargonSuggestions.length})</summary>
+          <p className="studio-note">
+            Detected acronyms, hex literals, units, and identifiers in your script without a
+            pronunciation rule yet.
+          </p>
+          <ul>
+            {jargonSuggestions.slice(0, 25).map((item) => (
+              <li key={item.source}>
+                <strong>{item.source}</strong> ({item.count}×) → {item.suggested_replacement}{' '}
+                <StudioButton
+                  disabled={disabled || conflict || rules.length >= 200}
+                  onClick={() =>
+                    edit([
+                      ...rules,
+                      {
+                        id: operationId(),
+                        source: item.source,
+                        replacement: item.suggested_replacement,
+                        profile_id: null,
+                        case_sensitive: item.case_sensitive,
+                        whole_word: item.whole_word,
+                      },
+                    ])
+                  }
+                >
+                  + Add
+                </StudioButton>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {rules.map((rule, index) => (
         <fieldset key={rule.id} className="studio-take">
           <legend>Rule {index + 1}</legend>
