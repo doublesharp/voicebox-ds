@@ -7,6 +7,25 @@
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-22
+
+**Apple Silicon MLX upgrades, YouTube narration Studio workflows, and Recent Takes UX refresh.** Builds on Voicebox 0.6.0 and the DoubleSharp integration branch with native Apple Silicon MLX routing across Qwen CustomVoice, Qwen VoiceDesign, Chatterbox, Chatterbox Turbo, and Kokoro, a full YouTube narration pipeline in Studio (broadcast loudness, de-esser, YouTube Narration preset, music ducking, chapter markers, pronunciation packs, and YouTube-sized caption cues), redesigned Recent Takes cards, and broad stability, packaging, and localization fixes.
+
+### Apple Silicon & YouTube Studio workflows
+
+- **Native MLX routing for Qwen styles, Chatterbox Turbo, and Kokoro.** Apple Silicon hosts route Qwen CustomVoice, Qwen VoiceDesign, Chatterbox, Chatterbox Turbo, and Kokoro onto MLX with shared-thread safety, warm prompt/reference caching, and streaming chunk pacing.
+- **YouTube Narration mastering & effects.** Adds de-esser and broadcast loudness effects plus the built-in *YouTube Narration* preset, automatic voice-over music ducking in Studio renders, and cached source resampling across multi-clip mixes.
+- **Chapters, pronunciation rules, and YouTube captions.** Studio now extracts markdown chapter headings for export, scans scripts for technical jargon against importable pronunciation rule packs, and generates line-wrapped YouTube caption cues alongside recognized word-timed captions.
+
+### UI & UX
+
+- **Redesigned Recent Takes cards.** Replaces clipped resizable textareas and tall vertical action stacks in `HistoryTable` with full selectable transcript text, smooth 4-line clamping with Show more/Show less on long takes, and a compact horizontal metadata and action footer bar with version counts.
+- **Complete 9-language localization parity.** Syncs all missing translation keys across Spanish, French, Italian, Japanese, Korean, Brazilian Portuguese, Simplified Chinese, and Traditional Chinese, backed by an automated i18n parity test.
+
+### Stability, packaging & macOS
+
+- **Full-app hardening.** Adds AudioContext recovery for inline capture and loop playback, macOS Dock reopen handling, bounded upload checks, shared auxiliary HF repo retention on model deletion, and standalone Python `codesign` guards in `build-server.sh` and `release.yml`.
+
 ### Text-to-speech
 
 - **Design a voice from a written description.** The profile form gains a third source, "Describe a voice", next to clone-from-audio and built-in voice: write the voice you want ("a warm, gravelly older man with a slow Scottish lilt") and the profile is created as a `designed` voice backed by the new `qwen_voice_design` engine (Qwen3-TTS-12Hz-1.7B-VoiceDesign, 10 languages, local, Apache-2.0 weights). Designed profiles work everywhere a profile does: `/generate`, `/speak`, MCP `voicebox_speak`, stories, and dictation TTS. A per-generation instruct layers onto the description instead of replacing it. — @Lvigentini ([#1012](https://github.com/jamiepine/voicebox/pull/1012))
@@ -31,6 +50,8 @@
 ### Engines
 
 - **OmniVoice TTS engine (non-commercial).** Adds k2-fsa/OmniVoice as an opt-in eighth engine: zero-shot cloning and attribute-based voice design (gender, age, pitch, accent) across the 23 languages Voicebox already lists, 24 kHz output. Its `HiggsAudioV2` codec only exists in transformers 5.x, so the modelling code is vendored under `backend/vendor/` and grafted onto the pinned 4.57 at load time; `omnivoice` installs `--no-deps` like Chatterbox and TADA. The weights are CC-BY-NC, so the engine is labelled non-commercial in the engine picker and model manager and is never a default. — @pippo73 ([#1062](https://github.com/jamiepine/voicebox/pull/1062); fixes [#380](https://github.com/jamiepine/voicebox/issues/380), [#517](https://github.com/jamiepine/voicebox/issues/517), [#791](https://github.com/jamiepine/voicebox/issues/791))
+
+_Voicebox is free and open source, built with [Capy](https://capy.ai?utm_source=voicebox&utm_medium=changelog&utm_campaign=built-with-capy)._
 
 ## [0.6.0] - 2026-10-04
 
@@ -853,6 +874,9 @@ The first public release of Voicebox — an open-source voice synthesis studio p
 
 Tauri v2, React, TypeScript, Tailwind CSS, FastAPI, Qwen3-TTS, Whisper, SQLite
 
+[Unreleased]: https://github.com/doublesharp/voicebox-ds/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/doublesharp/voicebox-ds/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/jamiepine/voicebox/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jamiepine/voicebox/compare/v0.4.5...v0.5.0
 [0.4.5]: https://github.com/jamiepine/voicebox/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/jamiepine/voicebox/compare/v0.4.3...v0.4.4
