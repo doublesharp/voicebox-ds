@@ -13,6 +13,37 @@ export function splitScript(text: string) {
     .map((part) => part.trim())
     .filter(Boolean);
 }
+
+/**
+ * Splits pasted script text into passages while extracting optional Markdown
+ * chapter headings (`## Chapter Title`) onto the next spoken passage.
+ */
+export function splitScriptWithChapters(
+  text: string,
+): Array<{ text: string; chapter: string | null }> {
+  const blocks = splitScript(text);
+  const result: Array<{ text: string; chapter: string | null }> = [];
+  let pendingChapter: string | null = null;
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/);
+    const first = lines[0]?.trim() ?? '';
+    const headingMatch = /^#{1,3}\s+(.+?)\s*#*$/.exec(first);
+    if (headingMatch) {
+      const heading = headingMatch[1].trim().slice(0, 120);
+      const rest = lines.slice(1).join('\n').trim();
+      if (rest) {
+        result.push({ text: rest, chapter: heading || null });
+        pendingChapter = null;
+      } else {
+        pendingChapter = heading || null;
+      }
+      continue;
+    }
+    result.push({ text: block, chapter: pendingChapter });
+    pendingChapter = null;
+  }
+  return result;
+}
 export function toSamples(seconds: number, sampleRate = 48000) {
   return Math.round(seconds * sampleRate);
 }

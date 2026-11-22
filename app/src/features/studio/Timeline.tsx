@@ -391,7 +391,7 @@ export function Mixer() {
               <EffectsChainEditor
                 value={track.effects_chain ?? []}
                 compact
-                showPresets={false}
+                showPresets={true}
                 excludedTypes={['pitch_shift']}
                 commitParametersOnRelease
                 disabled={!canMutate}
@@ -407,6 +407,63 @@ export function Mixer() {
       ))}
       <div className="studio-divider" />
       <h3>Delivery mastering</h3>
+      <div className="studio-action-row">
+        <StudioButton
+          disabled={!canMutate}
+          onClick={() =>
+            void session.command('update_mix', {
+              normalize: true,
+              target_lufs: -14,
+              max_true_peak_dbtp: -1,
+              limiter: true,
+            })
+          }
+        >
+          YouTube preset (-14 LUFS / -1 dBTP)
+        </StudioButton>
+      </div>
+      <label className="studio-check">
+        <input
+          type="checkbox"
+          checked={mix.duck_music ?? false}
+          disabled={!canMutate}
+          onChange={(event) =>
+            void session.command('update_mix', { duck_music: event.target.checked })
+          }
+        />{' '}
+        Auto-duck music tracks under narration
+      </label>
+      {mix.duck_music && (
+        <div className="studio-numeric-grid">
+          <NumberField
+            label="Music duck depth (dB)"
+            min={-30}
+            max={0}
+            step={1}
+            value={mix.duck_db ?? -14}
+            disabled={!canMutate}
+            onCommit={(duck_db) => void session.command('update_mix', { duck_db })}
+          />
+          <NumberField
+            label="Duck attack (ms)"
+            min={5}
+            max={1000}
+            step={10}
+            value={mix.duck_attack_ms ?? 80}
+            disabled={!canMutate}
+            onCommit={(duck_attack_ms) => void session.command('update_mix', { duck_attack_ms })}
+          />
+          <NumberField
+            label="Duck release (ms)"
+            min={20}
+            max={3000}
+            step={25}
+            value={mix.duck_release_ms ?? 350}
+            disabled={!canMutate}
+            onCommit={(duck_release_ms) => void session.command('update_mix', { duck_release_ms })}
+          />
+        </div>
+      )}
       <NumberField
         label="Master gain (linear)"
         min={0}

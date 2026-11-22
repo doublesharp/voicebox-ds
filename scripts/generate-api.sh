@@ -3,30 +3,32 @@
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
 echo "Generating OpenAPI client..."
 
 # Check if backend is running
 if ! curl -s http://localhost:17493/openapi.json > /dev/null 2>&1; then
     echo "Backend not running. Starting backend..."
-    cd backend
     
     # Check if virtual environment exists
-    if [ ! -d "venv" ]; then
+    if [ ! -d "backend/venv" ]; then
         echo "Creating virtual environment..."
-        python -m venv venv
+        python -m venv backend/venv
     fi
     
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate 2>/dev/null
+    source backend/venv/bin/activate 2>/dev/null || source backend/venv/Scripts/activate 2>/dev/null
     
     # Install dependencies if needed
     if ! python -c "import fastapi" 2>/dev/null; then
         echo "Installing backend dependencies..."
-        pip install -r requirements.txt
+        pip install -r backend/requirements.txt
     fi
     
-    # Start backend in background
+    # Start backend in background from repo root so package-relative imports resolve.
     echo "Starting backend server..."
-    uvicorn main:app --port 17493 &  # Keep the generator on the app's documented local backend port.
+    uvicorn backend.main:app --port 17493 &  # Keep the generator on the app's documented local backend port.
     BACKEND_PID=$!
     
     # Wait for server to be ready

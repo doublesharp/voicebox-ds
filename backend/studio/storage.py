@@ -433,12 +433,28 @@ class StudioStore:
                     state[key] = payload[key]
         elif kind == "add_passages":
             texts = payload.get("texts")
+            chapters = payload.get("chapters")
             if not isinstance(texts, list) or not texts or any(not isinstance(t, str) or not t.strip() for t in texts):
                 raise ValueError("Passages require text")
+            if chapters is not None and (
+                not isinstance(chapters, list)
+                or len(chapters) != len(texts)
+                or any(
+                    c is not None and (not isinstance(c, str) or len(c.strip()) > 120 or "\n" in c or "\r" in c)
+                    for c in chapters
+                )
+            ):
+                raise ValueError("Invalid passage chapters")
             index = len(passages)
             if payload.get("after_id") is not None:
                 index = passages.index(find(passages, payload["after_id"])) + 1
-            passages[index:index] = [passage(t, doc["language"]) for t in texts]
+            created = []
+            for idx, text in enumerate(texts):
+                item = passage(text, doc["language"])
+                if chapters is not None and chapters[idx] and chapters[idx].strip():
+                    item["chapter"] = chapters[idx].strip()
+                created.append(item)
+            passages[index:index] = created
         elif kind == "update_passage":
             p = find(passages, payload.get("passage_id"))
             for key in ("text", "language"):
@@ -446,12 +462,22 @@ class StudioStore:
                     if not isinstance(payload[key], str) or not payload[key].strip():
                         raise ValueError(f"{key} is required")
                     p[key] = payload[key]
+            if "chapter" in payload:
+                ch = payload["chapter"]
+                if ch is None or (isinstance(ch, str) and not ch.strip()):
+                    p.pop("chapter", None)
+                elif not isinstance(ch, str) or len(ch.strip()) > 120 or "\n" in ch or "\r" in ch:
+                    raise ValueError("Invalid passage chapter")
+                else:
+                    p["chapter"] = ch.strip()
             if "direction" in payload:
                 direction = payload["direction"]
-                if not isinstance(direction, dict) or set(direction) - set(p["direction"]):
+                allowed_direction = set(p["direction"]) | {"speed"}
+                if not isinstance(direction, dict) or set(direction) - allowed_direction:
                     raise ValueError("Invalid direction")
                 p["direction"].update(direction)
                 d = p["direction"]
+                speed = d.get("speed", 1.0)
                 if (
                     not isinstance(d["instruct"], str)
                     or (d["seed"] is not None and (type(d["seed"]) is not int))
@@ -459,6 +485,8 @@ class StudioStore:
                     or d["max_chunk_chars"] <= 0
                     or type(d["crossfade_ms"]) is not int
                     or d["crossfade_ms"] < 0
+                    or not _finite(speed)
+                    or not 0.5 <= speed <= 2.0
                 ):
                     raise ValueError("Invalid direction")
             p["input_revision"] += 1
@@ -548,7 +576,17 @@ class StudioStore:
             from .processing import validate_chain
             validate_chain(track.get("effects_chain", []))
         elif kind == "update_mix":
-            for key in ("target_lufs", "max_true_peak_dbtp", "normalize", "master_gain", "limiter"):
+            for key in (
+                "target_lufs",
+                "max_true_peak_dbtp",
+                "normalize",
+                "master_gain",
+                "limiter",
+                "duck_music",
+                "duck_db",
+                "duck_attack_ms",
+                "duck_release_ms",
+            ):
                 if key in payload:
                     doc["mix"][key] = payload[key]
             m = doc["mix"]
@@ -558,6 +596,13 @@ class StudioStore:
                 or not _finite(m.get("master_gain", 1))
                 or not 0 <= m.get("master_gain", 1) <= 16
                 or type(m.get("limiter", False)) is not bool
+                or type(m.get("duck_music", False)) is not bool
+                or not _finite(m.get("duck_db", -14.0))
+                or not -30 <= m.get("duck_db", -14.0) <= 0
+                or not _finite(m.get("duck_attack_ms", 80.0))
+                or not 5 <= m.get("duck_attack_ms", 80.0) <= 1000
+                or not _finite(m.get("duck_release_ms", 350.0))
+                or not 20 <= m.get("duck_release_ms", 350.0) <= 3000
             ):
                 raise ValueError("Invalid mix")
         elif kind in ("update_clip", "duplicate_clip", "delete_clip", "split_clip"):

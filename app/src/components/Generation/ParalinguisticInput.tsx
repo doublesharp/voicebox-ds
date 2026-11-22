@@ -62,9 +62,12 @@ function textToHTML(text: string): string {
 }
 
 /** Serialize the contentEditable innerHTML back to plain text with [tag] syntax. */
-function htmlToText(container: HTMLElement): string {
+export function htmlToText(container: HTMLElement): string {
+  const blockTags = new Set(['DIV', 'P', 'LI']);
   let result = '';
-  for (const node of container.childNodes) {
+  const nodes = Array.from(container.childNodes);
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
     if (node.nodeType === Node.TEXT_NODE) {
       // Strip zero-width spaces we added around badges
       result += (node.textContent ?? '').replace(/\u200B/g, '');
@@ -74,8 +77,21 @@ function htmlToText(container: HTMLElement): string {
         result += el.getAttribute(BADGE_ATTR) ?? '';
       } else if (el.tagName === 'BR') {
         result += '\n';
+      } else if (blockTags.has(el.tagName)) {
+        if (i > 0) {
+          result += '\n';
+        }
+        // Browsers put a single <br> inside empty <div><br></div> lines on Enter;
+        // avoid emitting a double newline for that placeholder <br>.
+        const isOnlyPlaceholderBr =
+          el.childNodes.length === 1 &&
+          el.firstChild?.nodeType === Node.ELEMENT_NODE &&
+          (el.firstChild as HTMLElement).tagName === 'BR';
+        if (!isOnlyPlaceholderBr) {
+          result += htmlToText(el);
+        }
       } else {
-        // Recurse for nested elements (e.g. spans from paste)
+        // Recurse for nested inline elements (e.g. spans from paste)
         result += htmlToText(el);
       }
     }

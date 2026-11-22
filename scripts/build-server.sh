@@ -64,8 +64,9 @@ copy_sidecar() {
         fi
         cp -R "dist/${name}" "$bundle_dir"
         # PyInstaller re-signs Python's executable after rewriting its load
-        # paths. Refresh the enclosing framework's resource seal as well.
-        if [ "$(uname -s)" = "Darwin" ]; then
+        # paths. Refresh the enclosing framework's resource seal when built
+        # against a framework Python (standalone uv Python uses libpython dylib).
+        if [ "$(uname -s)" = "Darwin" ] && [ -d "$bundle_dir/_internal/Python.framework" ]; then
             codesign --force --deep --sign - --timestamp=none "$bundle_dir/_internal/Python.framework"
         fi
         cp "dist/${name}/${name}" "$sidecar"

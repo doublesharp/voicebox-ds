@@ -111,7 +111,9 @@ def _validate_profile_fields(
             return "Preset profiles must use their preset_engine as default_engine"
 
         available_voice_ids = _get_preset_voice_ids(preset_engine)
-        if available_voice_ids and preset_voice_id not in available_voice_ids:
+        if not available_voice_ids:
+            return f"Engine '{preset_engine}' does not support preset voices"
+        if preset_voice_id not in available_voice_ids:
             return f"Preset voice '{preset_voice_id}' is not valid for engine '{preset_engine}'"
         return None
 
@@ -328,7 +330,9 @@ async def get_profile(
     if not profile:
         return None
 
-    return _profile_to_response(profile)
+    generation_count = db.query(func.count(DBGeneration.id)).filter(DBGeneration.profile_id == profile.id).scalar() or 0
+    sample_count = db.query(func.count(DBProfileSample.id)).filter(DBProfileSample.profile_id == profile.id).scalar() or 0
+    return _profile_to_response(profile, generation_count=generation_count, sample_count=sample_count)
 
 
 def get_profile_orm_by_name_or_id(
@@ -438,7 +442,12 @@ async def update_profile(
     voice_type = getattr(profile, "voice_type", None) or "cloned"
     preset_engine = getattr(profile, "preset_engine", None)
     preset_voice_id = getattr(profile, "preset_voice_id", None)
-    design_prompt = getattr(profile, "design_prompt", None)
+    fields_set = getattr(data, "model_fields_set", set())
+    design_prompt = (
+        data.design_prompt
+        if voice_type == "designed" and "design_prompt" in fields_set and data.design_prompt is not None
+        else getattr(profile, "design_prompt", None)
+    )
     default_engine = data.default_engine if data.default_engine is not None else getattr(profile, "default_engine", None)
     # Designed profiles created before the design engine existed could carry
     # any default_engine; coerce rather than make the profile uneditable.
@@ -458,7 +467,11 @@ async def update_profile(
     profile.name = data.name
     profile.description = data.description
     profile.language = data.language
-    profile.personality = data.personality
+    if "personality" in fields_set:
+        profile.personality = data.personality
+    if voice_type == "designed":
+        profile.design_prompt = design_prompt
+        profile.default_engine = default_engine
     if data.default_engine is not None:
         profile.default_engine = data.default_engine or None  # empty string → NULL
     if voice_type == "designed":
@@ -468,7 +481,9 @@ async def update_profile(
     db.commit()
     db.refresh(profile)
 
-    return _profile_to_response(profile)
+    generation_count = db.query(func.count(DBGeneration.id)).filter(DBGeneration.profile_id == profile.id).scalar() or 0
+    sample_count = db.query(func.count(DBProfileSample.id)).filter(DBProfileSample.profile_id == profile.id).scalar() or 0
+    return _profile_to_response(profile, generation_count=generation_count, sample_count=sample_count)
 
 
 async def delete_profile(

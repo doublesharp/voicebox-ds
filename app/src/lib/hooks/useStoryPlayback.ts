@@ -285,7 +285,7 @@ export function useStoryPlayback(items: StoryItemDetail[] | undefined) {
           // Keep the clock still while the first window loads or fails.
           await Promise.allSettled(leases.map((lease) => lease.promise));
           if (stale()) return;
-          if (context.state === 'suspended') await context.resume();
+          if (context.state !== 'running') await context.resume();
           if (stale()) return;
           session.anchorContextTime = context.currentTime + START_LEAD_SECONDS;
           const total = Math.max(0, ...session.items.map(endTime));

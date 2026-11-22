@@ -36,10 +36,13 @@ def release_generation_memory(tts_model) -> None:
     cleanup failure (e.g. a poisoned CUDA context) must not replace the
     generation's own result or error.
     """
-    from ..backends.base import empty_device_cache
+    from ..backends.base import empty_device_cache, empty_mlx_cache
 
     try:
-        empty_device_cache(getattr(tts_model, "device", "cpu"))
+        device = getattr(tts_model, "device", None) or getattr(tts_model, "_device", None) or "cpu"
+        empty_device_cache(device)
+        if tts_model is not None and "mlx" in type(tts_model).__module__.lower():
+            empty_mlx_cache()
     except Exception as e:
         logging.getLogger(__name__).debug("post-generation cache cleanup failed: %s", e)
 

@@ -237,8 +237,8 @@ async def migrate_models(request: models.ModelMigrateRequest):
                     dest_item = destination / item.name
                     try:
                         if dest_item.exists():
-                            shutil.rmtree(dest_item)
-                        shutil.move(str(item), str(dest_item))
+                            await asyncio.to_thread(shutil.rmtree, dest_item)
+                        await asyncio.to_thread(shutil.move, str(item), str(dest_item))
                         moved += 1
                         progress_manager.update_progress(
                             "migration",
@@ -250,7 +250,7 @@ async def migrate_models(request: models.ModelMigrateRequest):
                     except Exception as e:
                         errors.append(f"{item.name}: {str(e)}")
             else:
-                total_bytes = sum(_get_dir_size(d) for d in model_dirs)
+                total_bytes = await asyncio.to_thread(lambda: sum(_get_dir_size(d) for d in model_dirs))
                 progress_manager.update_progress(
                     "migration", 0, total_bytes, filename="Calculating...", status="downloading"
                 )
@@ -260,7 +260,7 @@ async def migrate_models(request: models.ModelMigrateRequest):
                     dest_item = destination / item.name
                     try:
                         if dest_item.exists():
-                            shutil.rmtree(dest_item)
+                            await asyncio.to_thread(shutil.rmtree, dest_item)
                         copied = await asyncio.to_thread(
                             _copy_with_progress, item, dest_item, progress_manager, copied, total_bytes
                         )
@@ -269,8 +269,13 @@ async def migrate_models(request: models.ModelMigrateRequest):
                     except Exception as e:
                         errors.append(f"{item.name}: {str(e)}")
 
-            progress_manager.update_progress("migration", 1, 1, status="complete")
-            progress_manager.mark_complete("migration")
+            if errors:
+                error_msg = "; ".join(errors)
+                progress_manager.update_progress("migration", 0, 0, status="error")
+                progress_manager.mark_error("migration", f"Migration failed for {len(errors)} model(s): {error_msg}")
+            else:
+                progress_manager.update_progress("migration", 1, 1, status="complete")
+                progress_manager.mark_complete("migration")
         except Exception as e:
             progress_manager.update_progress("migration", 0, 0, status="error")
             progress_manager.mark_error("migration", str(e))
@@ -318,7 +323,7 @@ def _scan_model_inventory(configurations):
         pass
 
     result = {}
-    extensions = (".safetensors", ".bin", ".pt", ".pth", ".npz")
+    extensions = (".safetensors", ".bin", ".pt", ".pth", ".npz", ".onnx")
     for configuration in configurations:
         downloaded, size_mb = False, None
         try:
@@ -467,11 +472,18 @@ async def delete_model(model_name: str):
     """Delete a downloaded model from the HuggingFace cache."""
     from huggingface_hub import constants as hf_constants
 
-    from ..backends import get_model_config, unload_model_by_config
+    from ..backends import get_all_model_configs, get_model_config, unload_model_by_config
 
     config = get_model_config(model_name)
     if not config:
         raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
+
+    task_manager = get_task_manager()
+    if task_manager.is_download_active(model_name):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete {model_name} while a download is in progress",
+        )
 
     hf_repo_id = config.hf_repo_id
     model_inventory.invalidate()
@@ -479,16 +491,28 @@ async def delete_model(model_name: str):
     try:
         unload_model_by_config(config)
 
-        cache_dir = hf_constants.HF_HUB_CACHE
-        repo_cache_dir = Path(cache_dir) / ("models--" + hf_repo_id.replace("/", "--"))
+        cache_dir = Path(hf_constants.HF_HUB_CACHE)
+        repo_cache_dir = cache_dir / ("models--" + hf_repo_id.replace("/", "--"))
 
         if not repo_cache_dir.exists():
             raise HTTPException(status_code=404, detail=f"Model {model_name} not found in cache")
 
+        # Keep shared auxiliary repos (e.g. mlx-community/S3TokenizerV2 or
+        # HumeAI/tada-codec) if another still-cached model depends on them.
+        retained_aux_repos: set[str] = set()
+        for other in get_all_model_configs():
+            if other.model_name == config.model_name or not other.aux_hf_repo_ids:
+                continue
+            other_cache = cache_dir / ("models--" + other.hf_repo_id.replace("/", "--"))
+            if other_cache.exists():
+                retained_aux_repos.update(other.aux_hf_repo_ids)
+
         try:
             shutil.rmtree(repo_cache_dir)
             for aux_repo_id in config.aux_hf_repo_ids:
-                aux_cache_dir = Path(cache_dir) / ("models--" + aux_repo_id.replace("/", "--"))
+                if aux_repo_id in retained_aux_repos:
+                    continue
+                aux_cache_dir = cache_dir / ("models--" + aux_repo_id.replace("/", "--"))
                 if aux_cache_dir.exists():
                     shutil.rmtree(aux_cache_dir)
         except OSError as e:

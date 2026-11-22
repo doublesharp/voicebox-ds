@@ -7,6 +7,7 @@ import {
   type CaptionDocument,
   type CaptionStatus,
   CaptionsClient,
+  type ChaptersResponse,
   type ReferenceVideo,
 } from './captions-client';
 import { useStudio, useStudioPlayhead } from './context';
@@ -44,6 +45,8 @@ export function CaptionsPanel() {
     setReviewedSource(value ? (status?.source_fingerprint ?? null) : null);
   const [error, setError] = useState('');
   const [publication, setPublication] = useState('');
+  const [chaptersData, setChaptersData] = useState<ChaptersResponse | null>(null);
+  const [chaptersNote, setChaptersNote] = useState('');
   const [videoUrl, setVideoUrl] = useState('');
   const [videoName, setVideoName] = useState('');
   const [videoError, setVideoError] = useState('');
@@ -446,6 +449,38 @@ export function CaptionsPanel() {
           Build caption estimates
         </StudioButton>
         <StudioButton
+          disabled={disabled || dirty}
+          onClick={() =>
+            void studio.runAction(() =>
+              session.command('estimate_captions', {
+                split_cues: true,
+                max_chars_per_line: 42,
+                max_lines: 2,
+              }),
+            )
+          }
+        >
+          Build YouTube cues (42-char)
+        </StudioButton>
+        <StudioButton
+          disabled={disabled || dirty || !document.clips.length}
+          onClick={() =>
+            void studio.runAction(async () => {
+              setError('');
+              setPublication('');
+              const aligned = await transport.align(project.id, {
+                maxCharsPerLine: 42,
+                maxLines: 2,
+              });
+              setCues(aligned.captions.cues);
+              setReviewed(false);
+              setPublication(aligned.note);
+            })
+          }
+        >
+          Align with Whisper
+        </StudioButton>
+        <StudioButton
           disabled={disabled}
           onClick={() => {
             setCues((items) => [
@@ -560,6 +595,96 @@ export function CaptionsPanel() {
         </StudioButton>
       </div>
       {publication && <output aria-live="polite">{publication}</output>}
+      <details
+        className="studio-advanced"
+        onToggle={(event) => {
+          if (!event.currentTarget.open) return;
+          setChaptersNote('');
+          void transport
+            .chapters(project.id)
+            .then((result) => setChaptersData(result))
+            .catch((reason) => setChaptersNote(errorMessage(reason)));
+        }}
+      >
+        <summary>YouTube chapters &amp; NLE markers</summary>
+        <p className="studio-note">
+          Generated from placed timeline clips and optional passage chapter headings. Use{' '}
+          <code>## Chapter Name</code> when pasting a script or set a chapter title on any passage.
+        </p>
+        <div className="studio-action-row">
+          <StudioButton
+            disabled={studio.actionBusy}
+            onClick={() =>
+              void studio.runAction(async () => {
+                const result = await transport.chapters(project.id);
+                setChaptersData(result);
+                setChaptersNote(
+                  result.chapters.length
+                    ? `Loaded ${result.chapters.length} chapter markers.`
+                    : 'Place narration clips on the timeline to build chapters.',
+                );
+              })
+            }
+          >
+            Refresh chapters
+          </StudioButton>
+          <StudioButton
+            disabled={!chaptersData?.youtube_text}
+            onClick={() => {
+              if (!chaptersData?.youtube_text) return;
+              void navigator.clipboard?.writeText(chaptersData.youtube_text);
+              setChaptersNote('Copied YouTube chapters to clipboard.');
+            }}
+          >
+            Copy YouTube chapters
+          </StudioButton>
+          {(['youtube', 'fcpxml', 'csv'] as const).map((fmt) => {
+            const label =
+              fmt === 'youtube'
+                ? 'Export Chapters (.txt)'
+                : fmt === 'fcpxml'
+                  ? 'Export FCPXML'
+                  : 'Export Resolve CSV';
+            const ext = fmt === 'youtube' ? 'txt' : fmt;
+            return (
+              <StudioButton
+                key={fmt}
+                disabled={studio.actionBusy || !document.clips.length}
+                onClick={() =>
+                  void studio.runAction(async () => {
+                    const safe =
+                      project.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(0, 100) || 'studio';
+                    const url = transport.chaptersExportUrl(project.id, fmt);
+                    const filters = [{ name: label, extensions: [ext] }];
+                    const result = platform.filesystem.saveFromUrl
+                      ? await platform.filesystem.saveFromUrl(
+                          `${safe}-markers.${ext}`,
+                          url,
+                          filters,
+                        )
+                      : await platform.filesystem.saveFile(
+                          `${safe}-markers.${ext}`,
+                          await client.download(url),
+                          filters,
+                        );
+                    setChaptersNote(
+                      result?.status === 'saved'
+                        ? `${label} saved.`
+                        : result?.status === 'cancelled'
+                          ? 'Save cancelled.'
+                          : `${label} requested.`,
+                    );
+                  })
+                }
+              >
+                {label}
+              </StudioButton>
+            );
+          })}
+        </div>
+        {chaptersData?.youtube_text && <pre>{chaptersData.youtube_text}</pre>}
+        {chaptersNote && <p className="studio-note">{chaptersNote}</p>}
+      </details>
     </section>
   );
 }

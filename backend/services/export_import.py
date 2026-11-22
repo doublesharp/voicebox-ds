@@ -214,14 +214,18 @@ async def import_profile_from_zip(file_bytes: bytes, db: Session) -> VoiceProfil
                 try:
                     import tempfile
                     avatar_file = avatar_files[0]
-                    with tempfile.NamedTemporaryFile(suffix=Path(avatar_file).suffix, delete=False) as tmp:
-                        tmp.write(zip_file.read(avatar_file))
-                        tmp_path = tmp.name
-                    try:
-                        from .profiles import upload_avatar
-                        await upload_avatar(profile.id, tmp_path, db)
-                    finally:
-                        Path(tmp_path).unlink(missing_ok=True)
+                    info = zip_file.getinfo(avatar_file)
+                    if info.file_size <= 10 * 1024 * 1024:
+                        with tempfile.NamedTemporaryFile(suffix=Path(avatar_file).suffix, delete=False) as tmp:
+                            tmp.write(zip_file.read(avatar_file))
+                            tmp_path = tmp.name
+                        try:
+                            from .profiles import upload_avatar
+                            updated_profile = await upload_avatar(profile.id, tmp_path, db)
+                            if updated_profile is not None:
+                                profile = updated_profile
+                        finally:
+                            Path(tmp_path).unlink(missing_ok=True)
                 except Exception:
                     pass
 
@@ -377,7 +381,11 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                     raise ValueError(f"Invalid manifest.json: missing generation.{field}")
             
             # Find audio file in archive
-            audio_files = [f for f in namelist if f.startswith("audio/") and f.endswith(".wav")]
+            supported_audio_exts = (".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".webm")
+            audio_files = [
+                f for f in namelist
+                if f.startswith("audio/") and Path(f).suffix.lower() in supported_audio_exts
+            ]
             if not audio_files:
                 raise ValueError("No audio file found in ZIP archive")
             
@@ -390,6 +398,10 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                 audio_file_path = f"audio/{default_version.get('filename', '')}"
                 if audio_file_path not in audio_files:
                     raise ValueError(f"Default version audio not found in ZIP: {audio_file_path}")
+
+            audio_info = zip_file.getinfo(audio_file_path)
+            if audio_info.file_size > 250 * 1024 * 1024:
+                raise ValueError("Audio file in ZIP exceeds 250 MB safety limit")
             
             # Check if we should match an existing profile or create metadata
             profile_id = None
@@ -412,9 +424,10 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                     raise ValueError("No voice profiles found. Please create a profile before importing generations.")
             
             # Extract audio file to temporary location
+            audio_suffix = Path(audio_file_path).suffix.lower() or ".wav"
             tmp_path = None
             try:
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                with tempfile.NamedTemporaryFile(suffix=audio_suffix, delete=False) as tmp:
                     tmp_path = tmp.name
                     tmp.write(zip_file.read(audio_file_path))
                 # Create generations directory
@@ -425,7 +438,8 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                 new_generation_id = str(__import__('uuid').uuid4())
                 
                 # Copy audio to generations directory
-                audio_dest = generations_dir / f"{new_generation_id}.wav"
+                audio_dest = generations_dir / f"{new_generation_id}{audio_suffix}"
+                stored_audio_path = config.to_storage_path(audio_dest)
                 try:
                     shutil.copy(tmp_path, audio_dest)
                     db_generation = DBGeneration(
@@ -433,14 +447,27 @@ async def import_generation_from_zip(file_bytes: bytes, db: Session) -> dict:
                         profile_id=profile_id,
                         text=generation_data["text"],
                         language=generation_data["language"],
-                        audio_path=config.to_storage_path(audio_dest),
+                        audio_path=stored_audio_path,
                         duration=generation_data["duration"],
                         seed=generation_data.get("seed"),
                         instruct=generation_data.get("instruct"),
+                        engine=generation_data.get("engine") or "qwen",
+                        model_size=generation_data.get("model_size"),
+                        source=generation_data.get("source") or "import",
                         created_at=datetime.now(UTC),
                     )
                     db.add(db_generation)
                     db.commit()
+                    from . import versions as versions_mod
+
+                    versions_mod.create_version(
+                        generation_id=new_generation_id,
+                        label="original",
+                        audio_path=stored_audio_path,
+                        db=db,
+                        effects_chain=None,
+                        is_default=True,
+                    )
                 except BaseException:
                     db.rollback()
                     audio_dest.unlink(missing_ok=True)

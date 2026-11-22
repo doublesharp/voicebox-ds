@@ -138,9 +138,9 @@ pub fn send_paste() -> Result<(), String> {
                 ));
             }
             let guard = scopeguard::guard(event, |e| CFRelease(e as *const c_void));
-            if flags != 0 {
-                CGEventSetFlags(event, flags);
-            }
+            // Always set flags explicitly (including 0 on Cmd-up) so the event
+            // does not inherit live HID modifier bits from the system source.
+            CGEventSetFlags(event, flags);
             created.push(event);
             guards.push(guard);
         }

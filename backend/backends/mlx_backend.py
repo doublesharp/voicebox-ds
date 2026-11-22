@@ -7,6 +7,7 @@ import asyncio
 import logging
 import numpy as np
 from pathlib import Path
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,12 @@ class MLXTTSBackend:
         # so a concurrent request for a different model_size can't swap self.model
         # out from under an in-flight request between its load and its inference.
         self._op_lock = asyncio.Lock()
+        # Bounded in-memory cache of decoded reference waveforms / encoded voice
+        # prompts keyed by (model_size, path, mtime_ns, size, ref_text) so long
+        # scripts and multi-take batches don't re-read & resample ref_audio on
+        # every chunk. Cleared on unload_model().
+        self._ref_audio_cache: OrderedDict[tuple, object] = OrderedDict()
+        self._max_ref_cache_entries = 16
 
     def is_loaded(self) -> bool:
         """Check if model is loaded."""
@@ -154,12 +161,43 @@ class MLXTTSBackend:
         self._unload_model_sync()
 
     def _unload_model_sync(self):
+        self._ref_audio_cache.clear()
         if self.model is not None:
             del self.model
             self.model = None
             self._current_model_size = None
             empty_mlx_cache()
             logger.info("MLX TTS model unloaded")
+
+    def _resolve_cached_ref_audio(self, model, ref_audio: str, ref_text: str):
+        """Return a cached decoded mx.array reference waveform when supported.
+
+        Avoids re-reading and resampling the reference WAV from disk on every
+        chunk/take of a long narration script. Falls back to the file path if
+        the loaded model or runtime cannot consume an array directly.
+        """
+        path = Path(ref_audio)
+        try:
+            stat = path.stat()
+        except OSError:
+            return ref_audio
+        target_sr = int(getattr(model, "sample_rate", 24000) or 24000)
+        cache_key = (self._current_model_size or self.model_size, str(path), stat.st_mtime_ns, stat.st_size, target_sr)
+        if cache_key in self._ref_audio_cache:
+            self._ref_audio_cache.move_to_end(cache_key)
+            return self._ref_audio_cache[cache_key]
+        try:
+            import mlx.core as mx
+            from ..utils.audio import load_audio
+
+            samples, _ = load_audio(str(path), sample_rate=target_sr, mono=True)
+            cached = mx.array(np.asarray(samples, dtype=np.float32))
+        except Exception:
+            return ref_audio
+        self._ref_audio_cache[cache_key] = cached
+        while len(self._ref_audio_cache) > self._max_ref_cache_entries:
+            self._ref_audio_cache.popitem(last=False)
+        return cached
 
     async def create_voice_prompt(
         self,
@@ -272,10 +310,21 @@ class MLXTTSBackend:
                             parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in sig.parameters.values()
                         )
                         if accepts_reference:
-                            # Generate with voice cloning
-                            for result in model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang):
-                                audio_chunks.append(np.array(result.audio))
-                                sample_rate = result.sample_rate
+                            # Reuse cached decoded reference waveform across chunks/takes;
+                            # fall back cleanly to the file path if an mlx-audio version
+                            # expects a path-like ref_audio.
+                            cached_ref = self._resolve_cached_ref_audio(model, ref_audio, ref_text)
+                            try:
+                                for result in model.generate(text, ref_audio=cached_ref, ref_text=ref_text, lang_code=lang):
+                                    audio_chunks.append(np.array(result.audio))
+                                    sample_rate = result.sample_rate
+                            except (TypeError, ValueError, AttributeError):
+                                if cached_ref is ref_audio:
+                                    raise
+                                audio_chunks.clear()
+                                for result in model.generate(text, ref_audio=ref_audio, ref_text=ref_text, lang_code=lang):
+                                    audio_chunks.append(np.array(result.audio))
+                                    sample_rate = result.sample_rate
                         else:
                             raise VoiceCloningError(
                                 "This model does not support voice references. Select a voice-cloning model."

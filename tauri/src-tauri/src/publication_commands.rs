@@ -108,6 +108,8 @@ pub async fn publish_file_url(
             }
             let client = reqwest::blocking::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(300))
                 .build()
                 .map_err(|e| e.to_string())?;
             let response = client

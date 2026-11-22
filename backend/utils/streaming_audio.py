@@ -111,15 +111,40 @@ async def serialized_byte_stream(
             except TimeoutError:
                 continue
 
+    def _deliver_terminal(item: Exception | None) -> None:
+        if consumer_closed:
+            return
+        while queue.full():
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        try:
+            queue.put_nowait(item)
+        except asyncio.QueueFull:
+            pass
+
     async def drive() -> None:
         try:
             await run_serialized_inference(lambda: operation(send))
         except Exception as error:
-            if not consumer_closed:
-                await queue.put(error)
+            _deliver_terminal(error)
         finally:
-            if not consumer_closed:
-                await queue.put(None)
+            if not consumer_closed and not queue.full():
+                queue.put_nowait(None)
+            elif not consumer_closed:
+                # Preserve any terminal error already queued ahead of None.
+                queued_items: list[bytes | Exception | None] = []
+                while not queue.empty():
+                    try:
+                        queued_items.append(queue.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+                terminal = next((v for v in queued_items if isinstance(v, Exception)), None)
+                if terminal is not None:
+                    queue.put_nowait(terminal)
+                else:
+                    queue.put_nowait(None)
 
     producer = asyncio.create_task(drive())
     try:

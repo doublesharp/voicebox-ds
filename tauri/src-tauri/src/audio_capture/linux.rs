@@ -284,13 +284,12 @@ pub async fn start_capture(
         eprintln!("Linux audio capture: Stream stopped");
     });
 
-    // Spawn timeout task
-    let stop_tx_clone = state.stop_tx.clone();
+    // Spawn timeout task tied to this capture session's stop sender.
+    let timeout_tx = state.stop_tx.lock().unwrap().clone();
     tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_secs(max_duration_secs as u64)).await;
-        let tx = stop_tx_clone.lock().unwrap().take();
-        if let Some(tx) = tx {
-            let _ = tx.send(()).await;
+        if let Some(tx) = timeout_tx {
+            let _ = tx.try_send(());
         }
     });
 
@@ -300,7 +299,7 @@ pub async fn start_capture(
 pub async fn stop_capture(state: &AudioCaptureState) -> Result<String, String> {
     // Signal stop
     if let Some(tx) = state.stop_tx.lock().unwrap().take() {
-        let _ = tx.send(());
+        let _ = tx.try_send(());
     }
 
     // Wait a bit for capture to stop
@@ -311,8 +310,8 @@ pub async fn stop_capture(state: &AudioCaptureState) -> Result<String, String> {
         return Err(error.clone());
     }
 
-    // Get samples
-    let samples = state.samples.lock().unwrap().clone();
+    // Drain samples without duplicating the buffer
+    let samples = std::mem::take(&mut *state.samples.lock().unwrap());
     let sample_rate = *state.sample_rate.lock().unwrap();
     let channels = *state.channels.lock().unwrap();
 

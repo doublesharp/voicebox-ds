@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import copy_metadata
 
 datas = []
 binaries = []
-hiddenimports = ['backend', 'backend.main', 'backend.config', 'backend.database', 'backend.models', 'backend.services.profiles', 'backend.services.history', 'backend.services.tts', 'backend.services.transcribe', 'backend.utils.platform_detect', 'backend.backends', 'backend.backends.pytorch_backend', 'backend.backends.qwen_custom_voice_backend', 'backend.backends.qwen_voice_design_backend', 'backend.utils.audio', 'backend.utils.cache', 'backend.utils.progress', 'backend.utils.hf_progress', 'backend.services.cuda', 'backend.services.effects', 'backend.utils.effects', 'backend.services.versions', 'pedalboard', 'chatterbox', 'chatterbox.tts_turbo', 'chatterbox.mtl_tts', 'backend.backends.chatterbox_backend', 'backend.backends.chatterbox_turbo_backend', 'backend.backends.luxtts_backend', 'zipvoice', 'zipvoice.luxvoice', 'torch', 'transformers', 'fastapi', 'uvicorn', 'sqlalchemy', 'soundfile', 'qwen_tts', 'qwen_tts.inference', 'qwen_tts.inference.qwen3_tts_model', 'qwen_tts.inference.qwen3_tts_tokenizer', 'qwen_tts.core', 'qwen_tts.cli', 'requests', 'pkg_resources.extern', 'backend.backends.hume_backend', 'tada', 'tada.modules', 'tada.modules.tada', 'tada.modules.encoder', 'tada.modules.decoder', 'tada.modules.aligner', 'tada.modules.acoustic_spkr_verf', 'tada.nn', 'tada.nn.vibevoice', 'tada.utils', 'tada.utils.gray_code', 'tada.utils.text', 'backend.utils.dac_shim', 'torchaudio', 'backend.backends.kokoro_backend', 'en_core_web_sm', 'loguru', 'backend.mcp_server', 'backend.mcp_server.server', 'backend.mcp_server.tools', 'backend.mcp_server.context', 'backend.mcp_server.resolve', 'backend.mcp_server.events', 'sse_starlette', 'backend.backends.mlx_backend', 'mlx', 'mlx.core', 'mlx.nn', 'mlx_audio', 'mlx_audio.tts', 'mlx_audio.stt', 'mlx_lm', 'backend.backends.qwen_llm_backend', 'backend.backends.chatterbox_mlx_backend', 'backend.backends.omnivoice_backend', 'backend.utils.transformers5_compat', 'omnivoice', 'omnivoice.models.omnivoice', 'omnivoice.utils.audio', 'omnivoice.utils.text', 'omnivoice.utils.voice_design', 'omnivoice.utils.duration', 'omnivoice.utils.lang_map', 'pydub']
+hiddenimports = ['backend', 'backend.main', 'backend.config', 'backend.database', 'backend.models', 'backend.services.profiles', 'backend.services.history', 'backend.services.tts', 'backend.services.transcribe', 'backend.utils.platform_detect', 'backend.backends', 'backend.backends.pytorch_backend', 'backend.backends.qwen_custom_voice_backend', 'backend.backends.qwen_voice_design_backend', 'backend.backends.qwen_llm_backend', 'backend.backends.openai_compat_backend', 'scipy.signal', 'backend.utils.audio', 'backend.utils.cache', 'backend.utils.progress', 'backend.utils.hf_progress', 'backend.services.cuda', 'backend.services.effects', 'backend.utils.effects', 'backend.services.versions', 'pedalboard', 'chatterbox', 'chatterbox.tts_turbo', 'chatterbox.mtl_tts', 'backend.backends.chatterbox_backend', 'backend.backends.chatterbox_turbo_backend', 'backend.backends.luxtts_backend', 'zipvoice', 'zipvoice.luxvoice', 'torch', 'transformers', 'fastapi', 'uvicorn', 'sqlalchemy', 'soundfile', 'qwen_tts', 'qwen_tts.inference', 'qwen_tts.inference.qwen3_tts_model', 'qwen_tts.inference.qwen3_tts_tokenizer', 'qwen_tts.core', 'qwen_tts.cli', 'requests', 'pkg_resources.extern', 'backend.backends.hume_backend', 'tada', 'tada.modules', 'tada.modules.tada', 'tada.modules.encoder', 'tada.modules.decoder', 'tada.modules.aligner', 'tada.modules.acoustic_spkr_verf', 'tada.nn', 'tada.nn.vibevoice', 'tada.utils', 'tada.utils.gray_code', 'tada.utils.text', 'backend.utils.dac_shim', 'torchaudio', 'backend.backends.omnivoice_backend', 'backend.utils.transformers5_compat', 'omnivoice', 'omnivoice.models.omnivoice', 'omnivoice.utils.audio', 'omnivoice.utils.text', 'omnivoice.utils.voice_design', 'omnivoice.utils.duration', 'omnivoice.utils.lang_map', 'pydub', 'backend.backends.kokoro_backend', 'en_core_web_sm', 'loguru', 'backend.mcp_server', 'backend.mcp_server.server', 'backend.mcp_server.tools', 'backend.mcp_server.context', 'backend.mcp_server.resolve', 'backend.mcp_server.events', 'sse_starlette', 'backend.backends.mlx_backend', 'backend.backends.qwen_mlx_variants', 'miniaudio', 'mlx', 'mlx.core', 'mlx.nn', 'mlx_audio', 'mlx_audio.tts', 'mlx_audio.stt', 'mlx_lm', 'backend.backends.qwen_llm_backend', 'backend.backends.chatterbox_mlx_backend']
 datas += copy_metadata('qwen-tts')
 datas += copy_metadata('requests')
 datas += copy_metadata('transformers')
@@ -15,6 +15,17 @@ datas += copy_metadata('safetensors')
 datas += copy_metadata('tqdm')
 datas += copy_metadata('omnivoice')
 datas += copy_metadata('en_core_web_sm')
+datas += copy_metadata('torch')
+datas += copy_metadata('torchaudio')
+datas += copy_metadata('numpy')
+datas += copy_metadata('chatterbox-tts')
+datas += copy_metadata('hume-tada')
+datas += copy_metadata('mlx')
+datas += copy_metadata('mlx-audio')
+datas += copy_metadata('kokoro')
+datas += copy_metadata('misaki')
+datas += copy_metadata('Zipvoice')
+hiddenimports += collect_submodules('backend.studio')
 hiddenimports += collect_submodules('jaraco')
 hiddenimports += collect_submodules('tada')
 hiddenimports += collect_submodules('backend.vendor')
@@ -83,20 +94,26 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='voicebox-server',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='voicebox-server',
 )

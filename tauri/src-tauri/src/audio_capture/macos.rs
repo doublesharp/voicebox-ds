@@ -25,6 +25,14 @@ pub async fn start_capture(
         return Err("System audio capture requires macOS 12.3 or newer.".to_string());
     }
 
+    // Stop any previous stream before replacing state so streams cannot leak or overlap.
+    if let Some(tx) = state.stop_tx.lock().unwrap().take() {
+        let _ = tx.try_send(());
+    }
+    if let Some(prev_stream) = state.stream.lock().unwrap().take() {
+        let _ = prev_stream.stop_capture();
+    }
+
     // Reset previous samples
     state.reset();
 
@@ -94,32 +102,38 @@ pub async fn start_capture(
     // Add output handler for audio (order: handler, then output_type)
     stream.add_output_handler(handler, SCStreamOutputType::Audio);
 
+    // Start capture before storing in state so a failed start leaves no stale stream.
+    stream
+        .start_capture()
+        .map_err(|e| {
+            let _ = state.stop_tx.lock().unwrap().take();
+            format!("Failed to start capture: {}", e)
+        })?;
+
     // Store stream reference
     *state.stream.lock().unwrap() = Some(stream.clone());
 
-    stream.start_capture().map_err(|e| format!("Failed to start capture: {}", e))?;
-
-    // Spawn task to stop after max duration
+    // Spawn task to stop after max duration; manual stop owns stop_capture directly.
     let stream_clone = stream.clone();
     tokio::spawn(async move {
         tokio::select! {
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(max_duration_secs as u64)) => {
                 // Timeout reached
+                let _ = stream_clone.stop_capture();
             }
             _ = rx.recv() => {
-                // Manual stop
+                // Manual stop already stops the stream in stop_capture()
             }
         }
-        let _ = stream_clone.stop_capture();
     });
 
     Ok(())
 }
 
 pub async fn stop_capture(state: &AudioCaptureState) -> Result<String, String> {
-    // Signal stop
+    // Signal timeout task to exit without calling stop_capture a second time.
     if let Some(tx) = state.stop_tx.lock().unwrap().take() {
-        let _ = tx.send(());
+        let _ = tx.try_send(());
     }
 
     // Stop stream if still active
@@ -130,8 +144,8 @@ pub async fn stop_capture(state: &AudioCaptureState) -> Result<String, String> {
     // Wait a bit for capture to stop
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-    // Get samples
-    let samples = state.samples.lock().unwrap().clone();
+    // Drain samples without duplicating the buffer
+    let samples = std::mem::take(&mut *state.samples.lock().unwrap());
     let sample_rate = *state.sample_rate.lock().unwrap();
     let channels = *state.channels.lock().unwrap();
 

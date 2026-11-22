@@ -79,6 +79,10 @@ class HumeTadaBackend:
         # and large vocab lm_head (>65536 output channels)
         return get_torch_device(force_cpu_on_mac=True, allow_xpu=True)
 
+    @property
+    def device(self) -> str:
+        return self._device or "cpu"
+
     def is_loaded(self) -> bool:
         return self.model is not None
 
@@ -107,7 +111,7 @@ class HumeTadaBackend:
 
     def _load_model_sync(self, model_size: str = "1B"):
         """Synchronous model loading with progress tracking."""
-        model_name = f"tada-{model_size.lower()}"
+        model_name = "tada-3b-ml" if model_size == "3B" else f"tada-{model_size.lower()}"
         is_cached = self._is_model_cached(model_size)
         repo = TADA_MODEL_REPOS.get(model_size, TADA_1B_REPO)
 
@@ -350,10 +354,11 @@ class HumeTadaBackend:
 
             logger.info(f"[TADA] Generating ({language}), text length: {len(text)}")
 
-            output = self.model.generate(
-                prompt=prompt,
-                text=text,
-            )
+            with torch.inference_mode():
+                output = self.model.generate(
+                    prompt=prompt,
+                    text=text,
+                )
 
             # output.audio is a list of tensors (one per batch item)
             if output.audio and output.audio[0] is not None:

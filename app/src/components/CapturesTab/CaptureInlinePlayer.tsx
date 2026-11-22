@@ -107,7 +107,16 @@ export function CaptureInlinePlayer({
     return () => {
       active = false;
       try {
+        const media = ws.getMediaElement() as
+          | (HTMLMediaElement & { getGainNode?: () => GainNode })
+          | null;
+        const context = media?.getGainNode?.()?.context as AudioContext | undefined;
         ws.destroy();
+        if (context && context.state !== 'closed') {
+          void context
+            .close?.()
+            .catch((err) => debug.error('Inline audio context close failed', err));
+        }
       } catch (err) {
         debug.error('Failed to destroy inline waveform', err);
       }
@@ -121,10 +130,21 @@ export function CaptureInlinePlayer({
     if (ws.isPlaying()) {
       ws.pause();
     } else {
-      ws.play().catch((err) => {
+      const media = ws.getMediaElement() as
+        | (HTMLMediaElement & { getGainNode?: () => GainNode })
+        | null;
+      const context = media?.getGainNode?.()?.context as AudioContext | undefined;
+      const resumePromise =
+        context && context.state !== 'running' && context.state !== 'closed'
+          ? context.resume().catch((err) => debug.error('Inline audio context resume failed', err))
+          : Promise.resolve();
+      void resumePromise.then(() => {
         if (wavesurferRef.current !== ws) return;
-        debug.error('Inline play failed', err);
-        setError(err instanceof Error ? err.message : String(err));
+        ws.play().catch((err) => {
+          if (wavesurferRef.current !== ws) return;
+          debug.error('Inline play failed', err);
+          setError(err instanceof Error ? err.message : String(err));
+        });
       });
     }
   };

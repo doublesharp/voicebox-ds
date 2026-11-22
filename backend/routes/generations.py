@@ -94,16 +94,15 @@ async def generate_speech(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
-    from ..backends import engine_has_model_sizes
+    from ..backends import engine_has_model_sizes, resolve_engine_model_size
 
     engine = _resolve_generation_engine(data, profile)
     try:
         profiles.validate_profile_engine(profile, engine)
         data.chatterbox_options(engine)
+        model_size = resolve_engine_model_size(engine, data.model_size)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-    model_size = (data.model_size or "1.7B") if engine_has_model_sizes(engine) else None
 
     text = data.text
     source = "manual"
@@ -227,9 +226,13 @@ async def retry_generation(generation_id: str, db: Session = Depends(get_db)):
     if (gen.status or "completed") != "failed":
         raise HTTPException(status_code=400, detail="Only failed generations can be retried")
 
-    from ..backends import engine_has_model_sizes
+    from ..backends import resolve_engine_model_size
 
-    model_size = (gen.model_size or "1.7B") if engine_has_model_sizes(gen.engine or "qwen") else None
+    engine_name = gen.engine or "qwen"
+    try:
+        model_size = resolve_engine_model_size(engine_name, gen.model_size)
+    except ValueError:
+        model_size = resolve_engine_model_size(engine_name, None)
     synthesis_config = _replay_synthesis_config(gen)
     previous_state = _generation_recovery_state(gen)
     if gen.synthesis_config is None:
@@ -276,9 +279,13 @@ async def regenerate_generation(generation_id: str, db: Session = Depends(get_db
     if (gen.status or "completed") != "completed":
         raise HTTPException(status_code=400, detail="Generation must be completed to regenerate")
 
-    from ..backends import engine_has_model_sizes
+    from ..backends import resolve_engine_model_size
 
-    model_size = (gen.model_size or "1.7B") if engine_has_model_sizes(gen.engine or "qwen") else None
+    engine_name = gen.engine or "qwen"
+    try:
+        model_size = resolve_engine_model_size(engine_name, gen.model_size)
+    except ValueError:
+        model_size = resolve_engine_model_size(engine_name, None)
     synthesis_config = _replay_synthesis_config(gen)
     previous_state = _generation_recovery_state(gen)
     if gen.synthesis_config is None:
@@ -361,8 +368,13 @@ def _generation_status_snapshot(bind, generation_id):
         if gen is None:
             return {"status": "not_found", "id": generation_id}
         return {
-            "id": gen.id, "status": gen.status or "completed", "duration": gen.duration,
-            "error": gen.error, "source": gen.source,
+            "id": gen.id,
+            "profile_id": gen.profile_id,
+            "text": gen.text,
+            "status": gen.status or "completed",
+            "duration": gen.duration,
+            "error": gen.error,
+            "source": gen.source,
         }
 
 
@@ -428,13 +440,15 @@ async def _incremental_speech(data: models.GenerationRequest, db: Session):
             detail="Incremental preview requires normalize=false, speed=1, default delivery, and no enabled effects; use effects_chain=[] "
                    "to override profile effects. Buffered mode supports whole-file mastering.",
         )
+    from ..backends import resolve_engine_model_size
+
     engine = _resolve_generation_engine(data, profile)
     try:
         profiles.validate_profile_engine(profile, engine)
         data.chatterbox_options(engine)
+        model_size = resolve_engine_model_size(engine, data.model_size) or "default"
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    model_size = data.model_size or "1.7B"
     await ensure_model_cached_or_raise(engine, model_size)
     # Own a session for the response lifetime, independently of FastAPI's
     # dependency teardown policy while waiting for another inference request.
@@ -490,14 +504,16 @@ async def _buffered_speech(
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
+    from ..backends import resolve_engine_model_size
+
     engine = _resolve_generation_engine(data, profile)
     try:
         profiles.validate_profile_engine(profile, engine)
         generation_options = data.chatterbox_options(engine)
+        model_size = resolve_engine_model_size(engine, data.model_size) or "default"
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     tts_model = get_tts_backend_for_engine(engine)
-    model_size = data.model_size or "1.7B"
 
     await ensure_model_cached_or_raise(engine, model_size)
     await load_engine_model(engine, model_size)
@@ -606,10 +622,10 @@ async def import_audio(
 
     generation_id = str(uuid.uuid4())
     target = config.get_generations_dir() / f"{generation_id}{suffix}"
-    target.write_bytes(audio_bytes)
+    await asyncio.to_thread(target.write_bytes, audio_bytes)
 
     try:
-        audio, sr = load_audio(str(target))
+        audio, sr = await asyncio.to_thread(load_audio, str(target))
         duration = float(len(audio) / sr) if sr else 0.0
     except Exception as decode_err:
         try:
@@ -623,12 +639,13 @@ async def import_audio(
 
     profile = _get_or_create_import_profile(db)
     display_name = Path(file.filename or "Imported audio").stem or "Imported audio"
+    stored_path = config.to_storage_path(target)
 
-    return await history.create_generation(
+    generation = await history.create_generation(
         profile_id=profile.id,
         text=display_name,
         language="en",
-        audio_path=config.to_storage_path(target),
+        audio_path=stored_path,
         duration=duration,
         seed=None,
         db=db,
@@ -638,3 +655,14 @@ async def import_audio(
         model_size=None,
         source="import",
     )
+    from ..services import versions as versions_mod
+
+    versions_mod.create_version(
+        generation_id=generation_id,
+        label="original",
+        audio_path=stored_path,
+        db=db,
+        effects_chain=None,
+        is_default=True,
+    )
+    return generation

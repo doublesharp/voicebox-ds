@@ -382,6 +382,7 @@ def _normalize_storage_paths(engine, tables: set[str]) -> None:
         ("generation_versions", "audio_path"),
         ("profile_samples", "audio_path"),
         ("profiles", "avatar_path"),
+        ("captures", "audio_path"),
     ]
 
     total_fixed = 0

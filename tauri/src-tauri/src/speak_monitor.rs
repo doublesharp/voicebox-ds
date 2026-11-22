@@ -103,7 +103,7 @@ async fn stream_once(
     if !resp.status().is_success() {
         return Err(format!("speak_monitor: backend returned {}", resp.status()).into());
     }
-    let mut buf = String::new();
+    let mut raw_buf: Vec<u8> = Vec::new();
     let mut saw_data = false;
     loop {
         let chunk = match tokio::time::timeout(STREAM_IDLE_TIMEOUT, resp.chunk()).await {
@@ -119,24 +119,35 @@ async fn stream_once(
             }
         };
         saw_data = true;
-        buf.push_str(std::str::from_utf8(&chunk)?);
-        // sse-starlette emits CRLF framing; the spec also permits LF, so
-        // handle either. Drain whichever separator appears first.
-        loop {
-            let crlf = buf.find("\r\n\r\n");
-            let lf = buf.find("\n\n");
-            let (end, sep_len) = match (crlf, lf) {
-                (Some(c), Some(l)) if c <= l => (c, 4),
-                (Some(c), None) => (c, 4),
-                (_, Some(l)) => (l, 2),
-                (None, None) => break,
-            };
-            let frame: String = buf.drain(..end + sep_len).collect();
+        raw_buf.extend_from_slice(&chunk);
+        // Frame on raw ASCII delimiters (\r\n\r\n or \n\n) before UTF-8 decoding
+        // so multi-byte UTF-8 sequences split across TCP chunks never error.
+        for frame_bytes in drain_sse_frames(&mut raw_buf) {
+            let frame = String::from_utf8_lossy(&frame_bytes);
             if let Some((event, data)) = parse_frame(&frame) {
                 dispatch(app, &event, &data);
             }
         }
     }
+}
+
+/// Drain all complete SSE frames (delimited by `\r\n\r\n` or `\n\n`) from a raw
+/// byte buffer, leaving any partial frame bytes intact for the next TCP chunk.
+fn drain_sse_frames(buf: &mut Vec<u8>) -> Vec<Vec<u8>> {
+    let mut frames = Vec::new();
+    loop {
+        let crlf = buf.windows(4).position(|w| w == b"\r\n\r\n");
+        let lf = buf.windows(2).position(|w| w == b"\n\n");
+        let (end, sep_len) = match (crlf, lf) {
+            (Some(c), Some(l)) if c <= l => (c, 4),
+            (Some(c), None) => (c, 4),
+            (_, Some(l)) => (l, 2),
+            (None, None) => break,
+        };
+        let frame = buf.drain(..end + sep_len).take(end).collect();
+        frames.push(frame);
+    }
+    frames
 }
 
 /// Parse a single SSE frame into (event_name, data_json).
@@ -176,5 +187,44 @@ fn dispatch(app: &AppHandle, event: &str, data: &str) {
         }
         // `ready` and `ping` are heartbeats; ignore.
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drain_sse_frames_preserves_multibyte_utf8_split_across_chunks() {
+        let full = "event: speak-start\r\ndata: {\"profile_name\":\"日本語🎙️\"}\r\n\r\n";
+        let bytes = full.as_bytes();
+        // Split right in the middle of the multi-byte UTF-8 sequence for "本".
+        let split_at = full.find('本').unwrap() + 1;
+        let mut buf = Vec::new();
+
+        buf.extend_from_slice(&bytes[..split_at]);
+        assert!(drain_sse_frames(&mut buf).is_empty());
+
+        buf.extend_from_slice(&bytes[split_at..]);
+        let frames = drain_sse_frames(&mut buf);
+        assert_eq!(frames.len(), 1);
+        assert!(buf.is_empty());
+
+        let text = String::from_utf8(frames[0].clone()).expect("valid UTF-8");
+        let (event, data) = parse_frame(&text).expect("parsed SSE frame");
+        assert_eq!(event, "speak-start");
+        assert_eq!(data, "{\"profile_name\":\"日本語🎙️\"}");
+    }
+
+    #[test]
+    fn drain_sse_frames_handles_lf_and_ignores_comment_frames() {
+        let mut buf = b": heartbeat\n\nevent: speak-end\ndata: {\"id\":\"1\"}\n\n".to_vec();
+        let frames = drain_sse_frames(&mut buf);
+        assert_eq!(frames.len(), 2);
+        assert!(parse_frame(&String::from_utf8_lossy(&frames[0])).is_none());
+        assert_eq!(
+            parse_frame(&String::from_utf8_lossy(&frames[1])),
+            Some(("speak-end".to_string(), "{\"id\":\"1\"}".to_string()))
+        );
     }
 }

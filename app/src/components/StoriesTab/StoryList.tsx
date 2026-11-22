@@ -333,7 +333,7 @@ export function StoryList() {
                 value={newStoryName}
                 onChange={(e) => setNewStoryName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' && !createStory.isPending) {
                     handleCreateStory();
                   }
                 }}
@@ -378,7 +378,7 @@ export function StoryList() {
                 value={newStoryName}
                 onChange={(e) => setNewStoryName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' && !updateStory.isPending) {
                     handleUpdateStory();
                   }
                 }}

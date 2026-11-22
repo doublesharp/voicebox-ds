@@ -134,6 +134,16 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       // Capture all request inputs at submission, before the model status request.
       const effectsChain = options.getEffectsChain?.();
       const engine = data.engine || 'qwen';
+      const resolvedModelSize =
+        engine === 'tada'
+          ? data.modelSize === '3B' || data.modelSize === '1B'
+            ? data.modelSize
+            : '1B'
+          : engine === 'qwen' || engine === 'qwen_custom_voice'
+            ? data.modelSize === '0.6B' || data.modelSize === '1.7B'
+              ? data.modelSize
+              : '1.7B'
+            : undefined;
       const modelName =
         engine === 'luxtts'
           ? 'luxtts'
@@ -142,7 +152,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
             : engine === 'chatterbox_turbo'
               ? 'chatterbox-turbo'
               : engine === 'tada'
-                ? data.modelSize === '3B'
+                ? resolvedModelSize === '3B'
                   ? 'tada-3b-ml'
                   : 'tada-1b'
                 : engine === 'kokoro'
@@ -152,8 +162,8 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
                     : engine === 'omnivoice'
                       ? 'omnivoice'
                       : engine === 'qwen_custom_voice'
-                        ? `qwen-custom-voice-${data.modelSize}`
-                        : `qwen-tts-${data.modelSize}`;
+                        ? `qwen-custom-voice-${resolvedModelSize}`
+                        : `qwen-tts-${resolvedModelSize}`;
       const displayName =
         engine === 'luxtts'
           ? 'LuxTTS'
@@ -162,7 +172,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
             : engine === 'chatterbox_turbo'
               ? 'Chatterbox Turbo'
               : engine === 'tada'
-                ? data.modelSize === '3B'
+                ? resolvedModelSize === '3B'
                   ? 'TADA 3B Multilingual'
                   : 'TADA 1B'
                 : engine === 'kokoro'
@@ -172,10 +182,10 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
                     : engine === 'omnivoice'
                       ? 'OmniVoice'
                       : engine === 'qwen_custom_voice'
-                        ? data.modelSize === '1.7B'
+                        ? resolvedModelSize === '1.7B'
                           ? 'Qwen CustomVoice 1.7B'
                           : 'Qwen CustomVoice 0.6B'
-                        : data.modelSize === '1.7B'
+                        : resolvedModelSize === '1.7B'
                           ? 'Qwen TTS 1.7B'
                           : 'Qwen TTS 0.6B';
 
@@ -201,7 +211,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         text: data.text,
         language: data.language,
         seed: data.seed,
-        model_size: hasModelSizes ? data.modelSize : undefined,
+        model_size: hasModelSizes ? resolvedModelSize : undefined,
         engine,
         instruct: supportsInstruct ? data.instruct || undefined : undefined,
         personality: data.personality || undefined,

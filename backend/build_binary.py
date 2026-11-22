@@ -126,6 +126,14 @@ def build_server(cuda=False, rocm=False):
             "--hidden-import",
             "backend.backends.qwen_voice_design_backend",
             "--hidden-import",
+            "backend.backends.qwen_llm_backend",
+            "--hidden-import",
+            "backend.backends.openai_compat_backend",
+            "--collect-submodules",
+            "backend.studio",
+            "--hidden-import",
+            "scipy.signal",
+            "--hidden-import",
             "backend.utils.audio",
             "--hidden-import",
             "backend.utils.cache",
@@ -479,6 +487,10 @@ def build_server(cuda=False, rocm=False):
                 "--hidden-import",
                 "backend.backends.mlx_backend",
                 "--hidden-import",
+                "backend.backends.qwen_mlx_variants",
+                "--hidden-import",
+                "miniaudio",
+                "--hidden-import",
                 "mlx",
                 "--hidden-import",
                 "mlx.core",
@@ -520,6 +532,28 @@ def build_server(cuda=False, rocm=False):
         )
     elif not cuda and not rocm:
         logger.info("Building for non-Apple Silicon platform - PyTorch only")
+
+    # Copy installed package metadata queried by backend/studio/capabilities.py
+    # so frozen builds report accurate runtime versions for archive portability.
+    import importlib.metadata
+
+    for dist_name in (
+        "torch",
+        "torchaudio",
+        "numpy",
+        "chatterbox-tts",
+        "hume-tada",
+        "mlx",
+        "mlx-audio",
+        "kokoro",
+        "misaki",
+        "Zipvoice",
+    ):
+        try:
+            importlib.metadata.distribution(dist_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        args.extend(["--copy-metadata", dist_name])
 
     dist_dir = str(backend_dir / "dist")
     build_dir = str(backend_dir / "build")

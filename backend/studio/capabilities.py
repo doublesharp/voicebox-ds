@@ -53,11 +53,37 @@ SEED_ENGINES = frozenset(
 )
 
 
+MLX_CAPABLE_ENGINES = frozenset(
+    (
+        "qwen",
+        "qwen_custom_voice",
+        "qwen_voice_design",
+        "chatterbox",
+        "chatterbox_turbo",
+        "kokoro",
+    )
+)
+
+# Verified upstream model weight licences for commercial production (e.g. monetized YouTube).
+# OmniVoice weights are CC-BY-NC ("restricted"); Apache-2.0 / MIT engines are "allowed".
+COMMERCIAL_USE_POLICY: dict[str, str] = {
+    "qwen": "allowed",
+    "qwen_custom_voice": "allowed",
+    "qwen_voice_design": "allowed",
+    "chatterbox": "allowed",
+    "chatterbox_turbo": "allowed",
+    "kokoro": "allowed",
+    "luxtts": "allowed",
+    "tada": "allowed",
+    "omnivoice": "restricted",
+}
+
+
 def _adapter_runtime(engine):
     """Match get_tts_backend_for_engine without importing or constructing models."""
     from ..utils.platform_detect import get_backend_type
 
-    backend = get_backend_type() if engine in ("qwen", "chatterbox") else "pytorch"
+    backend = get_backend_type() if engine in MLX_CAPABLE_ENGINES else "pytorch"
     adapters = {
         "qwen": ("mlx_backend", "MLXTTSBackend", ())
         if backend == "mlx"
@@ -65,12 +91,20 @@ def _adapter_runtime(engine):
         "chatterbox": ("chatterbox_mlx_backend", "ChatterboxMLXTTSBackend", ())
         if backend == "mlx"
         else ("chatterbox_backend", "ChatterboxTTSBackend", ("chatterbox-tts",)),
-        "chatterbox_turbo": ("chatterbox_turbo_backend", "ChatterboxTurboTTSBackend", ("chatterbox-tts",)),
-        "qwen_custom_voice": ("qwen_custom_voice_backend", "QwenCustomVoiceBackend", ("qwen-tts",)),
-        "qwen_voice_design": ("qwen_voice_design_backend", "QwenVoiceDesignBackend", ("qwen-tts",)),
+        "chatterbox_turbo": ("qwen_mlx_variants", "ChatterboxTurboMLXTTSBackend", ())
+        if backend == "mlx"
+        else ("chatterbox_turbo_backend", "ChatterboxTurboTTSBackend", ("chatterbox-tts",)),
+        "qwen_custom_voice": ("qwen_mlx_variants", "QwenCustomVoiceMLXBackend", ())
+        if backend == "mlx"
+        else ("qwen_custom_voice_backend", "QwenCustomVoiceBackend", ("qwen-tts",)),
+        "qwen_voice_design": ("qwen_mlx_variants", "QwenVoiceDesignMLXBackend", ())
+        if backend == "mlx"
+        else ("qwen_voice_design_backend", "QwenVoiceDesignBackend", ("qwen-tts",)),
         "luxtts": ("luxtts_backend", "LuxTTSBackend", ("Zipvoice",)),
         "tada": ("hume_backend", "HumeTadaBackend", ("hume-tada",)),
-        "kokoro": ("kokoro_backend", "KokoroTTSBackend", ("kokoro", "misaki")),
+        "kokoro": ("qwen_mlx_variants", "KokoroMLXTTSBackend", ())
+        if backend == "mlx"
+        else ("kokoro_backend", "KokoroTTSBackend", ("kokoro", "misaki")),
         "omnivoice": ("omnivoice_backend", "OmniVoiceBackend", ("omnivoice",)),
     }
     if engine not in adapters:
@@ -123,7 +157,7 @@ def capability_for_config(cfg):
         "limits": {"max_chunk_chars": 100000, "max_crossfade_ms": 10000},
         "streaming": {"qualified": False},
         "performance_conversion": {"qualified": False},
-        "commercial_use": "restricted" if cfg.engine == "omnivoice" else "unknown",
+        "commercial_use": COMMERCIAL_USE_POLICY.get(cfg.engine, "unknown"),
     }
     revision = hashlib.sha256(
         json.dumps([identity, semantics], sort_keys=True, separators=(",", ":")).encode()

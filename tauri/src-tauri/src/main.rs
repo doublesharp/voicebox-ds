@@ -318,9 +318,13 @@ async fn start_server(
                         }
                     } else {
                         // Process name doesn't contain "voicebox" — could be an external
-                        // Python/uvicorn/Docker server. Verify via HTTP health check.
+                        // Python/uvicorn/Docker server. Verify via HTTP health check on a
+                        // blocking thread so reqwest::blocking does not panic Tokio.
                         println!("Port {} in use by '{}' (PID: {}), checking if it's a Voicebox server...", SERVER_PORT, command, pid_str);
-                        if check_health(SERVER_PORT) {
+                        let healthy = tokio::task::spawn_blocking(|| check_health(SERVER_PORT))
+                            .await
+                            .unwrap_or(false);
+                        if healthy {
                             println!("Health check passed — reusing external server on port {}", SERVER_PORT);
                             return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
                         }
@@ -350,9 +354,12 @@ async fn start_server(
                 return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
             }
             // Process name doesn't match — could be an external Python/Docker server.
-            // Verify via HTTP health check before giving up.
+            // Verify via HTTP health check on a blocking thread before giving up.
             println!("Port {} in use by unknown process, checking if it's a Voicebox server...", SERVER_PORT);
-            if check_health(SERVER_PORT) {
+            let healthy = tokio::task::spawn_blocking(|| check_health(SERVER_PORT))
+                .await
+                .unwrap_or(false);
+            if healthy {
                 println!("Health check passed — reusing external server on port {}", SERVER_PORT);
                 return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
             }
@@ -738,6 +745,7 @@ async fn start_server(
                 ).is_ok() {
                     // Kill the placeholder process
                     let _ = state.child.lock().unwrap().take();
+                    let _ = state.server_pid.lock().unwrap().take();
                     println!("Found manually-started server on port {}", SERVER_PORT);
                     return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
                 }
@@ -806,6 +814,8 @@ async fn start_server(
                         return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
                     }
 
+                    let _ = state.child.lock().unwrap().take();
+                    let _ = state.server_pid.lock().unwrap().take();
                     eprintln!("");
                     eprintln!("=================================================================");
                     eprintln!("DEV MODE: No bundled server binary available");
@@ -881,20 +891,34 @@ async fn stop_server_if_owned(
             #[cfg(unix)]
             {
                 use std::process::Command;
-                // Kill process group with SIGTERM first
+                // Send SIGTERM to both the direct PID and process group so
+                // uvicorn receives a graceful shutdown even when not a group leader.
+                let _ = Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .output();
                 let _ = Command::new("kill")
                     .args(["-TERM", "--", &format!("-{}", pid)])
                     .output();
 
-                // Brief wait then force kill
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                // Brief grace period for graceful model/SQLite shutdown before SIGKILL.
+                for _ in 0..10 {
+                    let alive = Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false);
+                    if !alive {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
 
                 let _ = Command::new("kill")
                     .args(["-9", "--", &format!("-{}", pid)])
                     .output();
                 let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
 
-                println!("stop_server: Process group kill completed");
+                println!("stop_server: Graceful/force kill completed");
             }
 
             #[cfg(windows)]
@@ -1528,7 +1552,7 @@ pub fn run() {
                 use windows::Win32::Foundation::HWND;
                 use windows::Win32::UI::WindowsAndMessaging::{SetClassLongPtrW, GCLP_HICON, GCLP_HICONSM};
                 
-                if let Some((_, window)) = app.webview_windows().iter().next() {
+                if let Some(window) = app.get_webview_window("main") {
                     if let Ok(hwnd) = window.hwnd() {
                         let hwnd = HWND(hwnd.0);
                         unsafe {
@@ -1611,6 +1635,11 @@ pub fn run() {
             let closing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             move |window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                // Only intercept close on the main window; helper windows (like
+                // the hidden dictate pill) should not trigger app shutdown.
+                if window.label() != "main" {
+                    return;
+                }
                 // If we're already in the close flow, let it proceed
                 if closing.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
@@ -1707,9 +1736,12 @@ pub fn run() {
                             if let Some(pid) = state.server_pid.lock().unwrap().take() {
                                 use std::process::Command;
                                 let _ = Command::new("kill")
+                                    .args(["-TERM", &pid.to_string()])
+                                    .output();
+                                let _ = Command::new("kill")
                                     .args(["-TERM", "--", &format!("-{}", pid)])
                                     .output();
-                                std::thread::sleep(std::time::Duration::from_millis(100));
+                                std::thread::sleep(std::time::Duration::from_millis(200));
                                 let _ = Command::new("kill")
                                     .args(["-9", "--", &format!("-{}", pid)])
                                     .output();
@@ -1717,6 +1749,24 @@ pub fn run() {
                                     .args(["-9", &pid.to_string()])
                                     .output();
                             }
+                        }
+
+                        #[cfg(windows)]
+                        {
+                            if let Some(pid) = state.server_pid.lock().unwrap().take() {
+                                let _ = std::process::Command::new("taskkill")
+                                    .args(["/PID", &pid.to_string(), "/T", "/F"])
+                                    .output();
+                            }
+                        }
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen { has_visible_windows, .. } => {
+                    if !has_visible_windows {
+                        if let Some(main_win) = app.get_webview_window("main") {
+                            let _ = main_win.show();
+                            let _ = main_win.set_focus();
                         }
                     }
                 }

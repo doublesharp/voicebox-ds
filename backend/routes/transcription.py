@@ -14,6 +14,7 @@ from ..utils.tasks import get_task_manager
 router = APIRouter()
 
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
+MAX_TRANSCRIBE_UPLOAD_BYTES = 200 * 1024 * 1024  # 200MB
 
 # Same set profiles.py accepts for voice samples. librosa picks its decoder from the
 # file extension, so the temp file has to keep the uploaded one.
@@ -30,10 +31,19 @@ async def transcribe_audio(
     uploaded_ext = Path(file.filename or "").suffix.lower()
     file_suffix = uploaded_ext if uploaded_ext in ALLOWED_AUDIO_EXTS else ".wav"
 
+    total_bytes = 0
     with tempfile.NamedTemporaryFile(suffix=file_suffix, delete=False) as tmp:
-        while chunk := await file.read(UPLOAD_CHUNK_SIZE):
-            tmp.write(chunk)
         tmp_path = tmp.name
+        while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+            total_bytes += len(chunk)
+            if total_bytes > MAX_TRANSCRIBE_UPLOAD_BYTES:
+                tmp.close()
+                Path(tmp_path).unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Uploaded file exceeds {MAX_TRANSCRIBE_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+                )
+            tmp.write(chunk)
 
     stt_path = tmp_path
     try:
@@ -69,15 +79,16 @@ async def transcribe_audio(
             progress_model_name = f"whisper-{model_size}"
             task_manager = get_task_manager()
 
-            async def download_whisper_background():
-                try:
-                    await whisper_model.load_model_async(model_size)
-                    task_manager.complete_download(progress_model_name)
-                except Exception as e:
-                    task_manager.error_download(progress_model_name, str(e))
+            if not task_manager.is_download_active(progress_model_name):
+                async def download_whisper_background():
+                    try:
+                        await whisper_model.load_model_async(model_size)
+                        task_manager.complete_download(progress_model_name)
+                    except Exception as e:
+                        task_manager.error_download(progress_model_name, str(e))
 
-            task_manager.start_download(progress_model_name)
-            create_background_task(download_whisper_background())
+                task_manager.start_download(progress_model_name)
+                create_background_task(download_whisper_background())
 
             raise HTTPException(
                 status_code=202,

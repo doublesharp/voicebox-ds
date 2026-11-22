@@ -9,6 +9,7 @@ an ``update_*`` that accepts a partial payload.
 
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import CaptureSettings as DBCaptureSettings
@@ -37,8 +38,12 @@ def _get_or_create_capture_row(db: Session) -> DBCaptureSettings:
             chord_toggle_to_talk_keys=default_toggle_to_talk_chord(),
         )
         db.add(row)
-        db.commit()
-        db.refresh(row)
+        try:
+            db.commit()
+            db.refresh(row)
+        except IntegrityError:
+            db.rollback()
+            row = db.query(DBCaptureSettings).filter(DBCaptureSettings.id == SINGLETON_ID).first()
     return row
 
 
@@ -52,8 +57,12 @@ def _get_or_create_generation_row(db: Session) -> DBGenerationSettings:
     if row is None:
         row = DBGenerationSettings(id=SINGLETON_ID)
         db.add(row)
-        db.commit()
-        db.refresh(row)
+        try:
+            db.commit()
+            db.refresh(row)
+        except IntegrityError:
+            db.rollback()
+            row = db.query(DBGenerationSettings).filter(DBGenerationSettings.id == SINGLETON_ID).first()
     return row
 
 

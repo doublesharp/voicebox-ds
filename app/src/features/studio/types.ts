@@ -3,11 +3,13 @@ export interface StudioDirection {
   seed: number | null;
   max_chunk_chars: number;
   crossfade_ms: number;
+  speed?: number;
 }
 export interface StudioPassage {
   id: string;
   text: string;
   language: string;
+  chapter?: string | null;
   profile_id: string | null;
   voice_snapshot: Record<string, unknown> | null;
   direction: StudioDirection;
@@ -76,6 +78,10 @@ export interface StudioDocument {
     normalize: boolean;
     master_gain?: number;
     limiter?: boolean;
+    duck_music?: boolean;
+    duck_db?: number;
+    duck_attack_ms?: number;
+    duck_release_ms?: number;
   };
 }
 export interface AuditionLevel {
@@ -212,7 +218,9 @@ export interface StudioCommand {
   type: StudioCommandType;
   payload: Record<string, unknown>;
 }
-export type PassageEdit = Partial<Pick<StudioPassage, 'text' | 'language' | 'direction'>>;
+export type PassageEdit = Partial<
+  Pick<StudioPassage, 'text' | 'language' | 'direction' | 'chapter'>
+>;
 export interface StudioTransport {
   readonly baseUrl: string;
   project(id: string, signal?: AbortSignal): Promise<StudioProject>;

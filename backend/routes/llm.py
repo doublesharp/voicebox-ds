@@ -48,15 +48,16 @@ async def llm_generate(request: models.LLMGenerateRequest):
             progress_model_name = f"qwen3-{model_size.lower()}"
             task_manager = get_task_manager()
 
-            async def download_llm_background():
-                try:
-                    await backend.load_model(model_size)
-                    task_manager.complete_download(progress_model_name)
-                except Exception as e:
-                    task_manager.error_download(progress_model_name, str(e))
+            if not task_manager.is_download_active(progress_model_name):
+                async def download_llm_background():
+                    try:
+                        await backend.load_model(model_size)
+                        task_manager.complete_download(progress_model_name)
+                    except Exception as e:
+                        task_manager.error_download(progress_model_name, str(e))
 
-            task_manager.start_download(progress_model_name)
-            create_background_task(download_llm_background())
+                task_manager.start_download(progress_model_name)
+                create_background_task(download_llm_background())
 
             return JSONResponse(
                 status_code=202,

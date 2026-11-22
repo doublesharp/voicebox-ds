@@ -8,6 +8,7 @@ use voicebox::audio_capture::{AudioCaptureState, start_capture, stop_capture};
 use base64::Engine;
 
 #[tokio::test]
+#[ignore = "requires live system audio playback and macOS Screen Recording permission"]
 async fn test_system_audio_capture() {
     // Create AudioCaptureState
     let state = AudioCaptureState::new();

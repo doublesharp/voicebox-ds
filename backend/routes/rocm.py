@@ -26,6 +26,9 @@ async def download_rocm_backend():
     """Download the ROCm backend binary."""
     from ..services import rocm
 
+    if rocm.get_rocm_binary_path() is not None:
+        raise HTTPException(status_code=409, detail="ROCm backend already downloaded")
+
     progress_manager = get_progress_manager()
     existing = progress_manager.get_progress(rocm.PROGRESS_KEY)
     if existing and existing.get("status") in {"downloading", "extracting"}:

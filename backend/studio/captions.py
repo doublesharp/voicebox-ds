@@ -192,6 +192,56 @@ def source_fingerprint(doc, assets, takes):
     ).hexdigest()
 
 
+def split_caption_text(text: str, max_chars_per_line: int = 42, max_lines: int = 2) -> list[str]:
+    """Split narration text into readable multi-cue subtitle blocks (e.g. YouTube 42x2)."""
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return []
+    max_cue_chars = max(12, max_chars_per_line * max_lines)
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", cleaned) if s.strip()]
+    raw_chunks: list[str] = []
+    for sentence in sentences:
+        if len(sentence) <= max_cue_chars:
+            raw_chunks.append(sentence)
+            continue
+        words = sentence.split()
+        current: list[str] = []
+        current_len = 0
+        for word in words:
+            added = len(word) + (1 if current else 0)
+            if current and current_len + added > max_cue_chars:
+                raw_chunks.append(" ".join(current))
+                current = [word]
+                current_len = len(word)
+            else:
+                current.append(word)
+                current_len += added
+        if current:
+            raw_chunks.append(" ".join(current))
+
+    def wrap_lines(chunk: str) -> str:
+        if len(chunk) <= max_chars_per_line or max_lines <= 1:
+            return chunk
+        words = chunk.split()
+        lines: list[str] = []
+        cur: list[str] = []
+        cur_len = 0
+        for word in words:
+            added = len(word) + (1 if cur else 0)
+            if cur and cur_len + added > max_chars_per_line and len(lines) < max_lines - 1:
+                lines.append(" ".join(cur))
+                cur = [word]
+                cur_len = len(word)
+            else:
+                cur.append(word)
+                cur_len += added
+        if cur:
+            lines.append(" ".join(cur))
+        return "\n".join(lines)
+
+    return [wrap_lines(chunk) for chunk in raw_chunks if chunk.strip()]
+
+
 def estimate_captions(doc, assets, takes):
     cues = []
     for source in _sources(doc, assets, takes):
@@ -209,6 +259,43 @@ def estimate_captions(doc, assets, takes):
                 "text": text,
             }
         )
+    cues.sort(key=lambda cue: (cue["start_sample"], cue["end_sample"]))
+    return {"source_fingerprint": source_fingerprint(doc, assets, takes), "reviewed": False, "cues": cues}
+
+
+def estimate_youtube_captions(doc, assets, takes, *, max_chars_per_line: int = 42, max_lines: int = 2):
+    """Split each audible clip into YouTube-sized cues timed proportionally across the clip."""
+    cues = []
+    for source in _sources(doc, assets, takes):
+        if not source["text"].strip():
+            continue
+        clip = source["clip"]
+        parts = split_caption_text(source["text"], max_chars_per_line=max_chars_per_line, max_lines=max_lines)
+        if not parts:
+            continue
+        clip_start = clip["start_sample"]
+        clip_len = source["length"]
+        weights = [max(1, len(part.replace("\n", " "))) for part in parts]
+        total_weight = sum(weights)
+        cursor = clip_start
+        for idx, (part, weight) in enumerate(zip(parts, weights, strict=True)):
+            if idx == len(parts) - 1:
+                end_sample = clip_start + clip_len
+            else:
+                span = max(1, int(round(clip_len * weight / total_weight)))
+                end_sample = min(clip_start + clip_len - (len(parts) - 1 - idx), cursor + span)
+            if end_sample <= cursor:
+                end_sample = cursor + 1
+            cues.append(
+                {
+                    "id": uid(),
+                    "clip_id": clip["id"],
+                    "start_sample": cursor,
+                    "end_sample": end_sample,
+                    "text": part,
+                }
+            )
+            cursor = end_sample
     cues.sort(key=lambda cue: (cue["start_sample"], cue["end_sample"]))
     return {"source_fingerprint": source_fingerprint(doc, assets, takes), "reviewed": False, "cues": cues}
 
@@ -276,9 +363,28 @@ def apply_caption_command(store, db, project_id, doc, kind, payload):
         project = store._project(db, project_id)
         assets, takes = project["assets"], project["takes"]
         if kind == "estimate_captions":
-            if payload:
-                raise ValueError("Caption estimates require no payload")
-            doc["captions"] = estimate_captions(doc, assets, takes)
+            if not payload:
+                doc["captions"] = estimate_captions(doc, assets, takes)
+            else:
+                allowed_keys = {"split_cues", "max_chars_per_line", "max_lines"}
+                if not isinstance(payload, dict) or set(payload) - allowed_keys:
+                    raise ValueError("Invalid caption estimate options")
+                split_cues = payload.get("split_cues", False)
+                max_chars = payload.get("max_chars_per_line", 42)
+                max_lines = payload.get("max_lines", 2)
+                if (
+                    type(split_cues) is not bool
+                    or type(max_chars) is not int
+                    or not 16 <= max_chars <= 120
+                    or type(max_lines) is not int
+                    or not 1 <= max_lines <= 4
+                ):
+                    raise ValueError("Invalid caption estimate options")
+                doc["captions"] = (
+                    estimate_youtube_captions(doc, assets, takes, max_chars_per_line=max_chars, max_lines=max_lines)
+                    if split_cues
+                    else estimate_captions(doc, assets, takes)
+                )
         else:
             candidate = {**doc, "captions": payload}
             validate_caption_document(candidate)
@@ -355,5 +461,140 @@ def make_caption_router(store):
             media_type="text/vtt" if caption_format == "vtt" else "application/x-subrip",
             headers={"Content-Disposition": f'attachment; filename="captions.{caption_format}"'},
         )
+
+    @router.post("/projects/{project_id}/captions/align")
+    async def align(
+        project_id: str,
+        max_chars_per_line: int = Query(default=42, ge=16, le=120),
+        max_lines: int = Query(default=2, ge=1, le=4),
+        model_size: str = Query(default="turbo"),
+    ):
+        """Build YouTube-formatted caption cues aligned against audible clips via local Whisper when ready."""
+        project = project_value(project_id)
+        doc, assets, takes = project["document"], project["assets"], project["takes"]
+        try:
+            sources = _sources(doc, assets, takes)
+            fingerprint = source_fingerprint(doc, assets, takes)
+        except ValueError as exc:
+            raise HTTPException(422, detail=str(exc)) from exc
+        if not sources:
+            raise HTTPException(422, detail="Place narration clips on the timeline before aligning captions")
+
+        # Try local Whisper (MLX on Apple Silicon) when cached; fall back cleanly to proportional splitting.
+        whisper_backend = None
+        try:
+            from ..services.transcribe import get_whisper_model
+
+            candidate = get_whisper_model()
+            if hasattr(candidate, "_is_model_cached") and candidate._is_model_cached(model_size):
+                whisper_backend = candidate
+        except Exception:
+            whisper_backend = None
+
+        if whisper_backend is None:
+            captions = estimate_youtube_captions(
+                doc, assets, takes, max_chars_per_line=max_chars_per_line, max_lines=max_lines
+            )
+            return {
+                "method": "proportional",
+                "note": f"Whisper ({model_size}) is not downloaded yet; built proportional YouTube cues instead.",
+                "captions": captions,
+            }
+
+        rate = doc["sample_rate"]
+        cues = []
+        used_whisper = False
+        for source in sources:
+            clip = source["clip"]
+            clip_start = clip["start_sample"]
+            clip_len = source["length"]
+            clip_text = source["text"]
+            segments = None
+            try:
+                audio_path = str(store.asset_path(clip["asset_id"]))
+                # mlx-audio Whisper models expose segment timestamps on the raw result object;
+                # transcribe via backend and fall back if only plain text is returned.
+                if hasattr(whisper_backend, "model"):
+                    await whisper_backend.load_model(model_size)
+                    raw_model = whisper_backend.model
+                    if raw_model is not None and hasattr(raw_model, "generate"):
+                        if type(whisper_backend).__name__ == "MLXSTTBackend":
+                            from ..backends.mlx_backend import _run_on_mlx_thread
+
+                            result = await _run_on_mlx_thread(lambda p=audio_path, m=raw_model: m.generate(p))
+                        else:
+                            import asyncio
+
+                            result = await asyncio.to_thread(raw_model.generate, audio_path)
+                        raw_segments = getattr(result, "segments", None) or (
+                            result.get("segments") if isinstance(result, dict) else None
+                        )
+                        if isinstance(raw_segments, list) and raw_segments:
+                            segments = raw_segments
+            except Exception:
+                segments = None
+
+            if segments:
+                used_whisper = True
+                trim_offset_s = clip["trim_start_sample"] / rate
+                clip_dur_s = clip_len / rate
+                for seg in segments:
+                    seg_text = (seg.get("text") if isinstance(seg, dict) else getattr(seg, "text", "")) or ""
+                    seg_text = " ".join(str(seg_text).split())
+                    if not seg_text:
+                        continue
+                    s0 = float(seg.get("start", 0.0) if isinstance(seg, dict) else getattr(seg, "start", 0.0))
+                    s1 = float(seg.get("end", clip_dur_s) if isinstance(seg, dict) else getattr(seg, "end", clip_dur_s))
+                    rel_start = max(0.0, s0 - trim_offset_s)
+                    rel_end = min(clip_dur_s, s1 - trim_offset_s)
+                    if rel_end <= rel_start:
+                        continue
+                    wrapped = split_caption_text(seg_text, max_chars_per_line=max_chars_per_line, max_lines=max_lines)
+                    if not wrapped:
+                        continue
+                    seg_start_sample = clip_start + int(round(rel_start * rate))
+                    seg_end_sample = clip_start + int(round(rel_end * rate))
+                    if seg_end_sample <= seg_start_sample:
+                        seg_end_sample = seg_start_sample + 1
+                    total_w = sum(max(1, len(w)) for w in wrapped)
+                    cur = seg_start_sample
+                    for idx, part in enumerate(wrapped):
+                        nxt = (
+                            seg_end_sample
+                            if idx == len(wrapped) - 1
+                            else min(seg_end_sample - (len(wrapped) - 1 - idx), cur + max(1, int(round((seg_end_sample - seg_start_sample) * max(1, len(part)) / total_w))))
+                        )
+                        if nxt <= cur:
+                            nxt = cur + 1
+                        cues.append(
+                            {
+                                "id": uid(),
+                                "clip_id": clip["id"],
+                                "start_sample": cur,
+                                "end_sample": nxt,
+                                "text": part,
+                            }
+                        )
+                        cur = nxt
+            elif clip_text.strip():
+                sub = estimate_youtube_captions(
+                    {**doc, "clips": [clip]},
+                    assets,
+                    takes,
+                    max_chars_per_line=max_chars_per_line,
+                    max_lines=max_lines,
+                )
+                cues.extend(sub["cues"])
+
+        cues.sort(key=lambda cue: (cue["start_sample"], cue["end_sample"]))
+        return {
+            "method": "whisper" if used_whisper else "proportional",
+            "note": (
+                f"Aligned with local Whisper ({model_size}). Review wording and timing before exporting."
+                if used_whisper
+                else "Built proportional YouTube cues. Review wording and timing before exporting."
+            ),
+            "captions": {"source_fingerprint": fingerprint, "reviewed": False, "cues": cues},
+        }
 
     return router

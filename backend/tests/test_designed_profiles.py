@@ -47,10 +47,17 @@ def mock_profiles_dir(monkeypatch, tmp_path):
 
 
 def test_engine_is_registered():
+    from backend.utils.platform_detect import get_backend_type
+
     assert "qwen_voice_design" in TTS_ENGINES
     configs = [c for c in get_tts_model_configs() if c.engine == "qwen_voice_design"]
     assert [c.model_name for c in configs] == ["qwen-voice-design-1.7B"]
-    assert configs[0].hf_repo_id == "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    expected_repo = (
+        "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16"
+        if get_backend_type() == "mlx"
+        else "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    )
+    assert configs[0].hf_repo_id == expected_repo
 
 
 def test_generation_request_accepts_engine():

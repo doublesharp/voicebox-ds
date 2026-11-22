@@ -122,8 +122,11 @@ class StudioDelivery:
             needs_ffmpeg = format == "mp3" or (
                 (doc["mix"]["normalize"] or doc["mix"].get("limiter", False)) and kind == "mix" and processing != "dry"
             )
-            if needs_ffmpeg and not shutil.which("ffmpeg"):
-                raise ValueError("Requested encoder or normalization is unavailable")
+            if needs_ffmpeg:
+                from .rendering import _find_ffmpeg
+
+                if not _find_ffmpeg():
+                    raise ValueError("Requested encoder or normalization is unavailable")
             job_id = uid()
             stamp = now()
             frozen = {

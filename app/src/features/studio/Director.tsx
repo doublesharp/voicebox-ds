@@ -8,10 +8,10 @@ import {
 } from './ArchiveScopeControls';
 import { useStudio } from './context';
 import { engineForPassage } from './domain';
+import { PronunciationPanel } from './PronunciationPanel';
 import { operationId } from './session';
 import { useDurableSubmission } from './submissions';
 import { TakeWorkflow } from './TakeWorkflow';
-import { PronunciationPanel } from './PronunciationPanel';
 import { Field, NumberField, StudioButton } from './ui';
 
 export function Director() {
@@ -322,7 +322,55 @@ export function Director() {
         </p>
       )}
       <details className="studio-advanced">
-        <summary>Chunk and transition settings</summary>
+        <summary>Chunk, pacing, and transition settings</summary>
+        <NumberField
+          label="Speaking speed (0.5×–2.0×)"
+          value={direction.speed ?? 1.0}
+          min={0.5}
+          max={2.0}
+          step={0.05}
+          disabled={editDisabled}
+          onCommit={(value) =>
+            session.editPassage(passage.id, {
+              direction: { ...direction, speed: Number(value.toFixed(2)) },
+            })
+          }
+        />
+        {(() => {
+          const target = project.document.scene_targets?.[passage.id];
+          const selectedTake = project.takes.find((t) => t.id === passage.selected_take_id);
+          const selectedAsset = selectedTake
+            ? project.assets.find((a) => a.id === selectedTake.asset_id)
+            : undefined;
+          if (!target || !selectedAsset || selectedAsset.duration <= 0) return null;
+          const targetSeconds =
+            (target.end_sample - target.start_sample) / project.document.sample_rate;
+          if (targetSeconds <= 0) return null;
+          const currentSpeed = direction.speed ?? 1.0;
+          const suggested = Math.min(
+            2.0,
+            Math.max(
+              0.5,
+              Number(((selectedAsset.duration * currentSpeed) / targetSeconds).toFixed(2)),
+            ),
+          );
+          return (
+            <StudioButton
+              disabled={editDisabled}
+              onClick={() =>
+                session.editPassage(passage.id, {
+                  direction: { ...direction, speed: suggested },
+                })
+              }
+            >
+              Fit speed to scene ({suggested.toFixed(2)}×)
+            </StudioButton>
+          );
+        })()}
+        <p className="studio-note">
+          Insert inline silence on any engine with <code>[pause 400ms]</code> or{' '}
+          <code>[pause 1.2s]</code> in the script text.
+        </p>
         <NumberField
           label="Maximum characters per chunk"
           value={direction.max_chunk_chars}

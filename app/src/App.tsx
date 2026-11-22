@@ -62,6 +62,8 @@ function MainApp() {
   const [serverReady, setServerReady] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
   const serverStartingRef = useRef(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Automatically check for app updates on startup and show toast notifications
   useAutoUpdater({ checkOnMount: true, showToast: true });
@@ -164,7 +166,7 @@ function MainApp() {
         // until it responds with a valid Voicebox payload, then transition to
         // the main UI.
         console.log('Falling back to health-check polling...');
-        const pollInterval = setInterval(async () => {
+        pollIntervalRef.current = setInterval(async () => {
           try {
             const health = await apiClient.getHealth();
             if (!isVoiceboxHealthResponse(health)) {
@@ -172,7 +174,14 @@ function MainApp() {
               return;
             }
             console.log('External Voicebox server detected via health check');
-            clearInterval(pollInterval);
+            if (pollIntervalRef.current) {
+              clearInterval(pollIntervalRef.current);
+              pollIntervalRef.current = null;
+            }
+            if (pollTimeoutRef.current) {
+              clearTimeout(pollTimeoutRef.current);
+              pollTimeoutRef.current = null;
+            }
             setServerReady(true);
           } catch {
             // Server not ready yet, keep polling
@@ -180,8 +189,12 @@ function MainApp() {
         }, 2000);
 
         // Stop polling after 2 minutes and surface the failure
-        setTimeout(() => {
-          clearInterval(pollInterval);
+        pollTimeoutRef.current = setTimeout(() => {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          pollTimeoutRef.current = null;
           serverStartingRef.current = false;
           setStartupError(
             'Could not connect to a Voicebox server within 2 minutes. ' +
@@ -193,6 +206,14 @@ function MainApp() {
     // Cleanup: stop server on actual unmount (not StrictMode remount)
     // Note: Window close is handled separately in Tauri Rust code
     return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
       // Window close event handles server shutdown based on setting
       serverStartingRef.current = false;
     };

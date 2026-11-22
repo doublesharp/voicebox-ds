@@ -16,11 +16,16 @@ def selected(monkeypatch, engine, backend):
     return next(config for config in backends.get_tts_model_configs() if config.engine == engine)
 
 
-def test_custom_voice_records_its_pytorch_adapter_on_an_mlx_host(monkeypatch):
-    config = selected(monkeypatch, "qwen_custom_voice", "mlx")
-    identity = capability_for_config(config)["registry_identity"]
-    assert identity["backend"] == "pytorch"
-    assert identity["adapter"].endswith("qwen_custom_voice_backend.QwenCustomVoiceBackend")
+def test_custom_voice_records_mlx_on_mlx_host_and_pytorch_elsewhere(monkeypatch):
+    mlx_config = selected(monkeypatch, "qwen_custom_voice", "mlx")
+    mlx_identity = capability_for_config(mlx_config)["registry_identity"]
+    assert mlx_identity["backend"] == "mlx"
+    assert mlx_identity["adapter"].endswith("qwen_mlx_variants.QwenCustomVoiceMLXBackend")
+
+    pt_config = selected(monkeypatch, "qwen_custom_voice", "pytorch")
+    pt_identity = capability_for_config(pt_config)["registry_identity"]
+    assert pt_identity["backend"] == "pytorch"
+    assert pt_identity["adapter"].endswith("qwen_custom_voice_backend.QwenCustomVoiceBackend")
 
 
 def test_selected_engine_package_changes_the_frozen_registry_revision(monkeypatch):

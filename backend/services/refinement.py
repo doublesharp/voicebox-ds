@@ -245,10 +245,14 @@ def build_refinement_prompt(flags: RefinementFlags, language: str | None = None)
     if flags.preserve_technical:
         sections.append(_PRESERVE_TECHNICAL)
 
-    if len(sections) == 1:
-        # No refinement toggles enabled — nothing meaningful to do, but the
-        # caller still gets a deterministic pass-through prompt.
-        sections.append("No transformations are enabled. Return the transcript unchanged.")
+    if not (flags.smart_cleanup or flags.self_correction or flags.preserve_technical):
+        # No refinement toggles enabled — keep only the language pin and an
+        # explicit deterministic pass-through instruction instead of editing.
+        sections = [
+            "You are a verbatim transcript pass-through.",
+            sections[1],
+            "No transformations are enabled. Return the transcript unchanged.",
+        ]
 
     return "\n\n".join(sections)
 

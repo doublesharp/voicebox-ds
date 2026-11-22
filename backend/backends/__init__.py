@@ -287,15 +287,24 @@ def _get_qwen_model_configs() -> list[ModelConfig]:
 
 
 def _get_qwen_custom_voice_configs() -> list[ModelConfig]:
-    """Return Qwen CustomVoice model configs."""
+    """Return Qwen CustomVoice model configs with backend-aware HF repo IDs."""
+    on_mlx = get_backend_type() == "mlx"
+    if on_mlx:
+        repo_1_7b = "mlx-community/Qwen3-TTS-12Hz-1.7B-CustomVoice-bf16"
+        repo_0_6b = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-bf16"
+    else:
+        repo_1_7b = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+        repo_0_6b = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
+
     return [
         ModelConfig(
             model_name="qwen-custom-voice-1.7B",
             display_name="Qwen CustomVoice 1.7B",
             engine="qwen_custom_voice",
-            hf_repo_id="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            hf_repo_id=repo_1_7b,
             model_size="1.7B",
             size_mb=3500,
+            retries_runaway=on_mlx,
             supports_instruct=True,
             languages=["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
         ),
@@ -303,9 +312,10 @@ def _get_qwen_custom_voice_configs() -> list[ModelConfig]:
             model_name="qwen-custom-voice-0.6B",
             display_name="Qwen CustomVoice 0.6B",
             engine="qwen_custom_voice",
-            hf_repo_id="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+            hf_repo_id=repo_0_6b,
             model_size="0.6B",
             size_mb=1200,
+            retries_runaway=on_mlx,
             supports_instruct=True,
             languages=["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
         ),
@@ -317,14 +327,21 @@ def _get_qwen_voice_design_configs() -> list[ModelConfig]:
 
     Upstream ships a single 1.7B checkpoint — there is no 0.6B VoiceDesign.
     """
+    on_mlx = get_backend_type() == "mlx"
+    repo_1_7b = (
+        "mlx-community/Qwen3-TTS-12Hz-1.7B-VoiceDesign-bf16"
+        if on_mlx
+        else "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+    )
     return [
         ModelConfig(
             model_name="qwen-voice-design-1.7B",
             display_name="Qwen VoiceDesign 1.7B",
             engine="qwen_voice_design",
-            hf_repo_id="Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+            hf_repo_id=repo_1_7b,
             model_size="1.7B",
             size_mb=3500,
+            retries_runaway=on_mlx,
             supports_instruct=True,
             languages=["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
         ),
@@ -399,9 +416,11 @@ def _get_non_qwen_tts_configs() -> list[ModelConfig]:
             model_name="chatterbox-turbo",
             display_name="Chatterbox Turbo (English, Tags)",
             engine="chatterbox_turbo",
-            hf_repo_id="ResembleAI/chatterbox-turbo",
+            hf_repo_id="mlx-community/chatterbox-turbo-fp16" if on_mlx else "ResembleAI/chatterbox-turbo",
+            aux_hf_repo_ids=(CHATTERBOX_MLX_S3_TOKENIZER_REPO,) if on_mlx else (),
             size_mb=1500,
             needs_trim=True,
+            retries_runaway=on_mlx,
             languages=["en"],
         ),
         ModelConfig(
@@ -409,6 +428,7 @@ def _get_non_qwen_tts_configs() -> list[ModelConfig]:
             display_name="TADA 1B (English)",
             engine="tada",
             hf_repo_id="HumeAI/tada-1b",
+            aux_hf_repo_ids=("HumeAI/tada-codec", "unsloth/Llama-3.2-1B"),
             model_size="1B",
             size_mb=4000,
             languages=["en"],
@@ -418,6 +438,7 @@ def _get_non_qwen_tts_configs() -> list[ModelConfig]:
             display_name="TADA 3B Multilingual",
             engine="tada",
             hf_repo_id="HumeAI/tada-3b-ml",
+            aux_hf_repo_ids=("HumeAI/tada-codec", "unsloth/Llama-3.2-1B"),
             model_size="3B",
             size_mb=8000,
             languages=["en", "ar", "zh", "de", "es", "fr", "it", "ja", "pl", "pt"],
@@ -426,7 +447,7 @@ def _get_non_qwen_tts_configs() -> list[ModelConfig]:
             model_name="kokoro",
             display_name="Kokoro 82M",
             engine="kokoro",
-            hf_repo_id="hexgrad/Kokoro-82M",
+            hf_repo_id="mlx-community/Kokoro-82M-bf16" if on_mlx else "hexgrad/Kokoro-82M",
             size_mb=350,
             languages=["en", "es", "fr", "hi", "it", "pt", "ja", "zh"],
         ),
@@ -625,9 +646,41 @@ def engine_retries_runaway(engine: str) -> bool:
 
 
 def engine_has_model_sizes(engine: str) -> bool:
-    """Whether this engine supports multiple model sizes (only Qwen currently)."""
+    """Whether this engine supports multiple model sizes."""
     configs = [c for c in get_tts_model_configs() if c.engine == engine]
     return len(configs) > 1
+
+
+def get_valid_model_sizes(engine: str) -> list[str]:
+    """Return valid model_size values for a multi-size TTS engine."""
+    return [c.model_size for c in get_tts_model_configs() if c.engine == engine and c.model_size]
+
+
+def get_default_model_size(engine: str) -> Optional[str]:
+    """Return the default model_size for a TTS engine, or None if single-size."""
+    if not engine_has_model_sizes(engine):
+        return None
+    sizes = get_valid_model_sizes(engine)
+    return sizes[0] if sizes else None
+
+
+def resolve_engine_model_size(engine: str, requested_size: Optional[str]) -> Optional[str]:
+    """Validate and resolve model_size for a TTS engine.
+
+    Raises ValueError if the caller explicitly requests a model_size that does
+    not belong to the engine.
+    """
+    if not engine_has_model_sizes(engine):
+        return None
+    valid_sizes = get_valid_model_sizes(engine)
+    if requested_size is None:
+        return valid_sizes[0] if valid_sizes else None
+    if requested_size not in valid_sizes:
+        raise ValueError(
+            f"Invalid model_size '{requested_size}' for engine '{engine}'. "
+            f"Supported sizes: {', '.join(valid_sizes)}"
+        )
+    return requested_size
 
 
 async def load_engine_model(engine: str, model_size: str = "default") -> None:
@@ -700,7 +753,7 @@ def unload_model_by_config(config: ModelConfig) -> bool:
             return True
         return False
 
-    if config.engine == "qwen_custom_voice":
+    if config.engine in ("qwen_custom_voice", "tada"):
         backend = get_tts_backend_for_engine(config.engine)
         loaded_size = getattr(backend, "_current_model_size", None) or getattr(backend, "model_size", None)
         if backend.is_loaded() and loaded_size == config.model_size:
@@ -738,7 +791,7 @@ def check_model_loaded(config: ModelConfig) -> bool:
             loaded_size = getattr(tts_model, "_current_model_size", None) or getattr(tts_model, "model_size", None)
             return tts_model.is_loaded() and loaded_size == config.model_size
 
-        if config.engine == "qwen_custom_voice":
+        if config.engine in ("qwen_custom_voice", "tada"):
             backend = get_tts_backend_for_engine(config.engine)
             loaded_size = getattr(backend, "_current_model_size", None) or getattr(backend, "model_size", None)
             return backend.is_loaded() and loaded_size == config.model_size
@@ -760,13 +813,46 @@ def get_model_load_func(config: ModelConfig):
     if config.engine == "qwen":
         return lambda: tts.get_tts_model().load_model(config.model_size)
 
-    if config.engine == "qwen_custom_voice":
+    if config.engine in ("qwen_custom_voice", "tada"):
         return lambda: get_tts_backend_for_engine(config.engine).load_model(config.model_size)
 
     if config.engine == "qwen_llm":
         return lambda: get_llm_backend_for_engine("qwen_llm").load_model(config.model_size)
 
     return lambda: get_tts_backend_for_engine(config.engine).load_model()
+
+
+def unload_all_models() -> None:
+    """Unload every instantiated TTS, STT, and LLM backend (used on shutdown)."""
+    from ..utils.cache import clear_voice_prompt_memory_cache
+
+    clear_voice_prompt_memory_cache()
+
+    with _tts_backends_lock:
+        tts_items = list(_tts_backends.items())
+    for engine_name, backend in tts_items:
+        try:
+            if backend.is_loaded():
+                backend.unload_model()
+        except Exception:
+            logger.exception("Failed to unload TTS backend '%s'", engine_name)
+
+    with _llm_backends_lock:
+        llm_items = list(_llm_backends.items())
+    for engine_name, backend in llm_items:
+        try:
+            if backend.is_loaded():
+                backend.unload_model()
+        except Exception:
+            logger.exception("Failed to unload LLM backend '%s'", engine_name)
+
+    global _stt_backend
+    if _stt_backend is not None:
+        try:
+            if _stt_backend.is_loaded():
+                _stt_backend.unload_model()
+        except Exception:
+            logger.exception("Failed to unload STT backend")
 
 
 def get_tts_backend() -> TTSBackend:
@@ -827,29 +913,49 @@ def get_tts_backend_for_engine(engine: str) -> TTSBackend:
 
                 backend = ChatterboxTTSBackend()
         elif engine == "chatterbox_turbo":
-            from .chatterbox_turbo_backend import ChatterboxTurboTTSBackend
+            if get_backend_type() == "mlx":
+                from .qwen_mlx_variants import ChatterboxTurboMLXTTSBackend
 
-            backend = ChatterboxTurboTTSBackend()
+                backend = ChatterboxTurboMLXTTSBackend()
+            else:
+                from .chatterbox_turbo_backend import ChatterboxTurboTTSBackend
+
+                backend = ChatterboxTurboTTSBackend()
         elif engine == "tada":
             from .hume_backend import HumeTadaBackend
 
             backend = HumeTadaBackend()
         elif engine == "kokoro":
-            from .kokoro_backend import KokoroTTSBackend
+            if get_backend_type() == "mlx":
+                from .qwen_mlx_variants import KokoroMLXTTSBackend
 
-            backend = KokoroTTSBackend()
+                backend = KokoroMLXTTSBackend()
+            else:
+                from .kokoro_backend import KokoroTTSBackend
+
+                backend = KokoroTTSBackend()
         elif engine == "omnivoice":
             from .omnivoice_backend import OmniVoiceBackend
 
             backend = OmniVoiceBackend()
         elif engine == "qwen_custom_voice":
-            from .qwen_custom_voice_backend import QwenCustomVoiceBackend
+            if get_backend_type() == "mlx":
+                from .qwen_mlx_variants import QwenCustomVoiceMLXBackend
 
-            backend = QwenCustomVoiceBackend()
+                backend = QwenCustomVoiceMLXBackend()
+            else:
+                from .qwen_custom_voice_backend import QwenCustomVoiceBackend
+
+                backend = QwenCustomVoiceBackend()
         elif engine == "qwen_voice_design":
-            from .qwen_voice_design_backend import QwenVoiceDesignBackend
+            if get_backend_type() == "mlx":
+                from .qwen_mlx_variants import QwenVoiceDesignMLXBackend
 
-            backend = QwenVoiceDesignBackend()
+                backend = QwenVoiceDesignMLXBackend()
+            else:
+                from .qwen_voice_design_backend import QwenVoiceDesignBackend
+
+                backend = QwenVoiceDesignBackend()
         else:
             raise ValueError(f"Unknown TTS engine: {engine}. Supported: {list(TTS_ENGINES.keys())}")
 

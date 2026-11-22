@@ -227,11 +227,17 @@ async def upload_profile_avatar(
     db: Session = Depends(get_db),
 ):
     """Upload or update avatar image for a profile."""
+    max_avatar_bytes = 10 * 1024 * 1024  # 10 MB
     tmp_path = None
     try:
+        try:
+            content = await file.read(max_avatar_bytes + 1)
+        except TypeError:
+            content = await file.read()
+        if len(content) > max_avatar_bytes:
+            raise HTTPException(status_code=413, detail="Avatar image exceeds 10 MB limit")
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename or "").suffix) as tmp:
             tmp_path = tmp.name
-            content = await file.read()
             tmp.write(content)
         try:
             return await profiles.upload_avatar(profile_id, tmp_path, db)

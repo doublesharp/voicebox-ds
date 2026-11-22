@@ -163,9 +163,17 @@ export function GeneralPage() {
             <Toggle
               id="keepServerRunning"
               checked={keepServerRunningOnClose}
-              onCheckedChange={(checked: boolean) => {
+              onCheckedChange={async (checked: boolean) => {
                 setKeepServerRunningOnClose(checked);
-                platform.lifecycle.setKeepServerRunning(checked).catch((error) => {
+                try {
+                  await platform.lifecycle.setKeepServerRunning(checked);
+                  toast({
+                    title: t('settings.general.keepServerRunning.updatedTitle'),
+                    description: checked
+                      ? t('settings.general.keepServerRunning.runningDescription')
+                      : t('settings.general.keepServerRunning.stoppedDescription'),
+                  });
+                } catch (error) {
                   console.error('Failed to sync setting to Rust:', error);
                   setKeepServerRunningOnClose(!checked);
                   toast({
@@ -173,14 +181,7 @@ export function GeneralPage() {
                     description: t('settings.general.keepServerRunning.failedDescription'),
                     variant: 'destructive',
                   });
-                  return;
-                });
-                toast({
-                  title: t('settings.general.keepServerRunning.updatedTitle'),
-                  description: checked
-                    ? t('settings.general.keepServerRunning.runningDescription')
-                    : t('settings.general.keepServerRunning.stoppedDescription'),
-                });
+                }
               }}
             />
           }

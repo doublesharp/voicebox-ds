@@ -102,7 +102,7 @@ async def create_capture(
 
     capture_id = str(uuid.uuid4())
     suffix = Path(filename).suffix.lower() or ".wav"
-    if suffix not in (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm"):
+    if suffix not in (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".webm", ".aac", ".opus"):
         suffix = ".wav"
 
     raw_path = config.get_captures_dir() / f"{capture_id}{suffix}"
@@ -213,6 +213,8 @@ async def retranscribe_capture(
     stt_model: Optional[str],
     language: Optional[str],
     db: Session,
+    *,
+    update_language: bool = False,
 ) -> Optional[CaptureResponse]:
     row = db.query(DBCapture).filter(DBCapture.id == capture_id).first()
     if not row:
@@ -228,7 +230,7 @@ async def retranscribe_capture(
 
     row.transcript_raw = transcript
     row.stt_model = resolved_stt
-    if language:
+    if update_language or language:
         row.language = language
     # Refined text is stale after a fresh STT pass — force a re-refine.
     row.transcript_refined = None

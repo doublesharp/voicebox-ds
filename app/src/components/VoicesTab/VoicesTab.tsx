@@ -24,12 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useToast } from '@/components/ui/use-toast';
 import { ProfileForm } from '@/components/VoiceProfiles/ProfileForm';
 import { apiClient } from '@/lib/api/client';
 import type { VoiceProfileResponse } from '@/lib/api/types';
 import { BOTTOM_SAFE_AREA_PADDING } from '@/lib/constants/ui';
 import { useMediaQuery } from '@/lib/hooks/useMediaQuery';
-import { useProfiles } from '@/lib/hooks/useProfiles';
+import { useDeleteProfile, useExportProfile, useProfiles } from '@/lib/hooks/useProfiles';
 import { cn } from '@/lib/utils/cn';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useServerStore } from '@/stores/serverStore';
@@ -39,6 +40,10 @@ import { VoiceInspector, type VoiceInspectorActions } from './VoiceInspector';
 export function VoicesTab() {
   const { t } = useTranslation();
   const { data: profiles, isLoading } = useProfiles();
+  const deleteProfile = useDeleteProfile();
+  const exportProfile = useExportProfile();
+  const { toast } = useToast();
+  const [deleteTarget, setDeleteTarget] = useState<VoiceProfileResponse | null>(null);
   const queryClient = useQueryClient();
   const setDialogOpen = useUIStore((state) => state.setProfileDialogOpen);
   const selectedVoiceId = useUIStore((state) => state.selectedVoiceId);
@@ -290,6 +295,18 @@ export function VoicesTab() {
             profileSummary={profiles?.find((profile) => profile.id === selectedVoiceId)}
             onDirtyChange={setDirty}
             onSavingChange={setInspectorSaving}
+            onExport={(profile) => {
+              exportProfile.mutate(profile.id, {
+                onError: (err) => {
+                  toast({
+                    title: t('common.error'),
+                    description: err instanceof Error ? err.message : t('common.unknownError'),
+                    variant: 'destructive',
+                  });
+                },
+              });
+            }}
+            onDelete={(profile) => setDeleteTarget(profile)}
             actionsRef={inspector}
           />
         </div>
@@ -318,11 +335,79 @@ export function VoicesTab() {
               overlay
               onDirtyChange={setDirty}
               onSavingChange={setInspectorSaving}
+              onExport={(profile) => {
+                exportProfile.mutate(profile.id, {
+                  onError: (err) => {
+                    toast({
+                      title: t('common.error'),
+                      description: err instanceof Error ? err.message : t('common.unknownError'),
+                      variant: 'destructive',
+                    });
+                  },
+                });
+              }}
+              onDelete={(profile) => setDeleteTarget(profile)}
               actionsRef={inspector}
             />
           )}
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleteProfile.isPending) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('profiles.deleteDialog.title', { defaultValue: 'Delete voice profile?' })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('profiles.deleteDialog.description', {
+                name: deleteTarget?.name ?? '',
+                defaultValue: `Delete "${deleteTarget?.name ?? ''}" and its reference samples? This cannot be undone.`,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <Button
+              variant="ghost"
+              disabled={deleteProfile.isPending}
+              onClick={() => setDeleteTarget(null)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteProfile.isPending}
+              onClick={() => {
+                if (!deleteTarget) return;
+                const idToDelete = deleteTarget.id;
+                deleteProfile.mutate(idToDelete, {
+                  onSuccess: () => {
+                    if (selectedVoiceId === idToDelete) {
+                      setDirty(false);
+                      setSelectedVoiceId(null);
+                      setSheetOpen(false);
+                    }
+                    setDeleteTarget(null);
+                  },
+                  onError: (err) => {
+                    toast({
+                      title: t('common.error'),
+                      description: err instanceof Error ? err.message : t('common.unknownError'),
+                      variant: 'destructive',
+                    });
+                  },
+                });
+              }}
+            >
+              {t('common.delete')}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={!!guard}
         onOpenChange={(open) => {
@@ -390,7 +475,9 @@ function VoiceRow({
   const avatarUrl = profile.avatar_path ? `${serverUrl}/profiles/${profile.id}/avatar` : null;
 
   const enabledEffects = profile.effects_chain?.filter((e) => e.enabled) ?? [];
-  const effectsSummary = enabledEffects.map((e) => e.type).join(' → ');
+  const effectsSummary = enabledEffects
+    .map((e) => t(`effects.types.${e.type}.label`, { defaultValue: e.type }))
+    .join(' → ');
 
   return (
     <TableRow

@@ -32,6 +32,11 @@ from pedalboard import (
     Gain,
     HighpassFilter,
     LowpassFilter,
+    LowShelfFilter,
+    PeakFilter,
+    HighShelfFilter,
+    NoiseGate,
+    Limiter,
     Delay,
     PitchShift,
 )
@@ -146,6 +151,86 @@ EFFECT_REGISTRY: Dict[str, Dict[str, Any]] = {
             "semitones": {"default": 0.0, "min": -12.0, "max": 12.0, "step": 0.5, "description": "Semitones to shift"},
         },
     },
+    "low_shelf": {
+        "cls": LowShelfFilter,
+        "label": "Low-Shelf EQ",
+        "description": "Boost or cut low frequencies for vocal warmth or rumble reduction.",
+        "params": {
+            "cutoff_frequency_hz": {
+                "default": 180.0,
+                "min": 40.0,
+                "max": 1000.0,
+                "step": 5.0,
+                "description": "Cutoff frequency (Hz)",
+            },
+            "gain_db": {"default": 0.0, "min": -18.0, "max": 18.0, "step": 0.5, "description": "Gain (dB)"},
+            "q": {"default": 0.707, "min": 0.1, "max": 4.0, "step": 0.05, "description": "Filter slope (Q)"},
+        },
+    },
+    "peak_filter": {
+        "cls": PeakFilter,
+        "label": "Parametric Presence EQ",
+        "description": "Bell EQ band to add vocal presence (2–4 kHz) or tame harshness/sibilance (6–8 kHz).",
+        "params": {
+            "cutoff_frequency_hz": {
+                "default": 3000.0,
+                "min": 100.0,
+                "max": 16000.0,
+                "step": 50.0,
+                "description": "Center frequency (Hz)",
+            },
+            "gain_db": {"default": 0.0, "min": -18.0, "max": 18.0, "step": 0.5, "description": "Gain (dB)"},
+            "q": {"default": 1.0, "min": 0.2, "max": 10.0, "step": 0.1, "description": "Bandwidth (Q)"},
+        },
+    },
+    "high_shelf": {
+        "cls": HighShelfFilter,
+        "label": "High-Shelf EQ",
+        "description": "Boost air/clarity or gently roll off sibilance above the cutoff.",
+        "params": {
+            "cutoff_frequency_hz": {
+                "default": 8000.0,
+                "min": 1500.0,
+                "max": 16000.0,
+                "step": 100.0,
+                "description": "Cutoff frequency (Hz)",
+            },
+            "gain_db": {"default": 0.0, "min": -18.0, "max": 18.0, "step": 0.5, "description": "Gain (dB)"},
+            "q": {"default": 0.707, "min": 0.1, "max": 4.0, "step": 0.05, "description": "Filter slope (Q)"},
+        },
+    },
+    "noise_gate": {
+        "cls": NoiseGate,
+        "label": "Noise Gate",
+        "description": "Attenuates quiet room tone or codec hiss between spoken phrases.",
+        "params": {
+            "threshold_db": {
+                "default": -45.0,
+                "min": -80.0,
+                "max": -10.0,
+                "step": 1.0,
+                "description": "Threshold (dB)",
+            },
+            "ratio": {"default": 6.0, "min": 1.0, "max": 20.0, "step": 0.5, "description": "Gate ratio"},
+            "attack_ms": {"default": 2.0, "min": 0.1, "max": 50.0, "step": 0.5, "description": "Attack time (ms)"},
+            "release_ms": {"default": 120.0, "min": 10.0, "max": 1000.0, "step": 5.0, "description": "Release time (ms)"},
+        },
+    },
+    "limiter": {
+        "cls": Limiter,
+        "label": "Limiter",
+        "description": "Prevents peaks from exceeding a ceiling threshold without hard clipping.",
+        "params": {
+            "threshold_db": {
+                "default": -1.5,
+                "min": -24.0,
+                "max": 0.0,
+                "step": 0.5,
+                "description": "Ceiling threshold (dB)",
+            },
+            "release_ms": {"default": 80.0, "min": 10.0, "max": 1000.0, "step": 5.0, "description": "Release time (ms)"},
+        },
+    },
 }
 
 
@@ -224,6 +309,43 @@ BUILTIN_PRESETS: Dict[str, Dict[str, Any]] = {
                     "feedback": 0.3,
                     "mix": 0.2,
                 },
+            },
+        ],
+    },
+    "youtube_narration": {
+        "name": "YouTube Narration",
+        "sort_order": 3,
+        "description": "Clean broadcast voiceover chain (HPF, warmth & presence EQ, vocal compression, peak limiter)",
+        "effects_chain": [
+            {
+                "type": "highpass",
+                "enabled": True,
+                "params": {"cutoff_frequency_hz": 80.0},
+            },
+            {
+                "type": "low_shelf",
+                "enabled": True,
+                "params": {"cutoff_frequency_hz": 180.0, "gain_db": 2.0, "q": 0.7},
+            },
+            {
+                "type": "peak_filter",
+                "enabled": True,
+                "params": {"cutoff_frequency_hz": 3000.0, "gain_db": 2.5, "q": 1.2},
+            },
+            {
+                "type": "compressor",
+                "enabled": True,
+                "params": {
+                    "threshold_db": -18.0,
+                    "ratio": 3.0,
+                    "attack_ms": 8.0,
+                    "release_ms": 120.0,
+                },
+            },
+            {
+                "type": "limiter",
+                "enabled": True,
+                "params": {"threshold_db": -1.5, "release_ms": 80.0},
             },
         ],
     },
