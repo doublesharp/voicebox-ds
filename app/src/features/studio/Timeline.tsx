@@ -9,7 +9,13 @@ import { Field, NumberField, StudioButton } from './ui';
 import { Waveform } from './Waveform';
 import './waveforms.css';
 
-export function Timeline({ compact = false }: { compact?: boolean }) {
+export function Timeline({
+  compact = false,
+  importOnly = false,
+}: {
+  compact?: boolean;
+  importOnly?: boolean;
+}) {
   const studio = useStudio();
   const { project, session, canMutate } = studio;
   const [gap, setGap] = useState(200);
@@ -46,6 +52,30 @@ export function Timeline({ compact = false }: { compact?: boolean }) {
       });
     });
   };
+  const importControl = (
+    <>
+      <input
+        ref={importInput}
+        type="file"
+        accept="audio/*"
+        hidden
+        aria-label="Import arrangement audio"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) importAudio(file);
+        }}
+      />
+      <StudioButton
+        disabled={!canMutate || studio.actionBusy}
+        onClick={() => importInput.current?.click()}
+      >
+        Import audio
+      </StudioButton>
+    </>
+  );
+  if (importOnly) return importControl;
+
   return (
     <section
       className={`studio-timeline ${compact ? 'is-compact' : ''}`}
@@ -58,19 +88,6 @@ export function Timeline({ compact = false }: { compact?: boolean }) {
           <p>{doc.clips.length} clips · 48 kHz stereo</p>
         </div>
         <div className="studio-action-row">
-          <input
-            ref={importInput}
-            type="file"
-            accept="audio/*"
-            hidden
-            aria-label="Import arrangement audio"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (!file) return;
-              importAudio(file);
-            }}
-          />
           <select
             aria-label="Imported audio track type"
             value={mediaKind}
@@ -79,12 +96,7 @@ export function Timeline({ compact = false }: { compact?: boolean }) {
             <option value="music">Music</option>
             <option value="sfx">Sound effect</option>
           </select>
-          <StudioButton
-            disabled={!canMutate || studio.actionBusy}
-            onClick={() => importInput.current?.click()}
-          >
-            Import audio
-          </StudioButton>
+          {importControl}
           <NumberField label="Gap (ms)" value={gap} step={1} max={60000} onCommit={setGap} />
           <StudioButton
             disabled={!canMutate || !selectedIds.length || unresolved}

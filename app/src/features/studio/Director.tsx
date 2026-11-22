@@ -1,5 +1,6 @@
-import { Sparkles } from 'lucide-react';
+import { BookOpen, Sparkles } from 'lucide-react';
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -8,13 +9,16 @@ import {
 } from './ArchiveScopeControls';
 import { useStudio } from './context';
 import { engineForPassage } from './domain';
-import { PronunciationPanel } from './PronunciationPanel';
 import { operationId } from './session';
 import { useDurableSubmission } from './submissions';
 import { TakeWorkflow } from './TakeWorkflow';
 import { Field, NumberField, StudioButton } from './ui';
 
-export function Director() {
+export function Director({
+  onOpenPronunciation,
+}: {
+  onOpenPronunciation?: (opener: HTMLButtonElement) => void;
+}) {
   const studio = useStudio();
   const { project, session, save, selectedPassageId, profiles, engines, client } = studio;
   const [count, setCount] = useState<1 | 2 | 3>(1);
@@ -62,11 +66,8 @@ export function Director() {
     return (
       <div className="studio-inspector-content">
         {recoveryPanel}
-        <p className="studio-eyebrow">DIRECTOR</p>
-        <h2>One passage. Every possibility.</h2>
-        <p className="studio-note">
-          Select a passage to assign a voice, direct its delivery, and compare performances.
-        </p>
+        <h2>Voice &amp; takes</h2>
+        <p className="studio-note">Select a passage to assign a voice or generate takes.</p>
         {submissionError && (
           <p role="alert" className="studio-error">
             {submissionError}
@@ -125,6 +126,9 @@ export function Director() {
           supported.replace(/^\[|\]$/g, '').toLowerCase() === tag.slice(1, -1).toLowerCase(),
       ),
   );
+  const languageValue = save.drafts[passage.id]?.language ?? passage.language;
+  const unsupportedLanguage =
+    !!engine?.languages.length && !engine.languages.includes(languageValue);
   const generate = async () => {
     if (!request) {
       await session.flush();
@@ -147,17 +151,14 @@ export function Director() {
     <div className="studio-inspector-content">
       {recoveryPanel}
       <div className="studio-section-title">
-        <div>
-          <p className="studio-eyebrow">DIRECTOR</p>
-          <h2>Make it yours.</h2>
-        </div>
-        <span className="studio-status-chip">{passage.locked ? 'Locked' : 'Passage'}</span>
+        <h2>Voice &amp; takes</h2>
+        {passage.locked && <span className="studio-status-chip">Locked</span>}
+        {!passage.locked && selectedIds.length > 1 && (
+          <span>{selectedIds.length} passages selected</span>
+        )}
       </div>
       {missingReferences && <RegenerationReferenceNotice />}
-      <Field
-        label="Voice / cast"
-        hint="Assignments snapshot this profile. Global profile changes do not silently update the project."
-      >
+      <Field label="Voice">
         <select
           aria-label="Passage voice"
           value={passage.profile_id ?? ''}
@@ -194,33 +195,6 @@ export function Director() {
           ))}
         </select>
       </Field>
-      {!!variants.length && (
-        <Field
-          label="Voice model size"
-          hint="Reassigning snapshots this exact engine variant for the selected passages."
-        >
-          <select
-            aria-label="Voice model size"
-            value={String(passage.voice_snapshot?.model_size ?? '')}
-            disabled={disabled || studio.actionBusy || !profile}
-            onChange={(event) => {
-              if (variants.some((variant) => variant.model_size === event.target.value))
-                void session.command('assign_voice', {
-                  passage_ids: selectedIds,
-                  profile_id: passage.profile_id,
-                  model_size: event.target.value,
-                });
-            }}
-          >
-            <option value="">Choose a compatible variant</option>
-            {variants.map((variant) => (
-              <option key={variant.model_size} value={variant.model_size}>
-                {variant.name} · {variant.model_size} · {variant.ready ? 'Ready' : 'Not ready'}
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
       {!profiles.length && (
         <p className="studio-note">Create a voice in Voices, then return here to assign it.</p>
       )}
@@ -229,27 +203,12 @@ export function Director() {
           {studio.capabilitiesError}
         </p>
       )}
-      <div className="studio-engine-card">
-        <span className="studio-eyebrow">ENGINE</span>
-        <strong>{engine?.name || 'No compatible engine reported'}</strong>
-        <small>
-          {engine
-            ? `${engine.ready ? 'Ready' : 'Not ready'} · ${engine.languages.join(', ') || 'Language support not reported'}`
-            : 'Assign a voice to inspect its actual capabilities.'}
-        </small>
-        {engine?.commercial_use !== 'allowed' && engine && (
-          <small className="studio-error">
-            Commercial use: {engine.commercial_use}. Review model terms before client use.
-          </small>
-        )}
-      </div>
-      <Field label="Passage language">
-        <Input
-          value={save.drafts[passage.id]?.language ?? passage.language}
-          disabled={editDisabled}
-          onChange={(event) => session.editPassage(passage.id, { language: event.target.value })}
-        />
-      </Field>
+      {engine && !engine.ready && <p className="studio-note">{engine.name} is not ready.</p>}
+      {engine && engine.commercial_use !== 'allowed' && (
+        <p className="studio-note">
+          Commercial use: {engine.commercial_use}. Check the model terms.
+        </p>
+      )}
       {(engine?.supports_instruct || direction.instruct) && (
         <Field
           label="Delivery direction"
@@ -282,135 +241,16 @@ export function Director() {
           )}
         </Field>
       )}
-      {!!engine?.expressive_tags.length && (
-        <p className="studio-note">
-          Supported expressive tags: {engine.expressive_tags.join(', ')}
-        </p>
-      )}
-      {(engine?.supports_seed || direction.seed !== null) && (
-        <Field label="Seed (optional)">
-          <Input
-            type="number"
-            aria-label="Seed"
-            value={direction.seed ?? ''}
-            disabled={editDisabled || !engine?.supports_seed}
-            onChange={(event) => {
-              const seed = event.target.value === '' ? null : event.target.valueAsNumber;
-              if (seed === null || Number.isInteger(seed))
-                session.editPassage(passage.id, { direction: { ...direction, seed } });
-            }}
-          />
-        </Field>
-      )}
-      {incompatibleSeed && (
-        <div className="studio-note">
-          Seed is inactive for this engine.{' '}
-          <StudioButton
-            disabled={editDisabled}
-            onClick={() =>
-              session.editPassage(passage.id, { direction: { ...direction, seed: null } })
-            }
-          >
-            Clear inactive seed
-          </StudioButton>
-        </div>
-      )}
       {!!unsupportedTags.length && (
         <p className="studio-error">
           Unsupported stage tags: {unsupportedTags.join(', ')}. Remove them, or remove brackets if
           these are spoken words.
         </p>
       )}
-      <details className="studio-advanced">
-        <summary>Chunk, pacing, and transition settings</summary>
-        <NumberField
-          label="Speaking speed (0.5×–2.0×)"
-          value={direction.speed ?? 1.0}
-          min={0.5}
-          max={2.0}
-          step={0.05}
-          disabled={editDisabled}
-          onCommit={(value) =>
-            session.editPassage(passage.id, {
-              direction: { ...direction, speed: Number(value.toFixed(2)) },
-            })
-          }
-        />
-        {(() => {
-          const target = project.document.scene_targets?.[passage.id];
-          const selectedTake = project.takes.find((t) => t.id === passage.selected_take_id);
-          const selectedAsset = selectedTake
-            ? project.assets.find((a) => a.id === selectedTake.asset_id)
-            : undefined;
-          if (!target || !selectedAsset || selectedAsset.duration <= 0) return null;
-          const targetSeconds =
-            (target.end_sample - target.start_sample) / project.document.sample_rate;
-          if (targetSeconds <= 0) return null;
-          const currentSpeed = direction.speed ?? 1.0;
-          const suggested = Math.min(
-            2.0,
-            Math.max(
-              0.5,
-              Number(((selectedAsset.duration * currentSpeed) / targetSeconds).toFixed(2)),
-            ),
-          );
-          return (
-            <StudioButton
-              disabled={editDisabled}
-              onClick={() =>
-                session.editPassage(passage.id, {
-                  direction: { ...direction, speed: suggested },
-                })
-              }
-            >
-              Fit speed to scene ({suggested.toFixed(2)}×)
-            </StudioButton>
-          );
-        })()}
-        <p className="studio-note">
-          Insert inline silence on any engine with <code>[pause 400ms]</code> or{' '}
-          <code>[pause 1.2s]</code> in the script text.
-        </p>
-        <NumberField
-          label="Maximum characters per chunk"
-          value={direction.max_chunk_chars}
-          min={1}
-          step={1}
-          disabled={editDisabled}
-          onCommit={(value) =>
-            session.editPassage(passage.id, {
-              direction: { ...direction, max_chunk_chars: Math.round(value) },
-            })
-          }
-        />
-        <NumberField
-          label="Chunk crossfade (ms)"
-          value={direction.crossfade_ms}
-          max={5000}
-          step={1}
-          disabled={editDisabled}
-          onCommit={(value) =>
-            session.editPassage(passage.id, { direction: { ...direction, crossfade_ms: value } })
-          }
-        />
-      </details>
+      {unsupportedLanguage && (
+        <p className="studio-error">Choose a supported language in Generation settings.</p>
+      )}
       <div className="studio-generate-box">
-        <label className="studio-check">
-          <input
-            type="checkbox"
-            aria-label="Commercial-use models only"
-            checked={commercialFilter}
-            disabled={studio.actionBusy || !!request}
-            onChange={(event) => setCommercialOnly(event.target.checked)}
-          />{' '}
-          Commercial-use models only
-        </label>
-        {commercialFilter && (
-          <p className="studio-note">
-            Models with restricted or unknown terms are excluded.
-            {!eligibleEngines.length && ' No eligible models are currently reported.'}
-          </p>
-        )}
         {submissionError && (
           <p role="alert" className="studio-error">
             {submissionError}
@@ -426,6 +266,127 @@ export function Director() {
           <StudioButton disabled={studio.actionBusy} onClick={discardRejected}>
             Dismiss rejected submission
           </StudioButton>
+        )}
+        <StudioButton
+          primary
+          disabled={
+            studio.actionBusy ||
+            (!request &&
+              (disabled ||
+                missingReferences ||
+                !engine?.ready ||
+                !passage.profile_id ||
+                !currentText.trim() ||
+                unsupportedTags.length > 0 ||
+                unsupportedLanguage))
+          }
+          onClick={generate}
+        >
+          <Sparkles size={15} />
+          {studio.actionBusy
+            ? 'Submitting…'
+            : request
+              ? 'Retry same request'
+              : adopt
+                ? 'Generate and use'
+                : 'Generate alternatives'}
+        </StudioButton>
+        {onOpenPronunciation && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(event) => onOpenPronunciation(event.currentTarget)}
+          >
+            <BookOpen size={15} /> Pronunciation
+          </Button>
+        )}
+      </div>
+      <details className="studio-advanced">
+        <summary>
+          Generation settings{commercialFilter && ' · Commercial use'}
+          {count > 1 && ` · ${count} takes`}
+        </summary>
+        {!!variants.length && (
+          <Field label="Voice model size">
+            <select
+              aria-label="Voice model size"
+              value={String(passage.voice_snapshot?.model_size ?? '')}
+              disabled={disabled || studio.actionBusy || !profile}
+              onChange={(event) => {
+                if (variants.some((variant) => variant.model_size === event.target.value))
+                  void session.command('assign_voice', {
+                    passage_ids: selectedIds,
+                    profile_id: passage.profile_id,
+                    model_size: event.target.value,
+                  });
+              }}
+            >
+              <option value="">Choose a compatible variant</option>
+              {variants.map((variant) => (
+                <option key={variant.model_size} value={variant.model_size}>
+                  {variant.name}
+                  {variant.ready ? '' : ' · Not ready'}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+        <Field label="Passage language">
+          <Input
+            value={languageValue}
+            disabled={editDisabled}
+            onChange={(event) => session.editPassage(passage.id, { language: event.target.value })}
+          />
+        </Field>
+        {!!engine?.expressive_tags.length && (
+          <p className="studio-note">
+            Supported expressive tags: {engine.expressive_tags.join(', ')}
+          </p>
+        )}
+        {(engine?.supports_seed || direction.seed !== null) && (
+          <Field label="Seed (optional)">
+            <Input
+              type="number"
+              aria-label="Seed"
+              value={direction.seed ?? ''}
+              disabled={editDisabled || !engine?.supports_seed}
+              onChange={(event) => {
+                const seed = event.target.value === '' ? null : event.target.valueAsNumber;
+                if (seed === null || Number.isInteger(seed))
+                  session.editPassage(passage.id, { direction: { ...direction, seed } });
+              }}
+            />
+          </Field>
+        )}
+        {incompatibleSeed && (
+          <div className="studio-note">
+            Seed is inactive for this engine.{' '}
+            <StudioButton
+              disabled={editDisabled}
+              onClick={() =>
+                session.editPassage(passage.id, { direction: { ...direction, seed: null } })
+              }
+            >
+              Clear inactive seed
+            </StudioButton>
+          </div>
+        )}
+        <label className="studio-check">
+          <input
+            type="checkbox"
+            aria-label="Commercial-use models only"
+            checked={commercialFilter}
+            disabled={studio.actionBusy || !!request}
+            onChange={(event) => setCommercialOnly(event.target.checked)}
+          />{' '}
+          Commercial-use models only
+        </label>
+        {commercialFilter && (
+          <p className="studio-note">
+            Models with restricted or unknown terms are excluded.
+            {!eligibleEngines.length && ' No eligible models are currently reported.'}
+          </p>
         )}
         <Field label="Alternatives per passage">
           <select
@@ -448,46 +409,80 @@ export function Director() {
           />{' '}
           Generate and use when intent still matches
         </label>
-        <StudioButton
-          primary
-          disabled={
-            studio.actionBusy ||
-            (!request &&
-              (disabled ||
-                missingReferences ||
-                !engine?.ready ||
-                !passage.profile_id ||
-                !currentText.trim() ||
-                studio.actionBusy ||
-                unsupportedTags.length > 0 ||
-                (engine.languages.length > 0 &&
-                  !engine.languages.includes(
-                    save.drafts[passage.id]?.language ?? passage.language,
-                  ))))
-          }
-          onClick={generate}
-        >
-          <Sparkles size={15} />
-          {studio.actionBusy
-            ? 'Submitting…'
-            : request
-              ? 'Retry same request'
-              : adopt
-                ? 'Generate and use'
-                : 'Generate alternatives'}
-        </StudioButton>
-        <p className="studio-note">
-          {(request?.passage_ids.length ?? selectedIds.length) * (request?.count ?? count)} jobs ·{' '}
-          {(request?.adopt ?? adopt)
-            ? 'Adoption checks editing and selection intent.'
-            : 'Keeps your current selected takes.'}
-        </p>
-      </div>
-      <PronunciationPanel
-        key={`pronunciation:${passage.id}`}
-        passage={passage}
-        currentText={currentText}
-      />
+        <details className="studio-advanced">
+          <summary>Chunk, pacing, and transition settings</summary>
+          <NumberField
+            label="Speaking speed (0.5×–2.0×)"
+            value={direction.speed ?? 1.0}
+            min={0.5}
+            max={2.0}
+            step={0.05}
+            disabled={editDisabled}
+            onCommit={(value) =>
+              session.editPassage(passage.id, {
+                direction: { ...direction, speed: Number(value.toFixed(2)) },
+              })
+            }
+          />
+          {(() => {
+            const target = project.document.scene_targets?.[passage.id];
+            const selectedTake = project.takes.find((t) => t.id === passage.selected_take_id);
+            const selectedAsset = selectedTake
+              ? project.assets.find((a) => a.id === selectedTake.asset_id)
+              : undefined;
+            if (!target || !selectedAsset || selectedAsset.duration <= 0) return null;
+            const targetSeconds =
+              (target.end_sample - target.start_sample) / project.document.sample_rate;
+            if (targetSeconds <= 0) return null;
+            const currentSpeed = direction.speed ?? 1.0;
+            const suggested = Math.min(
+              2.0,
+              Math.max(
+                0.5,
+                Number(((selectedAsset.duration * currentSpeed) / targetSeconds).toFixed(2)),
+              ),
+            );
+            return (
+              <StudioButton
+                disabled={editDisabled}
+                onClick={() =>
+                  session.editPassage(passage.id, {
+                    direction: { ...direction, speed: suggested },
+                  })
+                }
+              >
+                Fit speed to scene ({suggested.toFixed(2)}×)
+              </StudioButton>
+            );
+          })()}
+          <p className="studio-note">
+            Insert inline silence on any engine with <code>[pause 400ms]</code> or{' '}
+            <code>[pause 1.2s]</code> in the script text.
+          </p>
+          <NumberField
+            label="Maximum characters per chunk"
+            value={direction.max_chunk_chars}
+            min={1}
+            step={1}
+            disabled={editDisabled}
+            onCommit={(value) =>
+              session.editPassage(passage.id, {
+                direction: { ...direction, max_chunk_chars: Math.round(value) },
+              })
+            }
+          />
+          <NumberField
+            label="Chunk crossfade (ms)"
+            value={direction.crossfade_ms}
+            max={5000}
+            step={1}
+            disabled={editDisabled}
+            onCommit={(value) =>
+              session.editPassage(passage.id, { direction: { ...direction, crossfade_ms: value } })
+            }
+          />
+        </details>
+      </details>
       <TakeWorkflow key={passage.id} passage={passage} currentText={currentText} />
     </div>
   );

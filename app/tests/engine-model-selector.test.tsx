@@ -2,6 +2,7 @@ import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 import { createElement, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import type { ModelStatus } from '../src/lib/api/types';
 
 const pass = ({ children }: { children: ReactNode }) => <>{children}</>;
 mock.module('../src/components/ui/form', () => ({ FormControl: pass }));
@@ -12,11 +13,26 @@ mock.module('../src/components/ui/select', () => ({
   SelectTrigger: pass,
   SelectValue: () => null,
 }));
-let advertisedModelNames = new Set<string>();
+const modelInventory = new Map<string, ModelStatus>();
 let variantsLoading = false;
+const download = mock((_model: ModelStatus) => {});
 mock.module('../src/lib/hooks/useAvailableTtsModels', () => ({
-  useAvailableTtsModels: () => ({ names: advertisedModelNames, loading: variantsLoading }),
+  useAvailableTtsModels: () => ({
+    models: modelInventory,
+    download,
+    startingDownload: false,
+    loading: variantsLoading,
+  }),
 }));
+function advertise(modelName: string) {
+  modelInventory.set(modelName, {
+    model_name: modelName,
+    display_name: modelName,
+    downloaded: false,
+    downloading: false,
+    loaded: false,
+  });
+}
 const { EngineModelSelector, isProfileCompatibleWithEngine } = await import(
   '../src/components/Generation/EngineModelSelector'
 );
@@ -38,7 +54,8 @@ function choose(value: string) {
   act(() => view.root.findByType('selector' as never).props.onValueChange(value));
 }
 afterEach(() => {
-  advertisedModelNames = new Set();
+  modelInventory.clear();
+  download.mockClear();
   variantsLoading = false;
   if (view) act(() => view.unmount());
 });
@@ -103,12 +120,16 @@ test('CPU MOSS cloning is selectable for cloned voices and never offered as a pr
   expect(values()).toContain('moss_tts');
   choose('moss_tts');
   expect(form.getValues('engine')).toBe('moss_tts');
-  expect(isProfileCompatibleWithEngine({ voice_type: 'preset', preset_engine: 'kokoro' } as any, 'moss_tts')).toBe(false);
+  expect(
+    isProfileCompatibleWithEngine(
+      { voice_type: 'preset', preset_engine: 'kokoro' } as any,
+      'moss_tts',
+    ),
+  ).toBe(false);
 });
 
-
 test('quantized variants require matching advertisement by the connected server', () => {
-  advertisedModelNames = new Set(['qwen-tts-1.7B-8bit']);
+  advertise('qwen-tts-1.7B-8bit');
   mount({ profile: { voice_type: 'cloned' } });
   expect(values()).toContain('qwen:1.7B-8bit');
   expect(values()).not.toContain('qwen:1.7B-4bit');
@@ -123,4 +144,51 @@ test('a saved quantized selection waits for discovery rather than silently switc
   variantsLoading = false;
   act(() => view.update(<Harness engine="qwen" size="1.7B-4bit" />));
   expect(form.getValues('modelSize')).toBe('1.7B');
+});
+
+test('model options identify accelerator support and distinguish CPU-only and MLX-only engines', () => {
+  advertise('qwen-tts-1.7B-4bit');
+  mount();
+  const optionDetails = (value: string) =>
+    view.root
+      .findAllByType('option')
+      .find((option) => option.props.value === value)!
+      .findAllByType('span')
+      .at(-1)
+      ?.children.join('');
+  expect(optionDetails('qwen:1.7B')).toBe('Metal (MLX), CUDA, ROCm, Intel XPU, DirectML');
+  expect(optionDetails('luxtts')).toBe('Metal (MPS), CUDA, ROCm, Intel XPU');
+  expect(optionDetails('tada:1B')).toBe('CUDA, ROCm, Intel XPU');
+  expect(optionDetails('moss_tts')).toBe('CPU');
+  expect(optionDetails('qwen:1.7B-4bit')).toBe('Metal (MLX) · Available to download');
+});
+
+test('the composer downloads the exact selected variant and hides the action once downloaded', () => {
+  const model: ModelStatus = {
+    model_name: 'qwen-tts-1.7B-4bit',
+    display_name: 'Qwen 4-bit',
+    downloaded: false,
+    downloading: false,
+    loaded: false,
+  };
+  modelInventory.set(model.model_name, model);
+  mount();
+  choose('qwen:1.7B-4bit');
+  const button = () =>
+    view.root
+      .findAllByType('button')
+      .find((candidate) => candidate.children.includes('Download model'));
+  expect(button()?.props.type).toBe('button');
+  act(() => button()?.props.onClick());
+  expect(download).toHaveBeenCalledWith(model);
+
+  modelInventory.set(model.model_name, { ...model, downloading: true });
+  act(() => view.update(<Harness />));
+  expect(button()).toBeUndefined();
+  expect(view.root.findByType('output').children).toEqual(['Downloading model…']);
+
+  modelInventory.set(model.model_name, { ...model, downloaded: true });
+  act(() => view.update(<Harness />));
+  expect(button()).toBeUndefined();
+  expect(view.root.findAllByType('output')).toHaveLength(0);
 });

@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { hasMissingRegenerationReferences } from './ArchiveScopeControls';
 import { useStudio } from './context';
@@ -24,9 +31,15 @@ interface DictionaryDraft {
 export function PronunciationPanel({
   passage,
   currentText,
+  dialog,
 }: {
   passage: StudioPassage;
   currentText: string;
+  dialog?: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    onCloseAutoFocus?: ComponentProps<typeof DialogContent>['onCloseAutoFocus'];
+  };
 }) {
   const studio = useStudio();
   const { project, session, client, profiles, engines, save } = studio;
@@ -83,6 +96,21 @@ export function PronunciationPanel({
   );
   const disabled = !studio.canMutate || studio.actionBusy || unreadable;
   const engine = engineForPassage(passage, profiles, engines);
+  const previewBlocked = changed
+    ? 'Save the dictionary to generate an audio preview.'
+    : passage.locked
+      ? 'Unlock this passage to generate a preview.'
+      : !passage.voice_snapshot
+        ? 'Assign a voice to this passage first.'
+        : !engine?.ready
+          ? 'The assigned voice model must be ready first.'
+          : hasMissingRegenerationReferences(passage.voice_snapshot)
+            ? 'Restore the voice reference audio to generate a preview.'
+            : !currentText.trim()
+              ? 'Add text to this passage first.'
+              : disabled || save.status === 'recovery'
+                ? 'Finish the current project action first.'
+                : null;
   // Auditions own an independent pending request, so another generate action can
   // never be mistaken for a pronunciation audition or change its adoption intent.
   const {
@@ -203,9 +231,7 @@ export function PronunciationPanel({
     const ok = await session.command('set_pronunciation_rules', { rules });
     if (alive.current && ok) {
       discard();
-      setNotice(
-        'Dictionary saved. Existing audio is retained; regenerate affected passages to hear the new aliases.',
-      );
+      setNotice('Dictionary saved. Generate a new take to hear the updated pronunciation.');
     }
   };
   const audition = async () => {
@@ -224,48 +250,92 @@ export function PronunciationPanel({
         (input) => client.generate(project.id, input),
       );
       if (alive.current)
-        setNotice(
-          'Pronunciation audition queued as an alternative take. Play it from Takes when ready.',
-        );
+        setNotice('Audio preview queued. Play the new alternative in Takes when it’s ready.');
     });
   };
 
-  return (
-    <details className="studio-advanced studio-pronunciation">
-      <summary>Pronunciation dictionary · {saved.length} rules</summary>
-      <p className="studio-note">
-        Write spoken aliases for names, acronyms, and technical terms. Rules apply once, using the
-        longest match; a voice rule wins a tie. The script keeps its original spelling.
-      </p>
+  const content = (
+    <div className="studio-pronunciation">
+      <section className="studio-pronunciation-preview" aria-label="Pronunciation preview">
+        <h3>Spoken text preview</h3>
+        <output className="studio-take-script" aria-label="Spoken text preview">
+          {preview.text}
+        </output>
+        {preview.substitutions.length ? (
+          <ul aria-label="Pronunciation substitutions">
+            {preview.substitutions.map((match) => (
+              <li key={`${match.start}:${match.rule_id}`}>
+                {match.source} → {match.replacement}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="studio-note">No substitutions in this passage.</p>
+        )}
+        {!request && previewBlocked && <p className="studio-note">{previewBlocked}</p>}
+        <StudioButton
+          disabled={studio.actionBusy || (!request && !!previewBlocked)}
+          onClick={audition}
+        >
+          {request ? 'Retry audio preview' : 'Generate audio preview'}
+        </StudioButton>
+        {rejected && (
+          <StudioButton onClick={discardRejected} disabled={studio.actionBusy}>
+            Dismiss rejected audition
+          </StudioButton>
+        )}
+        {submissionError && (
+          <p role="alert" className="studio-error">
+            {submissionError}
+          </p>
+        )}
+      </section>
       <div className="studio-action-row">
         <StudioButton
           disabled={disabled || conflict || rules.length >= 200}
-          onClick={mergeFirmwarePack}
+          onClick={() =>
+            edit([
+              ...rules,
+              {
+                id: operationId(),
+                source: '',
+                replacement: '',
+                profile_id: null,
+                case_sensitive: false,
+                whole_word: true,
+              },
+            ])
+          }
         >
-          Load Embedded &amp; Firmware pack
+          Add pronunciation rule
         </StudioButton>
-        <input
-          ref={importInputRef}
-          type="file"
-          accept=".json,application/json"
-          hidden
-          aria-label="Import pronunciation JSON"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) void handleImportFile(file);
-          }}
-        />
+
         <StudioButton
-          disabled={disabled || conflict || rules.length >= 200}
-          onClick={() => importInputRef.current?.click()}
+          primary
+          disabled={disabled || !changed || !!invalid || conflict}
+          onClick={saveRules}
         >
-          Import JSON
+          Save dictionary
         </StudioButton>
-        <StudioButton disabled={!rules.length} onClick={exportRulesJson}>
-          Export JSON
-        </StudioButton>
+        {(draft || unreadable) && (
+          <StudioButton disabled={studio.actionBusy} onClick={discard}>
+            Discard dictionary draft
+          </StudioButton>
+        )}
       </div>
+      {notice && <output className="studio-note">{notice}</output>}
+      {conflict && (
+        <p role="alert" className="studio-error">
+          Saved rules changed while this draft was open. Your draft is retained locally; discard it
+          to load the saved dictionary before editing.
+        </p>
+      )}
+      {changed && invalid && <output className="studio-note">{invalid}</output>}
+      {storageError && (
+        <p role="alert" className="studio-error">
+          {storageError}
+        </p>
+      )}
       {importError && (
         <p role="alert" className="studio-error">
           {importError}
@@ -273,11 +343,7 @@ export function PronunciationPanel({
       )}
       {jargonSuggestions.length > 0 && (
         <details className="studio-advanced">
-          <summary>Uncovered acronyms &amp; firmware terms ({jargonSuggestions.length})</summary>
-          <p className="studio-note">
-            Detected acronyms, hex literals, units, and identifiers in your script without a
-            pronunciation rule yet.
-          </p>
+          <summary>Suggested terms ({jargonSuggestions.length})</summary>
           <ul>
             {jargonSuggestions.slice(0, 25).map((item) => (
               <li key={item.source}>
@@ -308,25 +374,27 @@ export function PronunciationPanel({
       {rules.map((rule, index) => (
         <fieldset key={rule.id} className="studio-take">
           <legend>Rule {index + 1}</legend>
-          <Field label="Written word or phrase">
-            <Input
-              aria-label={`Rule ${index + 1} written text`}
-              value={rule.source}
-              maxLength={200}
-              disabled={disabled || conflict}
-              onChange={(event) => update(rule.id, { source: event.target.value })}
-            />
-          </Field>
-          <Field label="Spoken alias">
-            <Input
-              aria-label={`Rule ${index + 1} spoken alias`}
-              value={rule.replacement}
-              maxLength={500}
-              disabled={disabled || conflict}
-              onChange={(event) => update(rule.id, { replacement: event.target.value })}
-            />
-          </Field>
-          <Field label="Rule scope">
+          <div className="studio-field-grid">
+            <Field label="Written text">
+              <Input
+                aria-label={`Rule ${index + 1} written text`}
+                value={rule.source}
+                maxLength={200}
+                disabled={disabled || conflict}
+                onChange={(event) => update(rule.id, { source: event.target.value })}
+              />
+            </Field>
+            <Field label="Spoken alias">
+              <Input
+                aria-label={`Rule ${index + 1} spoken alias`}
+                value={rule.replacement}
+                maxLength={500}
+                disabled={disabled || conflict}
+                onChange={(event) => update(rule.id, { replacement: event.target.value })}
+              />
+            </Field>
+          </div>
+          <Field label="Applies to">
             <select
               aria-label={`Rule ${index + 1} scope`}
               value={rule.profile_id ?? ''}
@@ -372,93 +440,55 @@ export function PronunciationPanel({
           </StudioButton>
         </fieldset>
       ))}
-      <StudioButton
-        disabled={disabled || conflict || rules.length >= 200}
-        onClick={() =>
-          edit([
-            ...rules,
-            {
-              id: operationId(),
-              source: '',
-              replacement: '',
-              profile_id: null,
-              case_sensitive: false,
-              whole_word: true,
-            },
-          ])
-        }
-      >
-        Add pronunciation rule
-      </StudioButton>
-      <div className="studio-action-row">
-        <StudioButton disabled={disabled || !changed || !!invalid || conflict} onClick={saveRules}>
-          Save dictionary
-        </StudioButton>
-        {(draft || unreadable) && (
-          <StudioButton disabled={studio.actionBusy} onClick={discard}>
-            Discard dictionary draft
+      <details className="studio-advanced">
+        <summary>Dictionary tools</summary>
+        <div className="studio-action-row">
+          <StudioButton
+            disabled={disabled || conflict || rules.length >= 200}
+            onClick={mergeFirmwarePack}
+          >
+            Load Embedded &amp; Firmware pack
           </StudioButton>
-        )}
-      </div>
-      {conflict && (
-        <p role="alert" className="studio-error">
-          Saved rules changed while this draft was open. Your draft is retained locally; discard it
-          to load the saved dictionary before editing.
-        </p>
-      )}
-      {changed && invalid && <output className="studio-note">{invalid}</output>}
-      {storageError && (
-        <p role="alert" className="studio-error">
-          {storageError}
-        </p>
-      )}
-      <h4>Spoken text preview</h4>
-      <output className="studio-take-script" aria-label="Spoken text preview">
-        {preview.text}
-      </output>
-      {preview.substitutions.length ? (
-        <ul aria-label="Pronunciation substitutions">
-          {preview.substitutions.map((match) => (
-            <li key={`${match.start}:${match.rule_id}`}>
-              {match.source} → {match.replacement}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="studio-note">No substitutions in this passage.</p>
-      )}
-      {changed && (
-        <p className="studio-note">
-          Preview includes your unsaved dictionary draft. Save it before auditioning.
-        </p>
-      )}
-      <StudioButton
-        disabled={
-          studio.actionBusy ||
-          (!request &&
-            (disabled ||
-              changed ||
-              passage.locked ||
-              !engine?.ready ||
-              !passage.voice_snapshot ||
-              hasMissingRegenerationReferences(passage.voice_snapshot) ||
-              save.status === 'recovery'))
-        }
-        onClick={audition}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            aria-label="Import pronunciation JSON"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (file) void handleImportFile(file);
+            }}
+          />
+          <StudioButton
+            disabled={disabled || conflict || rules.length >= 200}
+            onClick={() => importInputRef.current?.click()}
+          >
+            Import JSON
+          </StudioButton>
+          <StudioButton disabled={!rules.length} onClick={exportRulesJson}>
+            Export JSON
+          </StudioButton>
+        </div>
+      </details>
+    </div>
+  );
+  if (!dialog) return content;
+  return (
+    <Dialog open={dialog.open} onOpenChange={dialog.onOpenChange}>
+      <DialogContent
+        className="studio studio-modal studio-dictionary-modal"
+        onCloseAutoFocus={dialog.onCloseAutoFocus}
       >
-        {request ? 'Retry pronunciation audition' : 'Audition pronunciation'}
-      </StudioButton>
-      {rejected && (
-        <StudioButton onClick={discardRejected} disabled={studio.actionBusy}>
-          Dismiss rejected audition
-        </StudioButton>
-      )}
-      {submissionError && (
-        <p role="alert" className="studio-error">
-          {submissionError}
-        </p>
-      )}
-      {notice && <output className="studio-note">{notice}</output>}
-    </details>
+        <DialogHeader>
+          <DialogTitle>Pronunciation dictionary</DialogTitle>
+          <DialogDescription>
+            Set how words sound. Your script keeps its original spelling.
+          </DialogDescription>
+        </DialogHeader>
+        {content}
+      </DialogContent>
+    </Dialog>
   );
 }

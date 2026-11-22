@@ -43,6 +43,7 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
 import type { ActiveDownloadTask, HuggingFaceModelInfo, ModelStatus } from '@/lib/api/types';
+import { BOTTOM_SAFE_AREA_PADDING } from '@/lib/constants/ui';
 import { useModelDownloadToast } from '@/lib/hooks/useModelDownloadToast';
 import { usePlatform } from '@/platform/PlatformContext';
 import { useServerStore } from '@/stores/serverStore';
@@ -554,11 +555,10 @@ export function ModelManagement() {
     hfModelInfo?.tags?.find((tag) => tag.startsWith('license:'))?.replace('license:', '');
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={`flex h-full min-h-0 flex-col ${BOTTOM_SAFE_AREA_PADDING}`}>
       {/* Header */}
       <div className="shrink-0 pb-4">
         <h1 className="text-xl font-semibold tracking-tight">{t('models.title')}</h1>
-        <p className="mt-1 text-xs text-muted-foreground">{t('models.subtitle')}</p>
       </div>
 
       {/* Model storage location */}
@@ -958,7 +958,10 @@ export function ModelManagement() {
 
                 {/* Error detail */}
                 {selectedError?.error && (
-                  <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive">
+                  <div
+                    role="alert"
+                    className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive"
+                  >
                     {selectedError.error}
                   </div>
                 )}
@@ -970,7 +973,6 @@ export function ModelManagement() {
                       <Button
                         size="sm"
                         onClick={() => handleDownload(freshSelectedModel.model_name)}
-                        variant="outline"
                         className="flex-1"
                       >
                         <Download className="h-4 w-4 mr-2" />

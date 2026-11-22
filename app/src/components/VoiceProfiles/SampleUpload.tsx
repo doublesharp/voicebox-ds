@@ -64,16 +64,6 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
   const pendingUpload = useRef<symbol | null>(null);
   const currentContext = useRef({ open, profileId, language: profile?.language });
   currentContext.current = { open, profileId, language: profile?.language };
-  useEffect(() => {
-    transcriptionRevision.current += 1;
-    uploadRevision.current += 1;
-    pendingUpload.current = null;
-    return () => {
-      transcriptionRevision.current += 1;
-      uploadRevision.current += 1;
-      pendingUpload.current = null;
-    };
-  }, [open, profileId, serverUrl, serverRevision]);
   const { toast } = useToast();
   const [mode, setMode] = useState<'upload' | 'record' | 'system'>('upload');
   const { isPlaying, playPause, cleanup: cleanupAudio } = useAudioPlayer();
@@ -85,6 +75,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       referenceText: '',
     },
   });
+  const { reset } = form;
 
   const selectedFile = form.watch('file');
 
@@ -111,10 +102,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
         file.recordedDuration = recordedDuration;
       }
       form.setValue('file', file, { shouldValidate: true });
-      toast({
-        title: 'Recording complete',
-        description: 'Audio has been recorded successfully.',
-      });
+      toast({ title: 'Recording complete' });
     },
   });
 
@@ -138,12 +126,30 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
         file.recordedDuration = recordedDuration;
       }
       form.setValue('file', file, { shouldValidate: true });
-      toast({
-        title: 'System audio captured',
-        description: 'Audio has been captured successfully.',
-      });
+      toast({ title: 'System audio captured' });
     },
   });
+
+  useEffect(() => {
+    if (!open) {
+      reset();
+      setMode('upload');
+    }
+  }, [open, reset]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    return () => {
+      transcriptionRevision.current += 1;
+      uploadRevision.current += 1;
+      pendingUpload.current = null;
+      // A stopped recorder can still be converting or retrieving its audio.
+      cancelRecording();
+      void cancelSystemRecording();
+      cleanupAudio();
+    };
+  }, [open, profileId, serverUrl, serverRevision, cancelRecording, cancelSystemRecording, cleanupAudio]);
 
   // Show recording errors
   useEffect(() => {
@@ -172,7 +178,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     if (!file) {
       toast({
         title: 'No file selected',
-        description: 'Please select an audio file first.',
+        description: 'Choose or record an audio file, then transcribe.',
         variant: 'destructive',
       });
       return;
@@ -198,7 +204,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       if (!isCurrent()) return;
       toast({
         title: 'Transcription failed',
-        description: error instanceof Error ? error.message : 'Failed to transcribe audio',
+        description:
+          error instanceof Error ? error.message : 'Enter the transcript manually or try again.',
         variant: 'destructive',
       });
     }
@@ -206,7 +213,11 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
 
   async function onSubmit(data: SampleFormValues, serverScope: ServerScope) {
     if (!isCurrentServer(serverScope)) {
-      toast({ title: 'Server connection changed', description: 'Please review the sample and try again.', variant: 'destructive' });
+      toast({
+        title: 'Server connection changed',
+        description: 'Review the sample, then add it again.',
+        variant: 'destructive',
+      });
       return;
     }
     if (pendingUpload.current) return;
@@ -229,17 +240,15 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       });
 
       if (!isCurrent()) return;
-      toast({
-        title: 'Sample added',
-        description: 'Audio sample has been added successfully.',
-      });
+      toast({ title: 'Sample added' });
 
       handleOpenChange(false);
     } catch (error) {
       if (!isCurrent()) return;
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to add sample',
+        title: 'Could not add sample',
+        description:
+          error instanceof Error ? error.message : 'Check the audio and transcript, then retry.',
         variant: 'destructive',
       });
     } finally {
@@ -252,15 +261,6 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       transcriptionRevision.current += 1;
       uploadRevision.current += 1;
       pendingUpload.current = null;
-      form.reset();
-      setMode('upload');
-      if (isRecording || isStarting) {
-        cancelRecording();
-      }
-      if (isSystemRecording) {
-        cancelSystemRecording();
-      }
-      cleanupAudio();
     }
     onOpenChange(newOpen);
   }

@@ -1,5 +1,4 @@
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
 import type { ModelProgress } from '@/lib/api/types';
@@ -14,10 +13,45 @@ interface UseModelDownloadToastOptions {
   onError?: (error: string) => void;
 }
 
-/**
- * Hook to show and update a toast notification with model download progress.
- * Subscribes to Server-Sent Events for real-time progress updates.
- */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1);
+  return `${(bytes / 1024 ** index).toFixed(1)} ${sizes[index]}`;
+}
+
+function downloadStatus(progress: ModelProgress) {
+  const hasTotal = progress.total > 0;
+  const stage = progress.status === 'extracting' ? 'Extracting' : 'Downloading';
+  const summary = hasTotal
+    ? `${stage} · ${progress.progress.toFixed(1).replace(/\.0$/, '')}%`
+    : `${stage}…`;
+
+  return (
+    <div className="space-y-1 text-xs">
+      {progress.filename || hasTotal ? (
+        <details>
+          <summary className="cursor-pointer select-none rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-ring">
+            {summary}
+          </summary>
+          <div className="mt-1 space-y-1 break-all">
+            {progress.filename && <div>{progress.filename}</div>}
+            {hasTotal && (
+              <div className="text-muted-foreground">
+                {`${formatBytes(progress.current)} / ${formatBytes(progress.total)}`}
+              </div>
+            )}
+          </div>
+        </details>
+      ) : (
+        <div className="text-muted-foreground">{summary}</div>
+      )}
+      {hasTotal && <Progress value={progress.progress} className="h-1" aria-hidden="true" />}
+    </div>
+  );
+}
+
+/** Track a model download and show its progress in a compact notification. */
 export function useModelDownloadToast({
   modelName,
   displayName,
@@ -29,206 +63,69 @@ export function useModelDownloadToast({
   const { toast } = useToast();
   const serverUrl = useServerStore((state) => state.serverUrl);
   const serverRevision = useServerStore((state) => state.serverRevision);
-  const toastIdRef = useRef<string | null>(null);
-  // biome-ignore lint: Using any for toast update ref to handle complex toast types
-  const toastUpdateRef = useRef<any>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
-  const formatBytes = useCallback((bytes: number): string => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
-  }, []);
-
   useEffect(() => {
-    console.log('[useModelDownloadToast] useEffect triggered', {
-      enabled,
-      serverUrl,
-      modelName,
-      displayName,
-    });
+    if (!enabled || !serverUrl || !modelName) return;
 
-    if (!enabled || !serverUrl || !modelName) {
-      console.log('[useModelDownloadToast] Not enabled, skipping');
-      return;
-    }
-
-    console.log('[useModelDownloadToast] Creating toast and EventSource for:', modelName);
-
-    // Create initial toast
-    const toastResult = toast({
+    const notification = toast({
       title: displayName,
-      description: (
-        <div className="flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Connecting to download...</span>
-        </div>
-      ),
-      duration: Infinity, // Don't auto-dismiss, we'll handle it manually
+      description: <span className="text-xs text-muted-foreground">Connecting to download…</span>,
+      className: 'w-64 max-w-full self-end px-3 py-2 pr-9 shadow-md [&_[toast-close]]:opacity-100',
+      type: 'background',
+      duration: Infinity,
     });
-    toastIdRef.current = toastResult.id;
-    toastUpdateRef.current = toastResult.update;
-
-    // Subscribe to progress updates via Server-Sent Events
-    const eventSourceUrl = `${serverUrl}/models/progress/${modelName}${includeTerminalSnapshot ? '?include_terminal=true' : ''}`;
-    console.log('[useModelDownloadToast] Creating EventSource to:', eventSourceUrl);
-    const eventSource = new EventSource(eventSourceUrl);
+    const eventSource = new EventSource(
+      `${serverUrl}/models/progress/${modelName}${includeTerminalSnapshot ? '?include_terminal=true' : ''}`,
+    );
+    eventSourceRef.current = eventSource;
     let active = true;
-    let finished = false;
     const isCurrent = () => {
       const current = useServerStore.getState();
       return active && current.serverUrl === serverUrl && current.serverRevision === serverRevision;
     };
-
-    eventSource.onopen = () => {
-      console.log('[useModelDownloadToast] EventSource connection opened for:', modelName);
+    const close = () => {
+      active = false;
+      eventSource.close();
+      if (eventSourceRef.current === eventSource) eventSourceRef.current = null;
+    };
+    const finish = (description: string, duration: number, variant?: 'destructive') => {
+      close();
+      notification.update({ id: notification.id, description, duration, variant });
     };
 
     eventSource.onmessage = (event) => {
       if (!isCurrent()) return;
-      console.log('[useModelDownloadToast] Received SSE message:', event.data);
       try {
         const progress = JSON.parse(event.data) as ModelProgress;
-
-        // Update toast with progress
-        if (toastIdRef.current && toastUpdateRef.current) {
-          const progressPercent = progress.total > 0 ? progress.progress : 0;
-          const progressText =
-            progress.total > 0
-              ? `${formatBytes(progress.current)} / ${formatBytes(progress.total)} (${progress.progress.toFixed(1)}%)`
-              : '';
-
-          // Determine status icon and text
-          let statusIcon: React.ReactNode = null;
-          let statusText = 'Processing...';
-
-          switch (progress.status) {
-            case 'complete':
-              statusIcon = <CheckCircle2 className="h-4 w-4 text-green-500" />;
-              statusText = 'Download complete';
-              break;
-            case 'error':
-              statusIcon = <XCircle className="h-4 w-4 text-destructive" />;
-              statusText = 'Download failed. See Problems panel for details.';
-              break;
-            case 'downloading':
-              statusIcon = <Loader2 className="h-4 w-4 animate-spin" />;
-              statusText = progress.filename || 'Downloading...';
-              break;
-            case 'extracting':
-              statusIcon = <Loader2 className="h-4 w-4 animate-spin" />;
-              statusText = 'Extracting...';
-              break;
-          }
-
-          toastUpdateRef.current({
-            title: (
-              <div className="flex items-center gap-2">
-                {statusIcon}
-                <span>{displayName}</span>
-              </div>
-            ),
-            description: (
-              <div className="space-y-2">
-                <div className="text-sm">{statusText}</div>
-                {progress.total > 0 && (
-                  <>
-                    <Progress value={progressPercent} className="h-2" />
-                    <div className="text-xs text-muted-foreground">{progressText}</div>
-                  </>
-                )}
-              </div>
-            ),
-            duration:
-              progress.status === 'complete' || progress.status === 'error' ? 5000 : Infinity,
+        // Byte transfer can reach 100% before extraction or model loading.
+        if (progress.status === 'complete') {
+          finish('Download complete', 3000);
+          onComplete?.();
+        } else if (progress.status === 'error') {
+          finish('Download failed. See Problems on the Models page.', 5000);
+          onError?.(progress.error || 'Unknown error');
+        } else {
+          notification.update({
+            id: notification.id,
+            description: downloadStatus(progress),
           });
-
-          // Byte transfer can reach 100% before extraction or model loading.
-          const isComplete = progress.status === 'complete';
-          const isError = progress.status === 'error';
-
-          if (isComplete || isError) {
-            finished = true;
-            console.log('[useModelDownloadToast] Download finished:', {
-              isComplete,
-              isError,
-              progress: progress.progress,
-            });
-            active = false;
-            eventSource.close();
-            if (eventSourceRef.current === eventSource) eventSourceRef.current = null;
-
-            // Update toast to show completion state before callbacks
-            if (isComplete && toastUpdateRef.current) {
-              toastUpdateRef.current({
-                title: (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                    <span>{displayName}</span>
-                  </div>
-                ),
-                description: 'Download complete',
-                duration: 3000,
-              });
-            }
-
-            // Call callbacks
-            if (isComplete && onComplete) {
-              console.log('[useModelDownloadToast] Download complete, calling onComplete callback');
-              onComplete();
-            } else if (isError && onError) {
-              console.log('[useModelDownloadToast] Download error, calling onError callback');
-              onError(progress.error || 'Unknown error');
-            }
-          }
         }
       } catch (error) {
-        console.error('Error parsing progress event:', error);
+        console.error('Error processing model download progress:', error);
       }
     };
 
-    eventSource.onerror = (error) => {
-      if (!isCurrent()) return;
-      // EventSource reconnects automatically while it remains in CONNECTING state.
-      if (eventSource.readyState !== EventSource.CLOSED) return;
-      finished = true;
-      active = false;
-      console.error('[useModelDownloadToast] SSE error for:', modelName, error);
-      console.log('[useModelDownloadToast] EventSource readyState:', eventSource.readyState);
-      eventSource.close();
-      if (eventSourceRef.current === eventSource) eventSourceRef.current = null;
-
-      // Show error toast
-      if (toastIdRef.current && toastUpdateRef.current) {
-        toastUpdateRef.current({
-          title: displayName,
-          description: 'Failed to track download progress',
-          variant: 'destructive',
-          duration: 5000,
-        });
-        toastIdRef.current = null;
-        toastUpdateRef.current = null;
-      }
+    eventSource.onerror = () => {
+      // EventSource reconnects automatically while in CONNECTING state.
+      if (!isCurrent() || eventSource.readyState !== EventSource.CLOSED) return;
+      finish('Failed to track download progress', 5000, 'destructive');
     };
 
-    eventSourceRef.current = eventSource;
-
-    // Cleanup on unmount or when disabled
     return () => {
-      console.log('[useModelDownloadToast] Cleanup - closing EventSource for:', modelName);
-      active = false;
-      eventSource.close();
-      if (eventSourceRef.current === eventSource) {
-        eventSourceRef.current = null;
-      }
-      // Keep terminal notifications visible, but remove abandoned progress notifications.
-      if (!finished) toastResult.dismiss();
-      if (toastIdRef.current === toastResult.id) {
-        toastIdRef.current = null;
-        toastUpdateRef.current = null;
-      }
+      if (!active) return;
+      close();
+      notification.dismiss();
     };
   }, [
     enabled,
@@ -237,13 +134,10 @@ export function useModelDownloadToast({
     modelName,
     displayName,
     toast,
-    formatBytes,
     onComplete,
     onError,
     includeTerminalSnapshot,
   ]);
 
-  return {
-    isTracking: enabled && eventSourceRef.current !== null,
-  };
+  return { isTracking: enabled && eventSourceRef.current !== null };
 }

@@ -44,6 +44,7 @@ import { Director } from './Director';
 import { clipFrames, isJobActive, toSamples } from './domain';
 import { studioShortcut } from './keyboard';
 import { StudioPlayback } from './playback';
+import { PronunciationPanel } from './PronunciationPanel';
 import { Review } from './Review';
 import { ReviewClient } from './review-client';
 import { ReviewSessions } from './review-session';
@@ -128,13 +129,16 @@ function ProjectWorkspace({
   const [checkpointOpen, setCheckpointOpen] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [pronunciationOpen, setPronunciationOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [showTimeline, setShowTimeline] = useState(true);
-  const [showOutline, setShowOutline] = useState(true);
+  const [timelineOpen, setTimelineOpen] = useState<boolean | null>(null);
+  const [outlineVisible, setOutlineVisible] = useState<boolean | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const paletteOpener = useRef<HTMLElement | null>(null);
+  const inspectorOpener = useRef<HTMLButtonElement | null>(null);
+  const pronunciationOpener = useRef<HTMLButtonElement | null>(null);
   const [layout, setLayout] = useState<Record<Workspace, { outline: number; inspector: number }>>(
     () => {
       const defaults = {
@@ -353,6 +357,24 @@ function ProjectWorkspace({
       </section>
     );
   const activeJobs = project.jobs.filter((j) => isJobActive(j.status));
+  const hasClips = project.document.clips.length > 0;
+  const startingEdit =
+    workspace === 'edit' &&
+    !project.document.passages.length &&
+    !hasClips &&
+    !project.takes.length &&
+    !project.assets.length &&
+    save.status !== 'recovery';
+  const showTimeline = timelineOpen ?? hasClips;
+  const showOutline = outlineVisible ?? workspace !== 'edit';
+  const showProjectActions = !startingEdit || project.revision > 0;
+  const pronunciationPassage =
+    project.document.passages.find((passage) => passage.id === selectedPassageId) ??
+    project.document.passages[0];
+  const openPronunciation = (opener: HTMLButtonElement) => {
+    pronunciationOpener.current = opener;
+    setPronunciationOpen(true);
+  };
   const statusLabels = {
     loading: 'Loading',
     saved: 'Saved',
@@ -405,23 +427,6 @@ function ProjectWorkspace({
   );
   const outline = (
     <div className="studio-outline-content">
-      <p className="studio-eyebrow">PROJECT</p>
-      <h3>At a glance</h3>
-      <div className="studio-project-stats">
-        <span>
-          {project.document.passages.length}
-          <small>passages</small>
-        </span>
-        <span>
-          {project.takes.length}
-          <small>takes</small>
-        </span>
-        <span>
-          {project.document.clips.length}
-          <small>clips</small>
-        </span>
-      </div>
-      <div className="studio-divider" />
       <h3>Outline</h3>
       <div className="studio-outline-list">
         {project.document.passages.map((p, index) => (
@@ -444,20 +449,6 @@ function ProjectWorkspace({
           </button>
         ))}
       </div>
-      <div className="studio-divider" />
-      <h3>Cast</h3>
-      {[...new Set(project.document.passages.map((p) => p.profile_id).filter(Boolean))].map(
-        (id) => (
-          <p className="studio-note" key={id}>
-            {profiles.find((p) => p.id === id)?.name || 'Saved voice snapshot'}
-          </p>
-        ),
-      )}
-      <div className="studio-divider" />
-      <h3>Owned audio</h3>
-      <p className="studio-note">
-        {project.assets.length} immutable {project.assets.length === 1 ? 'asset' : 'assets'}
-      </p>
     </div>
   );
   return (
@@ -525,32 +516,41 @@ function ProjectWorkspace({
             </output>
           </div>
           <div className="studio-header-actions">
-            <StudioButton
-              disabled={!canMutate}
-              onClick={() => void session.command('undo')}
-              title="Undo project command"
+            {showProjectActions && (
+              <>
+                <StudioButton
+                  disabled={!canMutate}
+                  onClick={() => void session.command('undo')}
+                  title="Undo project command"
+                >
+                  <Undo2 size={15} />
+                  <span className="studio-wide-label">Undo</span>
+                </StudioButton>
+                <StudioButton
+                  disabled={!canMutate}
+                  onClick={() => void session.command('redo')}
+                  title="Redo project command"
+                >
+                  <Redo2 size={15} />
+                  <span className="studio-wide-label">Redo</span>
+                </StudioButton>
+              </>
+            )}
+            <Dialog
+              open={checkpointOpen}
+              onOpenChange={(next) => {
+                if (!next) checkpointDialogEpoch.current += 1;
+                setCheckpointOpen(next);
+              }}
             >
-              <Undo2 size={15} />
-              <span className="studio-wide-label">Undo</span>
-            </StudioButton>
-            <StudioButton
-              disabled={!canMutate}
-              onClick={() => void session.command('redo')}
-              title="Redo project command"
-            >
-              <Redo2 size={15} />
-              <span className="studio-wide-label">Redo</span>
-            </StudioButton>
-            <Dialog open={checkpointOpen} onOpenChange={(next) => {
-              if (!next) checkpointDialogEpoch.current += 1;
-              setCheckpointOpen(next);
-            }}>
-              <DialogTrigger asChild>
-                <button className="studio-quiet" type="button" disabled={!canMutate}>
-                  <Save size={15} />
-                  <span className="studio-wide-label">Checkpoint</span>
-                </button>
-              </DialogTrigger>
+              {showProjectActions && (
+                <DialogTrigger asChild>
+                  <button className="studio-quiet" type="button" disabled={!canMutate}>
+                    <Save size={15} />
+                    <span className="studio-wide-label">Checkpoint</span>
+                  </button>
+                </DialogTrigger>
+              )}
               <DialogContent className="studio studio-modal">
                 <DialogHeader>
                   <DialogTitle>Keep this moment.</DialogTitle>
@@ -576,26 +576,46 @@ function ProjectWorkspace({
                   onClick={() => {
                     const scope = { serverUrl: server, serverRevision };
                     const name = checkpointNameRef.current;
-                    if (checkpointRequestRef.current || !name.trim() || !canMutate || !isCurrentServer(scope)) return;
+                    if (
+                      checkpointRequestRef.current ||
+                      !name.trim() ||
+                      !canMutate ||
+                      !isCurrentServer(scope)
+                    )
+                      return;
                     const epoch = checkpointDialogEpoch.current;
                     checkpointRequestRef.current = true;
                     setCheckpointBusy(true);
-                    void session.checkpoint(name.trim()).then((ok) => {
-                      if (ok && alive.current && isCurrentServer(scope) &&
-                          checkpointDialogEpoch.current === epoch && checkpointNameRef.current === name) {
-                        setCheckpointOpen(false);
-                        checkpointNameRef.current = '';
-                        setCheckpointName('');
-                        const revisions = session.getSnapshot().project?.revisions ?? [];
-                        const latest = revisions[revisions.length - 1];
-                        if (latest) setRevisionId(latest.id);
-                      }
-                    }).catch((error) => {
-                      if (alive.current && isCurrentServer(scope) && checkpointDialogEpoch.current === epoch) setActionError(errorMessage(error));
-                    }).finally(() => {
-                      checkpointRequestRef.current = false;
-                      if (alive.current && isCurrentServer(scope)) setCheckpointBusy(false);
-                    });
+                    void session
+                      .checkpoint(name.trim())
+                      .then((ok) => {
+                        if (
+                          ok &&
+                          alive.current &&
+                          isCurrentServer(scope) &&
+                          checkpointDialogEpoch.current === epoch &&
+                          checkpointNameRef.current === name
+                        ) {
+                          setCheckpointOpen(false);
+                          checkpointNameRef.current = '';
+                          setCheckpointName('');
+                          const revisions = session.getSnapshot().project?.revisions ?? [];
+                          const latest = revisions[revisions.length - 1];
+                          if (latest) setRevisionId(latest.id);
+                        }
+                      })
+                      .catch((error) => {
+                        if (
+                          alive.current &&
+                          isCurrentServer(scope) &&
+                          checkpointDialogEpoch.current === epoch
+                        )
+                          setActionError(errorMessage(error));
+                      })
+                      .finally(() => {
+                        checkpointRequestRef.current = false;
+                        if (alive.current && isCurrentServer(scope)) setCheckpointBusy(false);
+                      });
                   }}
                 >
                   Create checkpoint
@@ -607,12 +627,14 @@ function ProjectWorkspace({
                 )}
               </DialogContent>
             </Dialog>
-            <Deliver />
+            {(!startingEdit || project.revisions.length > 0) && (
+              <Deliver onCreateCheckpoint={() => setCheckpointOpen(true)} />
+            )}
           </div>
         </header>
         <div className="studio-workspace-bar">
           <nav className="studio-workspace-tabs" aria-label="Project workspace">
-            {(['edit', 'mix', 'review'] as const).map((mode, index) => (
+            {(['edit', 'mix', 'review'] as const).map((mode) => (
               <Hint
                 key={mode}
                 content={
@@ -625,7 +647,6 @@ function ProjectWorkspace({
                   className={workspace === mode ? 'is-active' : ''}
                   aria-current={workspace === mode ? 'page' : undefined}
                 >
-                  <span className="studio-workspace-number">0{index + 1}</span>
                   <span>
                     {mode[0].toUpperCase() + mode.slice(1)}
                     <small className="app-workspace-description">
@@ -642,33 +663,39 @@ function ProjectWorkspace({
               </Hint>
             ))}
           </nav>
-          <select
-            className="studio-checkpoint-picker"
-            aria-label="Current checkpoint"
-            value={revisionId}
-            onChange={(event) => setRevisionId(event.target.value)}
-          >
-            <option value="">Checkpoints</option>
-            {project.revisions.map((revision) => (
-              <option key={revision.id} value={revision.id}>
-                {revision.name}
-              </option>
-            ))}
-          </select>
-          <HelpButton label="About checkpoints">
-            A checkpoint is a saved, unchangeable version you can review, restore or deliver.
-          </HelpButton>
+          {(!startingEdit || project.revisions.length > 0) && (
+            <>
+              <select
+                className="studio-checkpoint-picker"
+                aria-label="Current checkpoint"
+                value={revisionId}
+                onChange={(event) => setRevisionId(event.target.value)}
+              >
+                <option value="">Checkpoints</option>
+                {project.revisions.map((revision) => (
+                  <option key={revision.id} value={revision.id}>
+                    {revision.name}
+                  </option>
+                ))}
+              </select>
+              <HelpButton label="About checkpoints">
+                A checkpoint is a saved, unchangeable version you can review, restore or deliver.
+              </HelpButton>
+            </>
+          )}
           <div className="studio-action-row">
             <Dialog open={captionsOpen} onOpenChange={setCaptionsOpen}>
-              <DialogTrigger asChild>
-                <button
-                  type="button"
-                  className="studio-quiet"
-                  aria-label="Open captions and video timing"
-                >
-                  <Captions size={16} /> Captions &amp; video
-                </button>
-              </DialogTrigger>
+              {!startingEdit && (
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="studio-quiet"
+                    aria-label="Open captions and video timing"
+                  >
+                    <Captions size={16} /> Captions &amp; video
+                  </button>
+                </DialogTrigger>
+              )}
               <DialogContent className="studio studio-modal studio-caption-modal">
                 <DialogHeader>
                   <DialogTitle>Captions &amp; video timing</DialogTitle>
@@ -680,58 +707,71 @@ function ProjectWorkspace({
                 <CaptionsPanel />
               </DialogContent>
             </Dialog>
-            <button
-              type="button"
-              className="studio-icon-button studio-outline-toggle"
-              aria-label="Toggle outline"
-              aria-pressed={showOutline}
-              onClick={() => setShowOutline(!showOutline)}
-            >
-              <LayoutPanelLeft size={17} />
-            </button>
-            <Dialog open={outlineOpen} onOpenChange={setOutlineOpen}>
-              <DialogTrigger asChild>
+            {!startingEdit && (
+              <>
                 <button
                   type="button"
-                  className="studio-icon-button studio-drawer-toggle"
-                  aria-label="Open project outline"
+                  className="studio-icon-button studio-outline-toggle"
+                  aria-label="Toggle outline"
+                  aria-pressed={showOutline}
+                  title={showOutline ? 'Hide outline' : 'Show outline'}
+                  onClick={() => setOutlineVisible(!showOutline)}
                 >
-                  <List size={17} />
+                  <LayoutPanelLeft size={17} />
                 </button>
-              </DialogTrigger>
-              <DialogContent className="studio studio-modal">
-                <DialogHeader>
-                  <DialogTitle>Project outline</DialogTitle>
-                  <DialogDescription>Passages and cast at a glance.</DialogDescription>
-                </DialogHeader>
-                {outline}
-              </DialogContent>
-            </Dialog>
-            <Dialog open={inspectorOpen} onOpenChange={setInspectorOpen}>
-              <DialogTrigger asChild>
-                <button type="button" className="studio-quiet studio-drawer-toggle">
-                  <PanelRight size={16} /> Inspector
-                </button>
-              </DialogTrigger>
-              <DialogContent className="studio studio-modal">
-                <DialogHeader>
-                  <DialogTitle>
-                    {workspace === 'mix' ? 'Mix settings' : 'Passage director'}
-                  </DialogTitle>
-                  <DialogDescription>
-                    Settings follow the selected passage or project mix.
-                  </DialogDescription>
-                </DialogHeader>
-                {workspace === 'mix' ? (
-                  <Mixer />
-                ) : (
-                  <>
-                    {selectedClipId && <ClipInspector />}
-                    <Director />
-                  </>
-                )}
-              </DialogContent>
-            </Dialog>
+                <Dialog open={outlineOpen} onOpenChange={setOutlineOpen}>
+                  <DialogTrigger asChild>
+                    <button
+                      type="button"
+                      className="studio-icon-button studio-drawer-toggle"
+                      aria-label="Open project outline"
+                    >
+                      <List size={17} />
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent className="studio studio-modal">
+                    <DialogHeader>
+                      <DialogTitle>Project outline</DialogTitle>
+                      <DialogDescription>Passages and cast at a glance.</DialogDescription>
+                    </DialogHeader>
+                    {outline}
+                  </DialogContent>
+                </Dialog>
+                <Dialog open={inspectorOpen} onOpenChange={setInspectorOpen}>
+                  <DialogTrigger asChild>
+                    <button type="button" className="studio-quiet studio-drawer-toggle">
+                      <PanelRight size={16} /> Inspector
+                    </button>
+                  </DialogTrigger>
+                  <DialogContent
+                    className="studio studio-modal"
+                    onCloseAutoFocus={(event) => {
+                      if (!inspectorOpener.current) return;
+                      event.preventDefault();
+                      inspectorOpener.current.focus();
+                      inspectorOpener.current = null;
+                    }}
+                  >
+                    <DialogHeader>
+                      <DialogTitle>
+                        {workspace === 'mix' ? 'Mix settings' : 'Passage settings'}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Settings follow the selected passage or project mix.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {workspace === 'mix' ? (
+                      <Mixer />
+                    ) : (
+                      <>
+                        {selectedClipId && <ClipInspector />}
+                        <Director onOpenPronunciation={openPronunciation} />
+                      </>
+                    )}
+                  </DialogContent>
+                </Dialog>
+              </>
+            )}
             <button
               type="button"
               className="studio-icon-button"
@@ -806,11 +846,21 @@ function ProjectWorkspace({
           </div>
         )}
         <div className="studio-work-area">
-          {showOutline && <aside className="studio-outline">{outline}</aside>}
-          {showOutline && resize('outline')}
+          {!startingEdit && showOutline && <aside className="studio-outline">{outline}</aside>}
+          {!startingEdit && showOutline && resize('outline')}
           <div className="studio-main-pane">
             <div className="studio-workspace-scroll" hidden={workspace !== 'edit'}>
-              <ScriptEditor />
+              <ScriptEditor
+                emptyAction={startingEdit ? <Timeline importOnly /> : undefined}
+                onOpenPronunciation={openPronunciation}
+                onOpenPassageSettings={(id, opener) => {
+                  selectPassage(id);
+                  if (window.matchMedia?.('(max-width: 1199px)').matches) {
+                    inspectorOpener.current = opener;
+                    setInspectorOpen(true);
+                  }
+                }}
+              />
             </div>
             <div className="studio-workspace-scroll" hidden={workspace !== 'mix'}>
               <Timeline />
@@ -818,13 +868,13 @@ function ProjectWorkspace({
             <div className="studio-workspace-scroll" hidden={workspace !== 'review'}>
               <Review />
             </div>
-            {workspace === 'edit' && (
+            {workspace === 'edit' && !startingEdit && (
               <div className="studio-bottom-timeline">
                 <button
                   type="button"
                   className="studio-timeline-disclosure"
                   aria-expanded={showTimeline}
-                  onClick={() => setShowTimeline(!showTimeline)}
+                  onClick={() => setTimelineOpen(!showTimeline)}
                 >
                   <ChevronDown size={14} /> Timeline{' '}
                   <span>{project.document.clips.length} clips</span>
@@ -833,15 +883,15 @@ function ProjectWorkspace({
               </div>
             )}
           </div>
-          {workspace !== 'review' && resize('inspector')}
-          {workspace !== 'review' && (
+          {!startingEdit && workspace !== 'review' && resize('inspector')}
+          {!startingEdit && workspace !== 'review' && (
             <aside className="studio-desktop-inspector">
               {workspace === 'mix' ? (
                 <Mixer />
               ) : (
                 <>
                   {selectedClipId && <ClipInspector />}
-                  <Director />
+                  <Director onOpenPronunciation={openPronunciation} />
                 </>
               )}
             </aside>
@@ -888,7 +938,26 @@ function ProjectWorkspace({
             </div>
           </details>
         )}
-        <StudioTransport toggleTransport={toggleTransport} />
+        {!startingEdit && (
+          <StudioTransport
+            toggleTransport={toggleTransport}
+            hideWhenIdle={workspace === 'edit' && !hasClips && !project.takes.length}
+          />
+        )}
+        {pronunciationPassage && (
+          <PronunciationPanel
+            passage={pronunciationPassage}
+            currentText={save.drafts?.[pronunciationPassage.id]?.text ?? pronunciationPassage.text}
+            dialog={{
+              open: pronunciationOpen,
+              onOpenChange: setPronunciationOpen,
+              onCloseAutoFocus: (event) => {
+                event.preventDefault();
+                pronunciationOpener.current?.focus();
+              },
+            }}
+          />
+        )}
         <Dialog open={paletteOpen} onOpenChange={setPaletteOpen}>
           <DialogContent
             className="studio studio-modal"
@@ -918,6 +987,16 @@ function ProjectWorkspace({
                 Open {mode}
               </StudioButton>
             ))}
+            {startingEdit && (
+              <StudioButton
+                onClick={() => {
+                  setPaletteOpen(false);
+                  setCaptionsOpen(true);
+                }}
+              >
+                Captions &amp; video
+              </StudioButton>
+            )}
             <StudioButton
               onClick={() => {
                 setPaletteOpen(false);

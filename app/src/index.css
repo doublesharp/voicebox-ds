@@ -130,6 +130,18 @@
 }
 
 @layer utilities {
+  .visible-scrollbar {
+    scrollbar-width: auto;
+  }
+  .visible-scrollbar::-webkit-scrollbar {
+    display: block;
+    width: 8px;
+  }
+  .visible-scrollbar::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: hsl(var(--muted-foreground) / 0.55);
+  }
+
   .writing-vertical {
     writing-mode: vertical-rl;
     text-orientation: mixed;

@@ -1,5 +1,5 @@
 import { Download, FileArchive, Headphones } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,10 @@ import { useDurableSubmission } from './submissions';
 import { Field, StudioButton } from './ui';
 import { useRevisionDocument } from './useRevisionDocument';
 
-export function Deliver() {
+export function Deliver({ onCreateCheckpoint }: { onCreateCheckpoint?: () => void }) {
   const studio = useStudio();
   const [open, setOpen] = useState(false);
+  const checkpointRequested = useRef(false);
   const platform = usePlatform();
   const { project, client, session, revisionId, setRevisionId } = studio;
   const [kind, setKind] = useState<'mix' | 'stems'>('mix');
@@ -45,6 +46,7 @@ export function Deliver() {
   }, [revisionId, project.id]);
   const revision = project.revisions.find((r) => r.id === revisionId);
   const checkpoint = useRevisionDocument(client, project.id, revision, open);
+  const checkpointLoading = !!revision && !checkpoint.document && !checkpoint.error;
   const allowStale = acknowledgedRevision === `${project.id}:${revisionId}`;
   const stale = checkpoint.document ? staleRecordings(checkpoint.document, project) : [];
   const flight = checkpoint.document
@@ -83,84 +85,124 @@ export function Deliver() {
           <Download size={15} /> Deliver
         </button>
       </DialogTrigger>
-      <DialogContent className="studio studio-modal studio-deliver">
+      <DialogContent
+        className="studio studio-modal studio-deliver"
+        onCloseAutoFocus={(event) => {
+          if (!checkpointRequested.current) return;
+          checkpointRequested.current = false;
+          event.preventDefault();
+          onCreateCheckpoint?.();
+        }}
+      >
         <DialogHeader>
-          <DialogTitle>Deliver a performance.</DialogTitle>
+          <DialogTitle>Deliver</DialogTitle>
           <DialogDescription>
-            Render an immutable checkpoint, inspect the result, and audition the actual encoded file
-            before saving a copy.
+            Export audio from a checkpoint or save a project archive.
           </DialogDescription>
         </DialogHeader>
-        <Field label="Source checkpoint">
-          <select
-            value={revisionId}
-            disabled={studio.actionBusy || !!request}
-            onChange={(event) => {
-              setAcknowledgedRevision(null);
-              setRevisionId(event.target.value);
-            }}
-          >
-            <option value="">Choose a checkpoint</option>
-            {project.revisions.map((revision) => (
-              <option key={revision.id} value={revision.id}>
-                {revision.name} · draft {revision.project_revision}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="studio-field-grid">
-          <Field label="Output">
+        {project.revisions.length > 0 ? (
+          <Field label="Source checkpoint">
             <select
-              value={kind}
+              value={revisionId}
               disabled={studio.actionBusy || !!request}
-              onChange={(event) => setKind(event.target.value as 'mix' | 'stems')}
+              onChange={(event) => {
+                setAcknowledgedRevision(null);
+                setRevisionId(event.target.value);
+              }}
             >
-              <option value="mix">Stereo mix</option>
-              <option value="stems">Track stems</option>
+              <option value="">Choose a checkpoint</option>
+              {project.revisions.map((revision) => (
+                <option key={revision.id} value={revision.id}>
+                  {revision.name} · draft {revision.project_revision}
+                </option>
+              ))}
             </select>
           </Field>
-          <Field label="Format">
-            <select
-              value={format}
-              disabled={studio.actionBusy || !!request}
-              onChange={(event) => setFormat(event.target.value as 'wav' | 'mp3')}
-            >
-              <option value="wav">WAV</option>
-              <option value="mp3">MP3 · requires server encoder</option>
-            </select>
-          </Field>
-        </div>
-        <Field label="Processing">
-          <select
-            value={processing}
-            disabled={studio.actionBusy || !!request}
-            onChange={(event) => setProcessing(event.target.value as 'dry' | 'processed')}
-          >
-            <option value="dry">Dry</option>
-            <option value="processed">Processed</option>
-          </select>
-        </Field>
-        <p className="studio-note">
-          Dry output retains arrangement gain, fades and placement. Processed stems apply track
-          effects; master gain, ceiling and normalization apply only to the processed mix.
-        </p>
-        <div className="studio-preflight" aria-live="polite">
-          <h3>Preflight</h3>
-          {flight.errors.length ? (
-            flight.errors.map((error) => (
-              <p className="studio-error" key={error}>
-                {error}
+        ) : (
+          !request && (
+            <div className="studio-preflight">
+              <h3>Create a checkpoint to export audio</h3>
+              <p className="studio-note">
+                {project.document.clips.length
+                  ? 'A checkpoint saves the arrangement you want to export.'
+                  : 'Add audio to the timeline in Mix, then save a checkpoint.'}
               </p>
-            ))
-          ) : (
-            <p>Checkpoint sources and script relationships are ready for server validation.</p>
+              {!!project.document.clips.length && onCreateCheckpoint && (
+                <StudioButton
+                  primary
+                  disabled={!studio.canMutate || studio.actionBusy}
+                  onClick={() => {
+                    checkpointRequested.current = true;
+                    setOpen(false);
+                  }}
+                >
+                  Create checkpoint
+                </StudioButton>
+              )}
+            </div>
+          )
+        )}
+        {(revision || request) && (
+          <div className="studio-deliver-options">
+            <div className="studio-field-grid">
+              <Field label="Output">
+                <select
+                  value={kind}
+                  disabled={studio.actionBusy || !!request}
+                  onChange={(event) => setKind(event.target.value as 'mix' | 'stems')}
+                >
+                  <option value="mix">Stereo mix</option>
+                  <option value="stems">Track stems</option>
+                </select>
+              </Field>
+              <Field label="Format">
+                <select
+                  value={format}
+                  disabled={studio.actionBusy || !!request}
+                  onChange={(event) => setFormat(event.target.value as 'wav' | 'mp3')}
+                >
+                  <option value="wav">WAV</option>
+                  <option value="mp3">MP3</option>
+                </select>
+              </Field>
+            </div>
+            <Field label="Processing">
+              <select
+                value={processing}
+                disabled={studio.actionBusy || !!request}
+                onChange={(event) => setProcessing(event.target.value as 'dry' | 'processed')}
+              >
+                <option value="dry">Dry</option>
+                <option value="processed">Processed</option>
+              </select>
+            </Field>
+            <details>
+              <summary>About processing</summary>
+              <p className="studio-note">
+                Dry audio keeps clip gain, fades and placement. Processing adds track effects.
+                Master settings apply to the stereo mix only. MP3 requires a server encoder.
+              </p>
+            </details>
+          </div>
+        )}
+        {checkpointLoading && <output className="studio-note">Loading checkpoint…</output>}
+        {revision &&
+          !checkpointLoading &&
+          (flight.errors.length > 0 || flight.warnings.length > 0) && (
+            <div className="studio-preflight" aria-live="polite">
+              <h3>Before rendering</h3>
+              {flight.errors.map((error) => (
+                <p className="studio-error" key={error}>
+                  {error}
+                </p>
+              ))}
+              {flight.warnings.map((warning) => (
+                <p className="studio-note" key={warning}>
+                  {warning}
+                </p>
+              ))}
+            </div>
           )}
-          {flight.warnings.map((warning) => (
-            <p className="studio-note" key={warning}>
-              {warning}
-            </p>
-          ))}
-        </div>
         {!!stale.length && (
           <div className="studio-stale-recordings">
             <h3>Earlier recordings</h3>
@@ -211,17 +253,19 @@ export function Deliver() {
             {studio.actionError}
           </p>
         )}
-        <StudioButton
-          primary
-          onClick={render}
-          disabled={(!request && flight.errors.length > 0) || studio.actionBusy}
-        >
-          {studio.actionBusy
-            ? 'Submitting…'
-            : request
-              ? 'Retry same render request'
-              : `Render ${processing} ${kind === 'mix' ? 'mix' : 'stems'}`}
-        </StudioButton>
+        {(revision || request) && (
+          <StudioButton
+            primary
+            onClick={render}
+            disabled={(!request && flight.errors.length > 0) || studio.actionBusy}
+          >
+            {studio.actionBusy
+              ? 'Submitting…'
+              : request
+                ? 'Retry same render request'
+                : `Render ${processing} ${kind === 'mix' ? 'mix' : 'stems'}`}
+          </StudioButton>
+        )}
         {!!jobs.length && (
           <div className="studio-job-list">
             {jobs
@@ -276,15 +320,11 @@ export function Deliver() {
               ))}
           </div>
         )}
-        <div className="studio-section-title">
-          <h3>Rendered files</h3>
-          <span>{files.length}</span>
-        </div>
-        {!files.length && (
-          <p className="studio-note">
-            Completed files for this checkpoint appear here. Rendering continues if you close this
-            sheet.
-          </p>
+        {files.length > 0 && (
+          <div className="studio-section-title">
+            <h3>Rendered files</h3>
+            <span>{files.length}</span>
+          </div>
         )}
         {files.map((file) => (
           <div className="studio-deliverable" key={file.id}>
@@ -342,49 +382,47 @@ export function Deliver() {
           </div>
         ))}
         {publication && <output aria-live="polite">{publication}</output>}
-        <div className="studio-divider" />
-        <ArchiveScopeControls
-          value={archiveScope}
-          onChange={setArchiveScope}
-          disabled={studio.actionBusy}
-        />
-        <StudioButton
-          disabled={studio.actionBusy}
-          onClick={() =>
-            void studio.runAction(async () => {
-              setPublication('');
-              await session.flush();
-              if (session.getSnapshot().status !== 'saved')
-                throw new Error(
-                  'Save the current draft before exporting an archive. Preserve or reconcile its recovery copy first.',
-                );
-              const url = `${client.archiveUrl(project.id)}?${archiveScopeQuery(archiveScope)}`;
-              const filters = [{ name: 'Studio project archive', extensions: ['zip'] }];
-              const receipt = platform.filesystem.saveFromUrl
-                ? await platform.filesystem.saveFromUrl(`${safeName}.studio.zip`, url, filters)
-                : await platform.filesystem.saveFile(
-                    `${safeName}.studio.zip`,
-                    await client.download(url),
-                    filters,
+        <details className="studio-advanced">
+          <summary>Project archive</summary>
+          <ArchiveScopeControls
+            value={archiveScope}
+            onChange={setArchiveScope}
+            disabled={studio.actionBusy}
+          />
+          <StudioButton
+            disabled={studio.actionBusy}
+            onClick={() =>
+              void studio.runAction(async () => {
+                setPublication('');
+                await session.flush();
+                if (session.getSnapshot().status !== 'saved')
+                  throw new Error(
+                    'Save the current draft before exporting an archive. Preserve or reconcile its recovery copy first.',
                   );
-              setPublication(
-                receipt?.status === 'saved'
-                  ? 'Archive saved.'
-                  : receipt?.status === 'cancelled'
-                    ? 'Save cancelled.'
-                    : receipt?.status === 'download_started'
-                      ? 'Download started.'
-                      : 'Save requested; destination confirmation unavailable.',
-              );
-            })
-          }
-        >
-          <FileArchive size={15} /> Export complete project archive
-        </StudioButton>
-        <p className="studio-note">
-          The server keeps managed deliverables. Save a copy opens your platform’s destination flow;
-          it is separate from rendering. Archives include owned audio for playback without models.
-        </p>
+                const url = `${client.archiveUrl(project.id)}?${archiveScopeQuery(archiveScope)}`;
+                const filters = [{ name: 'Studio project archive', extensions: ['zip'] }];
+                const receipt = platform.filesystem.saveFromUrl
+                  ? await platform.filesystem.saveFromUrl(`${safeName}.studio.zip`, url, filters)
+                  : await platform.filesystem.saveFile(
+                      `${safeName}.studio.zip`,
+                      await client.download(url),
+                      filters,
+                    );
+                setPublication(
+                  receipt?.status === 'saved'
+                    ? 'Archive saved.'
+                    : receipt?.status === 'cancelled'
+                      ? 'Save cancelled.'
+                      : receipt?.status === 'download_started'
+                        ? 'Download started.'
+                        : 'Save requested; destination confirmation unavailable.',
+                );
+              })
+            }
+          >
+            <FileArchive size={15} /> Export complete project archive
+          </StudioButton>
+        </details>
       </DialogContent>
     </Dialog>
   );

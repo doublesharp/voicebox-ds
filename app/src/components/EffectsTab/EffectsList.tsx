@@ -113,15 +113,11 @@ export function EffectsList() {
 
           {isCreatingNew && (
             <div>
-              <div className="text-[11px] text-muted-foreground font-medium uppercase tracking-wider mb-2 px-1">
-                {t('effects.sections.new')}
-              </div>
               <div className="rounded-xl border-2 border-accent/40 bg-accent/5 p-3">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-accent" />
                   <span className="text-sm font-medium">{t('effects.unsaved.title')}</span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">{t('effects.unsaved.hint')}</p>
               </div>
             </div>
           )}
@@ -155,11 +151,12 @@ function PresetCard({
     <button
       type="button"
       className={cn(
-        'w-full text-left rounded-xl border p-3 h-[88px] transition-all duration-150',
+        'w-full text-left rounded-xl border p-3 transition-all duration-150',
         isSelected
           ? 'border-accent/50 bg-accent/10'
           : 'border-border bg-card hover:bg-muted/50 hover:border-border',
       )}
+      aria-pressed={isSelected}
       onClick={onSelect}
     >
       <div className="flex items-center gap-2">
@@ -167,15 +164,10 @@ function PresetCard({
           className={cn('h-4 w-4 shrink-0', isSelected ? 'text-accent' : 'text-muted-foreground')}
         />
         <span className="text-sm font-medium truncate">{name}</span>
-        {preset.is_builtin && (
-          <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full shrink-0">
-            {t('effects.badge.builtin')}
-          </span>
-        )}
       </div>
-      <p className="text-xs text-muted-foreground mt-1 line-clamp-1 pl-6">
-        {description || t('effects.noDescription')}
-      </p>
+      {description && (
+        <p className="text-xs text-muted-foreground mt-1 line-clamp-1 pl-6">{description}</p>
+      )}
       <div className="flex items-center gap-2 mt-1.5 pl-6">
         <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
           {t('effects.effectCount', { count: effectCount })}

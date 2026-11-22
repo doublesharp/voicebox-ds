@@ -231,8 +231,8 @@ export function SpeechSettings({ form }: { form: UseFormReturn<GenerationFormVal
                 </div>
               </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Lower guidance can help a fast reference voice sound more relaxed. More expression
-                can make speech faster. Leave blank to use the model defaults.
+                Lower guidance can relax a fast reference voice; more expression can speed speech up.
+                Leave blank for model defaults.
               </p>
             </details>
           </div>

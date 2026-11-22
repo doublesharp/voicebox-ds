@@ -296,7 +296,6 @@ export function SampleList({ profileId }: SampleListProps) {
         <div className="flex flex-col items-center justify-center py-8 text-center border border-dashed rounded-lg">
           <Volume2 className="h-8 w-8 text-muted-foreground/50 mb-2" />
           <p className="text-sm text-muted-foreground">{t('sampleList.empty.title')}</p>
-          <p className="text-xs text-muted-foreground/70 mt-1">{t('sampleList.empty.hint')}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -456,7 +455,11 @@ export function SampleList({ profileId }: SampleListProps) {
         {t('sampleList.addSample')}
       </Button>
 
-      <p className="text-xs text-muted-foreground text-center px-2">{t('sampleList.note')}</p>
+      <p className="text-xs text-muted-foreground text-center px-2">
+        {t('sampleList.guidance', {
+          defaultValue: 'One clean sample of about 30 seconds works best; more can reduce quality.',
+        })}
+      </p>
 
       <SampleUpload profileId={profileId} open={uploadOpen} onOpenChange={setUploadOpen} />
 

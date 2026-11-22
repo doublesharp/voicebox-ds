@@ -48,15 +48,27 @@
   cursor: not-allowed;
 }
 .studio select {
+  appearance: none;
   width: 100%;
   min-width: 0;
   border: 1px solid hsl(var(--input));
   background: hsl(var(--background));
+  background-image: linear-gradient(45deg, transparent 50%, hsl(var(--muted-foreground)) 50%),
+    linear-gradient(135deg, hsl(var(--muted-foreground)) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 50%, calc(100% - 11px) 50%;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
   color: inherit;
   border-radius: 8px;
   min-height: 36px;
-  padding: 6px 9px;
+  padding: 6px 24px 6px 9px;
   font-size: 12px;
+}
+@media (forced-colors: active) {
+  .studio select {
+    appearance: auto;
+    background-image: none;
+  }
 }
 .studio select:focus-visible {
   outline: 2px solid hsl(var(--ring));
@@ -255,6 +267,44 @@
   width: calc(100vw - 28px);
   overflow-y: auto;
   border-radius: 16px;
+}
+.studio.studio-deliver,
+.studio.studio-dictionary-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.studio-deliver > .studio-field,
+.studio-deliver-options .studio-field {
+  margin: 4px 0;
+}
+.studio-deliver-options {
+  display: grid;
+  gap: 8px;
+}
+.studio-dictionary-modal {
+  max-width: 42rem;
+}
+.studio-pronunciation {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.studio-pronunciation-preview {
+  display: grid;
+  gap: 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 9px;
+  padding: 12px;
+}
+.studio-pronunciation-preview > output,
+.studio-pronunciation-preview > ul {
+  max-height: 120px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.studio-pronunciation-preview > button {
+  justify-self: start;
 }
 .studio-modal form > .studio-primary {
   margin-top: 12px;
@@ -467,6 +517,9 @@
   gap: 6px;
   flex-shrink: 0;
 }
+.studio-header-actions:empty {
+  display: none;
+}
 .studio-workspace-bar {
   display: flex;
   align-items: center;
@@ -495,11 +548,6 @@
   color: hsl(var(--foreground));
   border-bottom-color: hsl(var(--primary));
 }
-.studio-workspace-number {
-  font-size: 8px;
-  opacity: 0.6;
-  font-family: ui-monospace, monospace;
-}
 .studio-work-area {
   display: flex;
   flex: 1 1 auto;
@@ -517,19 +565,6 @@
 }
 .studio-outline-content h3 {
   margin: 4px 0 12px;
-}
-.studio-project-stats {
-  display: flex;
-  gap: 20px;
-  margin-top: 20px;
-}
-.studio-project-stats > span {
-  font-size: 18px;
-}
-.studio-project-stats small {
-  display: block;
-  font-size: 9px;
-  color: hsl(var(--muted-foreground));
 }
 .studio-outline-list {
   display: flex;
@@ -604,6 +639,22 @@
 .studio-script > .studio-section-title {
   margin-bottom: 26px;
 }
+.studio-script .studio-section-title {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.studio-script .studio-section-title > div:first-child {
+  margin-right: auto;
+}
+.studio-script .studio-section-title > button {
+  margin-left: 0;
+}
+.studio-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
 .studio-passage-list {
   display: flex;
   flex-direction: column;
@@ -671,6 +722,15 @@
 .studio-script-input:disabled {
   opacity: 0.7;
 }
+.studio-passage-chapter {
+  padding-bottom: 6px;
+}
+.studio-passage-chapter summary {
+  overflow-wrap: anywhere;
+}
+.studio-passage-chapter input {
+  margin-top: 6px;
+}
 .studio-passage-footer {
   display: flex;
   gap: 8px;
@@ -688,23 +748,6 @@
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   cursor: pointer;
-}
-.studio-engine-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  background: hsl(var(--muted) / 0.5);
-  border: 1px solid hsl(var(--border));
-  border-radius: 9px;
-  padding: 12px;
-  margin: 15px 0;
-}
-.studio-engine-card small {
-  font-size: 10px;
-  color: hsl(var(--muted-foreground));
-}
-.studio-engine-card .studio-error {
-  color: hsl(var(--destructive));
 }
 .studio-advanced {
   margin: 14px 0;
@@ -1128,11 +1171,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.studio-transport-note {
-  margin-left: auto;
-  font-size: 9px;
-  color: hsl(var(--muted-foreground));
-}
 .studio-playback-error {
   padding: 5px 15px;
   background: hsl(var(--destructive) / 0.06);
@@ -1177,9 +1215,6 @@
   .studio-project-header {
     gap: 8px;
   }
-  .studio-transport-note {
-    display: none;
-  }
   .studio-workspace-tabs {
     gap: 18px;
   }
@@ -1223,9 +1258,6 @@
   }
   .studio-workspace-tabs {
     gap: 17px;
-  }
-  .studio-workspace-number {
-    display: none;
   }
   .studio-workspace-bar .studio-quiet {
     font-size: 10px;

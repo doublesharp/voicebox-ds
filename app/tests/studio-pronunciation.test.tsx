@@ -215,7 +215,7 @@ test('dictionary draft previews substitutions, survives panel remount, and saves
   expect(renderer.root.findByProps({ 'aria-label': 'Spoken text preview' }).props.children).toBe(
     'Call application interface.',
   );
-  expect(button('Audition pronunciation').props.disabled).toBe(true);
+  expect(button('Generate audio preview').props.disabled).toBe(true);
   expect([...result.memory.values()].some((raw) => raw.includes('application interface'))).toBe(
     true,
   );
@@ -237,9 +237,9 @@ test('dictionary draft previews substitutions, survives panel remount, and saves
 });
 test('audition is an alternative take and uncertain responses retry the same persisted identity', async () => {
   const result = await mount({ failGeneration: true });
-  expect(button('Audition pronunciation').props.disabled).toBe(false);
+  expect(button('Generate audio preview').props.disabled).toBe(false);
   await act(async () => {
-    await button('Audition pronunciation').props.onClick();
+    await button('Generate audio preview').props.onClick();
   });
   expect(result.generations[0]).toMatchObject({ passage_ids: ['line'], count: 1, adopt: false });
   expect(JSON.stringify(renderer.toJSON())).toContain('Response lost');
@@ -247,7 +247,7 @@ test('audition is an alternative take and uncertain responses retry the same per
   act(() => result.show(true));
   result.allowGeneration();
   await act(async () => {
-    await button('Retry pronunciation audition').props.onClick();
+    await button('Retry audio preview').props.onClick();
   });
   expect(result.generations[1]).toEqual(result.generations[0]);
   expect(result.commands).toHaveLength(0);

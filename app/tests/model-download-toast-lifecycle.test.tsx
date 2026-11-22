@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test';
+import type { ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { create as createStore } from 'zustand';
 
@@ -81,6 +82,27 @@ test('100 percent downloaded does not finish before the server reports completio
   act(() => source.send(event('complete')));
   expect(complete).toHaveBeenCalledTimes(1);
   expect(source.close).toHaveBeenCalledTimes(1);
+});
+
+test('download progress stays compact with the filename and transfer size available on demand', () => {
+  act(() => { view = create(<Probe />); });
+  expect(toast).toHaveBeenCalledWith(expect.objectContaining({ type: 'background' }));
+  act(() => sources[0].send({
+    status: 'downloading', progress: 25, current: 1024, total: 4096,
+    filename: 'model.fp32-00002-of-00002.safetensors',
+  }));
+  const { description } = update.mock.calls.at(-1)?.[0] as { description: ReactNode };
+  let detailsView!: ReactTestRenderer;
+  act(() => { detailsView = create(<>{description}</>); });
+  try {
+    const details = detailsView.root.findByType('details');
+    expect(details.props.open).toBeUndefined();
+    expect(details.findByType('summary').children).toEqual(['Downloading · 25%']);
+    expect(details.findAllByType('div').flatMap((node) => node.children)).toContain('model.fp32-00002-of-00002.safetensors');
+    expect(details.findAllByType('div').flatMap((node) => node.children)).toContain('1.0 KB / 4.0 KB');
+  } finally {
+    act(() => detailsView.unmount());
+  }
 });
 
 test('a subscription before download start ignores earlier terminal snapshots', () => {

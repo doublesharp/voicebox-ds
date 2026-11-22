@@ -51,7 +51,7 @@ import { SortableStoryChatItem } from './StoryChatItem';
 export function StoryContent() {
   const { t } = useTranslation();
   const selectedStoryId = useStoryStore((state) => state.selectedStoryId);
-  const { data: story, isLoading } = useStory(selectedStoryId);
+  const { data: story, isLoading, error: storyError, refetch } = useStory(selectedStoryId);
   const removeItem = useRemoveStoryItem();
   const reorderItems = useReorderStoryItems();
   const exportAudio = useExportStoryAudio();
@@ -330,10 +330,7 @@ export function StoryContent() {
   if (!selectedStoryId) {
     return (
       <div className="flex items-center justify-center h-full max-lg:pb-[180px] text-muted-foreground">
-        <div className="text-center">
-          <p className="text-lg font-medium mb-2">{t('storyContent.selectStory.title')}</p>
-          <p className="text-sm">{t('storyContent.selectStory.hint')}</p>
-        </div>
+        <p className="text-lg font-medium">{t('storyContent.selectStory.title')}</p>
       </div>
     );
   }
@@ -349,9 +346,20 @@ export function StoryContent() {
   if (!story) {
     return (
       <div className="flex items-center justify-center h-full max-lg:pb-[180px] text-muted-foreground">
-        <div className="text-center">
-          <p className="text-lg font-medium mb-2">{t('storyContent.notFound.title')}</p>
-          <p className="text-sm">{t('storyContent.notFound.hint')}</p>
+        <div className="space-y-3 text-center">
+          {storyError ? (
+            <>
+              <div role="alert">
+                <p className="text-lg font-medium">{t('storyContent.notFound.hint')}</p>
+                <p className="text-sm text-destructive">{storyError.message}</p>
+              </div>
+              <Button size="sm" onClick={() => void refetch()}>
+                {t('common.retry')}
+              </Button>
+            </>
+          ) : (
+            <p className="text-lg font-medium">{t('storyContent.notFound.title')}</p>
+          )}
         </div>
       </div>
     );

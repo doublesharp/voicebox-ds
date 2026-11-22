@@ -1,5 +1,6 @@
-import { ArrowDown, ArrowUp, Lock, Plus, Trash2, Unlock } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowDown, ArrowUp, BookOpen, Lock, Plus, Trash2, Unlock } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +15,15 @@ import { useStudio } from './context';
 import { splitScriptWithChapters } from './domain';
 import { EmptyState, Field, StudioButton } from './ui';
 
-export function ScriptEditor() {
+export function ScriptEditor({
+  emptyAction,
+  onOpenPassageSettings,
+  onOpenPronunciation,
+}: {
+  emptyAction?: ReactNode;
+  onOpenPassageSettings?: (id: string, opener: HTMLButtonElement) => void;
+  onOpenPronunciation?: (opener: HTMLButtonElement) => void;
+}) {
   const studio = useStudio();
   const { project, session, save, canMutate } = studio;
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -37,99 +46,119 @@ export function ScriptEditor() {
   };
   return (
     <section className="studio-script" aria-label="Script editor">
-      <div className="studio-section-title">
-        <div>
-          <p className="studio-eyebrow">THE WORDS COME FIRST</p>
-          <h2>Script</h2>
-        </div>
-        <span>{passages.length} passages</span>
-        {missingOrStaleIds.length > 0 && (
-          <button
-            className="studio-quiet"
-            type="button"
-            disabled={!canMutate}
+      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
+        {passages.length > 0 ? (
+          <div className="studio-section-title">
+            <div>
+              <h2>Script</h2>
+            </div>
+            {onOpenPronunciation && (
+              <button
+                type="button"
+                className="studio-quiet"
+                onClick={(event) => onOpenPronunciation(event.currentTarget)}
+              >
+                <BookOpen size={15} /> Pronunciation
+              </button>
+            )}
+            {missingOrStaleIds.length > 0 && (
+              <button
+                className="studio-quiet"
+                type="button"
+                disabled={!canMutate}
+                onClick={() => {
+                  studio.setCheckedPassages(missingOrStaleIds);
+                  studio.selectPassage(missingOrStaleIds[0]);
+                }}
+              >
+                Select unfinished ({missingOrStaleIds.length})
+              </button>
+            )}
+            <DialogTrigger asChild>
+              <button className="studio-quiet" type="button" disabled={!canMutate}>
+                <Plus size={15} /> Add passages
+              </button>
+            </DialogTrigger>
+          </div>
+        ) : (
+          <EmptyState
+            title={emptyAction ? 'Start your project' : 'Add a script'}
+            action={
+              <div className="studio-start-actions">
+                <DialogTrigger asChild>
+                  <Button type="button" size="sm" className="studio-button" disabled={!canMutate}>
+                    <Plus size={15} /> Paste a script
+                  </Button>
+                </DialogTrigger>
+                {emptyAction}
+              </div>
+            }
+          >
+            {emptyAction
+              ? 'Paste a script to create voice takes, or import audio to build an arrangement.'
+              : 'Paste your script to create passages and assign voices.'}
+          </EmptyState>
+        )}
+        <DialogContent className="studio studio-modal">
+          <DialogHeader>
+            <DialogTitle>Add passages</DialogTitle>
+            <DialogDescription>
+              Separate passages with blank lines. Prefix a section with <code>## Chapter Name</code>{' '}
+              to create YouTube chapter markers automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="New script">
+            <Textarea
+              autoFocus
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              rows={7}
+            />
+          </Field>
+          <div className="studio-paste-preview">
+            <strong>{parsed.length} passages</strong>
+            <ol>
+              {parsed.map((part, index) => (
+                <li key={`${index}-${part.text.slice(0, 10)}`}>
+                  {part.chapter && <strong>[{part.chapter}] </strong>}
+                  {part.text}
+                </li>
+              ))}
+            </ol>
+          </div>
+          <StudioButton
+            primary
+            disabled={!parsed.length || !canMutate}
             onClick={() => {
-              studio.setCheckedPassages(missingOrStaleIds);
-              studio.selectPassage(missingOrStaleIds[0]);
+              const hasChapters = parsed.some((item) => item.chapter !== null);
+              void session
+                .command('add_passages', {
+                  texts: parsed.map((item) => item.text),
+                  ...(hasChapters ? { chapters: parsed.map((item) => item.chapter) } : {}),
+                })
+                .then((ok) => {
+                  if (ok) {
+                    setText('');
+                    setPasteOpen(false);
+                  }
+                });
             }}
           >
-            Select missing / stale ({missingOrStaleIds.length})
-          </button>
-        )}
-        <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
-          <DialogTrigger asChild>
-            <button className="studio-quiet" type="button" disabled={!canMutate}>
-              <Plus size={15} /> Paste / add
-            </button>
-          </DialogTrigger>
-          <DialogContent className="studio studio-modal">
-            <DialogHeader>
-              <DialogTitle>Add passages</DialogTitle>
-              <DialogDescription>
-                Separate passages with blank lines. Prefix a section with{' '}
-                <code>## Chapter Name</code> to create YouTube chapter markers automatically.
-              </DialogDescription>
-            </DialogHeader>
-            <Field label="New script">
-              <Textarea
-                autoFocus
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                rows={7}
-              />
-            </Field>
-            <div className="studio-paste-preview">
-              <strong>{parsed.length} passages</strong>
-              <ol>
-                {parsed.map((part, index) => (
-                  <li key={`${index}-${part.text.slice(0, 10)}`}>
-                    {part.chapter && <strong>[{part.chapter}] </strong>}
-                    {part.text}
-                  </li>
-                ))}
-              </ol>
-            </div>
-            <StudioButton
-              primary
-              disabled={!parsed.length || !canMutate}
-              onClick={() => {
-                const hasChapters = parsed.some((item) => item.chapter !== null);
-                void session
-                  .command('add_passages', {
-                    texts: parsed.map((item) => item.text),
-                    ...(hasChapters ? { chapters: parsed.map((item) => item.chapter) } : {}),
-                  })
-                  .then((ok) => {
-                    if (ok) {
-                      setText('');
-                      setPasteOpen(false);
-                    }
-                  });
-              }}
-            >
-              Add to script
-            </StudioButton>
-          </DialogContent>
-        </Dialog>
-      </div>
-      {!passages.length && (
-        <EmptyState
-          title="Every performance starts with a few words"
-          action={
-            <StudioButton primary onClick={() => setPasteOpen(true)} disabled={!canMutate}>
-              <Plus size={15} /> Paste a script
-            </StudioButton>
-          }
-        >
-          Add your script, choose a voice, and make the first take. Your timeline is ready when you
-          are.
-        </EmptyState>
-      )}
+            Add to script
+          </StudioButton>
+        </DialogContent>
+      </Dialog>
       <div className="studio-passage-list">
         {passages.map((passage, index) => {
           const take = project.takes.find((take) => take.id === passage.selected_take_id);
           const draft = save.drafts[passage.id];
           const currentText = draft?.text ?? passage.text;
+          const chapterTitle = draft?.chapter !== undefined ? draft.chapter : passage.chapter;
+          const takeCount = project.takes.filter((item) => item.passage_id === passage.id).length;
+          const openPassageSettings = (opener: HTMLButtonElement) => {
+            if (onOpenPassageSettings) onOpenPassageSettings(passage.id, opener);
+            else studio.selectPassage(passage.id);
+          };
           const stale = take && take.text !== currentText;
           const differing = project.document.clips.some(
             (clip) => clip.passage_id === passage.id && clip.take_id !== passage.selected_take_id,
@@ -164,19 +193,11 @@ export function ScriptEditor() {
                 <button
                   type="button"
                   className="studio-speaker"
-                  onClick={() => studio.selectPassage(passage.id)}
+                  onClick={(event) => openPassageSettings(event.currentTarget)}
                 >
                   {voiceName}
                 </button>
-                <span className="studio-status-chip">
-                  {passage.locked
-                    ? 'Locked'
-                    : stale
-                      ? 'Script changed'
-                      : take
-                        ? 'Take selected'
-                        : 'No take yet'}
-                </span>
+                {stale && <span className="studio-status-chip">Script changed</span>}
                 <button
                   type="button"
                   className="studio-icon-button"
@@ -192,23 +213,6 @@ export function ScriptEditor() {
                   {passage.locked ? <Lock size={14} /> : <Unlock size={14} />}
                 </button>
               </div>
-              {(studio.selectedPassageId === passage.id || passage.chapter) && (
-                <Input
-                  aria-label={`Passage ${index + 1} chapter`}
-                  placeholder="Optional YouTube chapter title (e.g. I2S & DMA Pipeline)"
-                  maxLength={120}
-                  value={
-                    draft?.chapter !== undefined ? (draft.chapter ?? '') : (passage.chapter ?? '')
-                  }
-                  disabled={passage.locked || save.status === 'recovery'}
-                  onFocus={() => studio.selectPassage(passage.id)}
-                  onChange={(event) =>
-                    session.editPassage(passage.id, {
-                      chapter: event.target.value || null,
-                    })
-                  }
-                />
-              )}
               <Textarea
                 aria-label={`Passage ${index + 1} text`}
                 className="studio-script-input"
@@ -217,15 +221,33 @@ export function ScriptEditor() {
                 onFocus={() => studio.selectPassage(passage.id)}
                 onChange={(event) => session.editPassage(passage.id, { text: event.target.value })}
               />
+              {(studio.selectedPassageId === passage.id || chapterTitle) && (
+                <details className="studio-passage-chapter">
+                  <summary>{chapterTitle || 'Add chapter title'}</summary>
+                  <Input
+                    aria-label={`Passage ${index + 1} chapter`}
+                    placeholder="Chapter title"
+                    maxLength={120}
+                    value={chapterTitle ?? ''}
+                    disabled={passage.locked || save.status === 'recovery'}
+                    onFocus={() => studio.selectPassage(passage.id)}
+                    onChange={(event) =>
+                      session.editPassage(passage.id, { chapter: event.target.value || null })
+                    }
+                  />
+                </details>
+              )}
               <div className="studio-passage-footer">
-                <button
-                  className="studio-text-button"
-                  type="button"
-                  onClick={() => studio.selectPassage(passage.id)}
-                >
-                  {project.takes.filter((t) => t.passage_id === passage.id).length} takes{' '}
-                  <span aria-hidden="true">↗</span>
-                </button>
+                {takeCount > 0 && (
+                  <button
+                    className="studio-text-button"
+                    type="button"
+                    onClick={(event) => openPassageSettings(event.currentTarget)}
+                  >
+                    {takeCount} {takeCount === 1 ? 'take' : 'takes'}{' '}
+                    <span aria-hidden="true">↗</span>
+                  </button>
+                )}
                 {differing && <span className="studio-note">Timeline uses a different take</span>}
                 <div className="studio-passage-actions">
                   <button

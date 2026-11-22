@@ -122,7 +122,7 @@ function RootLayout() {
               className={
                 isStudio
                   ? `mx-auto w-full px-2 sm:px-4 max-w-[1800px] ${desktop ? 'flex-1 min-h-0' : 'h-full'} overflow-hidden flex flex-col`
-                  : `container mx-auto px-8 max-w-[1800px] ${desktop ? 'flex-1 min-h-0' : 'h-full'} overflow-hidden flex flex-col`
+                  : `container mx-auto px-3 sm:px-6 lg:px-8 max-w-[1800px] ${desktop ? 'flex-1 min-h-0' : 'h-full'} overflow-hidden flex flex-col`
               }
             >
               <Outlet />

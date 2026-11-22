@@ -1062,9 +1062,9 @@ export function ProfileForm() {
               const scope = currentServerScope();
               return form.handleSubmit((data) => onSubmit(data, scope))(event);
             }} className="flex-1 min-h-0 flex flex-col">
-              <div className="flex flex-col gap-6 min-[1100px]:grid min-[1100px]:grid-cols-2 flex-1 min-h-0 overflow-y-auto min-[1100px]:overflow-hidden p-6">
+              <div className="visible-scrollbar flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6 scroll-py-6 min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:overflow-hidden">
                 {/* Left column: Sample management */}
-                <div className="shrink-0 space-y-4 min-[1100px]:border-r min-[1100px]:border-border/60 min-[1100px]:pr-6 min-[1100px]:overflow-y-auto min-[1100px]:min-h-0">
+                <div className="visible-scrollbar shrink-0 space-y-4 min-[1100px]:min-h-0 min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-border/60 min-[1100px]:pr-6 min-[1100px]:pb-4 min-[1100px]:scroll-py-4">
                   <h3 className="text-[13px] font-semibold">
                     {t('profileForm.sections.reference', { defaultValue: '1 · Reference audio' })}
                   </h3>
@@ -1393,7 +1393,7 @@ export function ProfileForm() {
                 </div>
 
                 {/* Right column: Profile info */}
-                <div className="shrink-0 space-y-6 rounded-xl border border-border/60 bg-card/50 p-5 min-[1100px]:overflow-y-auto min-[1100px]:min-h-0">
+                <div className="visible-scrollbar shrink-0 space-y-6 rounded-xl border border-border/60 bg-card/50 p-5 min-[1100px]:min-h-0 min-[1100px]:overflow-y-auto min-[1100px]:scroll-py-5">
                   <FormSection
                     title={t('profileForm.sections.voiceDetails', {
                       defaultValue: '2 · Voice details',

@@ -433,6 +433,12 @@ export function FloatingGenerateBox({
                           : null
                       }
                     />
+                    <Link
+                      to="/models"
+                      className="block w-fit text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                    >
+                      Manage models
+                    </Link>
                   </FormItem>
                 )}
               />
@@ -500,8 +506,7 @@ export function FloatingGenerateBox({
             )}
             {selectedPresetId === '_profile' && (
               <p className="text-xs text-muted-foreground">
-                This voice’s default effects are applied. Choose another preset to replace them for
-                this take.
+                Using this voice’s default effects. Pick a preset to replace them for this take.
               </p>
             )}
             <FormField

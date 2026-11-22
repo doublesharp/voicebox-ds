@@ -8,6 +8,8 @@ let renderer: ReactTestRenderer;
 let retryJob: () => Promise<unknown> = async () => {};
 let profilesRequest: (signal: AbortSignal) => Promise<any[]> = async () => [];
 let includeJob = false;
+let hasPassage = false;
+let hasTake = false;
 let initialStatus = 'saved';
 let noProject = false;
 let checkpointResult = true;
@@ -23,9 +25,9 @@ const project = (id: string) => ({
   id,
   name: `Project ${id}`,
   revision: 0,
-  document: { passages: [], clips: [], tracks: [], mix: {} },
+  document: { passages: hasPassage ? [{ id: 'passage', text: 'Hello' }] : [], clips: [], tracks: [], mix: {} },
   assets: [],
-  takes: [],
+  takes: hasTake ? [{ id: 'take' }] : [],
   jobs: includeJob ? [{ id: 'job', kind: 'render', status: 'failed' }] : [],
   revisions: [],
 });
@@ -163,15 +165,17 @@ mock.module('../src/components/ui/HelpButton', () => ({ HelpButton: () => null }
 mock.module('../src/features/studio/AudioMeters', () => ({ AudioMeters: () => null }));
 mock.module('../src/features/studio/Deliver', () => ({ Deliver: () => null }));
 mock.module('../src/features/studio/Director', () => ({ Director: () => null }));
+mock.module('../src/features/studio/PronunciationPanel', () => ({ PronunciationPanel: () => null }));
 mock.module('../src/features/studio/Review', () => ({ Review: () => null }));
 mock.module('../src/features/studio/ScriptEditor', () => ({
-  ScriptEditor: () => {
+  ScriptEditor: ({ emptyAction }: { emptyAction?: React.ReactNode }) => {
     scriptRenders++;
-    return null;
+    return <>{emptyAction}</>;
   },
 }));
 mock.module('../src/features/studio/Timeline', () => ({
-  Timeline: () => null,
+  Timeline: ({ importOnly }: { importOnly?: boolean }) =>
+    importOnly ? <button type="button">Import audio</button> : null,
   Mixer: () => null,
   ClipInspector: () => null,
 }));
@@ -185,6 +189,8 @@ afterEach(() => {
   serverRevision = 0;
   storage.clear();
   includeJob = false;
+  hasPassage = false;
+  hasTake = false;
   retryJob = async () => {};
   profilesRequest = async () => [];
   initialStatus = 'saved';
@@ -201,6 +207,25 @@ async function mount() {
   });
 }
 const nameInput = () => renderer.root.findByProps({ 'aria-label': 'Project name' });
+test('a blank Edit workspace offers audio import and reveals editing tools after the first passage', async () => {
+  await mount();
+  const layout = () => JSON.stringify(renderer.toJSON());
+  expect(layout()).not.toContain('studio-desktop-inspector');
+  expect(layout()).not.toContain('studio-outline-content');
+  expect(layout()).not.toContain('studio-bottom-timeline');
+  expect(layout()).not.toContain('Playhead seconds');
+  expect(layout()).toContain('Import audio');
+
+  act(() => {
+    hasPassage = true;
+    const session = sessions[0];
+    session.state = { ...session.state, project: project(projectId) };
+    for (const listener of session.listeners) listener();
+  });
+  expect(layout()).toContain('studio-desktop-inspector');
+  expect(layout()).not.toContain('Playhead seconds');
+  expect(renderer.root.findByProps({ className: 'studio-timeline-disclosure' }).props['aria-expanded']).toBe(false);
+});
 test('blank project name restores the saved name instead of leaving a false empty title', async () => {
   await mount();
   const target = { value: '   ' };
@@ -350,6 +375,8 @@ test('reconnecting aborts old voice-capability requests and ignores their errors
 });
 
 test('playback clock updates transport without rerendering script and keeps manual seeks', async () => {
+  hasPassage = true;
+  hasTake = true;
   await mount();
   const player = playbackInstances.at(-1);
   const before = scriptRenders;
@@ -368,8 +395,10 @@ test('playback clock updates transport without rerendering script and keeps manu
 const button = (label: string) => renderer.root.findAllByType('button').find((node) => node.props.children === label)!;
 
 test('keyboard resize clamps each panel and persists the project layout', async () => {
+  hasPassage = true;
   storage.set('voicebox-studio:layout', JSON.stringify({ edit: { outline: 999, inspector: 10 } }));
   await mount();
+  act(() => renderer.root.findByProps({ 'aria-label': 'Toggle outline' }).props.onClick());
   const outline = () => renderer.root.findByProps({ 'aria-label': 'Resize outline' });
   const inspector = () => renderer.root.findByProps({ 'aria-label': 'Resize inspector' });
   expect(outline().props['aria-valuenow']).toBe(280);
@@ -385,7 +414,9 @@ test('keyboard resize clamps each panel and persists the project layout', async 
 });
 
 test('pointer resizing follows drag direction and releases pointer capture', async () => {
+  hasPassage = true;
   await mount();
+  act(() => renderer.root.findByProps({ 'aria-label': 'Toggle outline' }).props.onClick());
   const outline = () => renderer.root.findByProps({ 'aria-label': 'Resize outline' });
   let captured = false;
   const target = { dataset: {} as Record<string, string>, setPointerCapture() { captured = true; }, hasPointerCapture() { return captured; }, releasePointerCapture() { captured = false; } };
@@ -493,8 +524,10 @@ test('recovery controls require confirmation before discarding local edits', asy
 });
 
 test('invalid saved panel preferences fall back to usable defaults', async () => {
+  hasPassage = true;
   storage.set('voicebox-studio:layout', '{broken json');
   await mount();
+  act(() => renderer.root.findByProps({ 'aria-label': 'Toggle outline' }).props.onClick());
   expect(renderer.root.findByProps({ 'aria-label': 'Resize outline' }).props['aria-valuenow']).toBe(190);
   expect(renderer.root.findByProps({ 'aria-label': 'Resize inspector' }).props['aria-valuenow']).toBe(300);
 });

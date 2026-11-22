@@ -1,7 +1,6 @@
-import { Sparkles, Upload } from 'lucide-react';
+import { Mic, Upload } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DoubleSharpMark } from '@/components/Branding';
 import { FloatingGenerateBox } from '@/components/Generation/FloatingGenerateBox';
 import { HistoryTable } from '@/components/History/HistoryTable';
 import { Button } from '@/components/ui/button';
@@ -37,6 +36,7 @@ export function MainEditor() {
   const serverUrl = useServerStore((state) => state.serverUrl);
   const serverRevision = useServerStore((state) => state.serverRevision);
   const { toast } = useToast();
+  const needsVoice = !profilesLoading && !profilesError && profiles?.length === 0;
 
   const clearSelection = useCallback(() => {
     selectionId.current += 1;
@@ -115,36 +115,35 @@ export function MainEditor() {
     );
   };
 
+  const voiceActions = (
+    <div className="flex flex-wrap gap-2">
+      <Button variant={needsVoice ? 'default' : 'outline'} onClick={() => setDialogOpen(true)}>
+        <Mic className="h-4 w-4" />
+        {t('main.createVoice')}
+      </Button>
+      <Button variant="outline" onClick={handleImportClick}>
+        <Upload className="h-4 w-4" />
+        {t('main.importVoice')}
+      </Button>
+    </div>
+  );
+
   return (
     <div
       className="h-full min-h-0 overflow-y-auto"
       style={{ paddingBottom: 'calc(var(--app-player-height) + 1.5rem)' }}
     >
       <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">Generate</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create speech and listen to your recent takes.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="h-9 rounded-lg" onClick={handleImportClick}>
-            <Upload className="mr-2 h-4 w-4" />
-            {t('main.importVoice')}
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".voicebox.zip"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          <Button variant="outline" className="h-9 rounded-lg" onClick={() => setDialogOpen(true)}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            {t('main.createVoice')}
-          </Button>
-        </div>
+        <h1 className="text-xl font-semibold">Generate</h1>
+        {!needsVoice && voiceActions}
       </header>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".voicebox.zip"
+        onChange={handleFileChange}
+        className="hidden"
+      />
       <div className="grid grid-cols-1 gap-6 min-[1100px]:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <section className="min-w-0" aria-label="Generate speech">
           {profilesError && (
@@ -152,25 +151,14 @@ export function MainEditor() {
               {t('profiles.list.errorLoading', { message: profilesError.message })}
             </p>
           )}
-          {!profilesLoading && !profilesError && profiles?.length === 0 && (
-            <div className="mb-4 flex items-center gap-3 rounded-[10px] border border-border/60 bg-card/40 p-4">
-              <DoubleSharpMark className="h-10 w-10 opacity-60" />
-              <div>
-                <p className="text-sm font-medium">Create your first voice</p>
-                <p className="text-xs text-muted-foreground">
-                  Create or import a voice to start generating speech.
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                className="ml-auto h-9 rounded-lg"
-                onClick={() => setDialogOpen(true)}
-              >
-                Create voice
-              </Button>
+          {needsVoice ? (
+            <div className="space-y-3 rounded-lg border border-border/60 bg-card/40 p-4">
+              <h2 className="text-sm font-medium">Add a voice to generate speech</h2>
+              {voiceActions}
             </div>
+          ) : (
+            <FloatingGenerateBox layout="docked" />
           )}
-          <FloatingGenerateBox layout="docked" />
         </section>
         <section className="min-w-0" aria-labelledby="recent-takes-title">
           <h2 id="recent-takes-title" className="mb-1 text-[15px] font-semibold">

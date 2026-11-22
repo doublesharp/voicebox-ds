@@ -69,7 +69,6 @@ export function GeneralPage() {
     form.reset(data);
     toast({
       title: t('settings.general.serverUrl.updatedTitle'),
-      description: t('settings.general.serverUrl.updatedDescription', { url: data.serverUrl }),
     });
   }
 
@@ -134,24 +133,26 @@ export function GeneralPage() {
           }
         >
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="flex gap-2">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="flex items-start gap-2">
               <FormField
                 control={form.control}
                 name="serverUrl"
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormControl>
-                      <Input placeholder="http://127.0.0.1:17493" {...field} />
+                      <Input
+                        aria-label={t('settings.general.serverUrl.title')}
+                        placeholder="http://127.0.0.1:17493"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {isDirty && (
-                <Button type="submit" size="sm">
-                  {t('common.save')}
-                </Button>
-              )}
+              <Button type="submit" disabled={!isDirty}>
+                {t('common.save')}
+              </Button>
             </form>
           </Form>
         </SettingRow>
@@ -214,13 +215,11 @@ export function GeneralPage() {
 
         <SettingRow
           title={t('settings.language.label')}
-          description={t('settings.language.description')}
           action={<LanguageSelect />}
         />
 
         <SettingRow
           title={t('settings.theme.label')}
-          description={t('settings.theme.description')}
           action={<ThemeSelect />}
         />
       </SettingSection>
@@ -256,7 +255,10 @@ function ConnectionStatus({
   }
   if (healthError) {
     return (
-      <div className="flex items-center gap-2 rounded-full border border-destructive/30 px-3 py-1">
+      <div
+        role="status"
+        className="flex items-center gap-2 rounded-full border border-destructive/30 px-3 py-1"
+      >
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full rounded-full bg-destructive/40" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />

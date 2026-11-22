@@ -102,6 +102,15 @@ test('navigation preserves the draft and speech settings in memory', () => {
   });
 });
 
+test('generation uses the selected quantized model size', async () => {
+  mount();
+  await act(async () => {
+    await form.handleSubmit({ text: 'Hello', engine: 'qwen', modelSize: '1.7B-4bit', language: 'en' }, 'voice');
+  });
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toMatchObject({ engine: 'qwen', model_size: '1.7B-4bit' });
+});
+
 test('a pending submission cannot erase later edits or dispatch twice', async () => {
   let release!: (value: { models: never[] }) => void;
   modelStatus = new Promise((resolve) => {

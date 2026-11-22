@@ -43,6 +43,8 @@ mock.module('../src/components/ui/alert-dialog', () => ({
 }));
 mock.module('../src/lib/hooks/useProfiles', () => ({
   useProfiles: () => ({ data: profiles, isLoading: false }),
+  useDeleteProfile: () => ({ isPending: false, mutate() {} }),
+  useExportProfile: () => ({ isPending: false, mutate() {} }),
 }));
 mock.module('../src/lib/api/client', () => ({
   apiClient: {

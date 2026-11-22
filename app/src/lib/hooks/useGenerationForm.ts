@@ -7,6 +7,7 @@ import { apiClient } from '@/lib/api/client';
 import type { EffectConfig } from '@/lib/api/types';
 import { engineSupportsInstruct } from '@/lib/constants/engines';
 import { LANGUAGE_CODES, type LanguageCode } from '@/lib/constants/languages';
+import { getTtsModelOption } from '@/lib/constants/ttsModels';
 import { useGeneration } from '@/lib/hooks/useGeneration';
 import { useModelDownloadToast } from '@/lib/hooks/useModelDownloadToast';
 import { useGenerationSettings } from '@/lib/hooks/useSettings';
@@ -151,34 +152,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       // Capture all request inputs at submission, before the model status request.
       const effectsChain = options.getEffectsChain?.();
       const engine = data.engine || 'qwen';
-      const resolvedModelSize =
-        engine === 'tada'
-          ? data.modelSize === '3B' || data.modelSize === '1B'
-            ? data.modelSize
-            : '1B'
-          : engine === 'qwen' || engine === 'qwen_custom_voice'
-            ? data.modelSize === '0.6B' || data.modelSize === '1.7B'
-              ? data.modelSize
-              : '1.7B'
-            : undefined;
-      const namedModels: Record<string, [string, string]> = {
-        luxtts: ['luxtts', 'LuxTTS'],
-        chatterbox: ['chatterbox-tts', 'Chatterbox TTS'],
-        chatterbox_turbo: ['chatterbox-turbo', 'Chatterbox Turbo'],
-        moss_tts: ['moss-tts', 'MOSS-TTS Nano (CPU)'],
-        tada: resolvedModelSize === '3B' ? ['tada-3b-ml', 'TADA 3B Multilingual'] : ['tada-1b', 'TADA 1B'],
-        kokoro: ['kokoro', 'Kokoro 82M'],
-        qwen_voice_design: ['qwen-voice-design-1.7B', 'Qwen VoiceDesign 1.7B'],
-        omnivoice: ['omnivoice', 'OmniVoice'],
-        qwen_custom_voice: [
-          `qwen-custom-voice-${resolvedModelSize || '1.7B'}`,
-          `Qwen CustomVoice ${resolvedModelSize || '1.7B'}`,
-        ],
-      };
-      const [modelName, displayName] = namedModels[engine] ?? [
-        `qwen-tts-${resolvedModelSize || '1.7B'}`,
-        `Qwen TTS ${resolvedModelSize || '1.7B'}`,
-      ];
+      const { modelName, label, modelSize } = getTtsModelOption(engine, data.modelSize);
 
       // Check if model needs downloading
       try {
@@ -191,7 +165,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
 
         if (model && !model.downloaded) {
           setDownloadingModelName(modelName);
-          setDownloadingDisplayName(displayName);
+          setDownloadingDisplayName(label);
         }
       } catch (error) {
         console.error('Failed to check model status:', error);
@@ -202,8 +176,6 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         return;
       }
 
-      const hasModelSizes =
-        engine === 'qwen' || engine === 'qwen_custom_voice' || engine === 'tada';
       const supportsInstruct = engineSupportsInstruct(engine);
       // This now returns immediately with status="generating"
       generationDispatched = true;
@@ -212,7 +184,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         text: data.text,
         language: data.language,
         seed: data.seed,
-        model_size: hasModelSizes ? resolvedModelSize : undefined,
+        model_size: modelSize,
         engine,
         instruct: supportsInstruct ? data.instruct || undefined : undefined,
         personality: data.personality || undefined,

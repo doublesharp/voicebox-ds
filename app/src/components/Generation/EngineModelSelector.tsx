@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { useAvailableTtsModels } from '@/lib/hooks/useAvailableTtsModels';
 import type { UseFormReturn } from 'react-hook-form';
+import { Button } from '@/components/ui/button';
 import { FormControl } from '@/components/ui/form';
 import {
   Select,
@@ -11,27 +11,9 @@ import {
 } from '@/components/ui/select';
 import type { VoiceProfileResponse } from '@/lib/api/types';
 import { getLanguageOptionsForEngine } from '@/lib/constants/languages';
+import { getModelAcceleration, TTS_MODEL_OPTIONS } from '@/lib/constants/ttsModels';
+import { useAvailableTtsModels } from '@/lib/hooks/useAvailableTtsModels';
 import type { GenerationFormValues } from '@/lib/hooks/useGenerationForm';
-
-/**
- * Engine/model options and their display metadata.
- * Adding a new engine means adding one entry here.
- */
-const ENGINE_OPTIONS = [
-  { value: 'qwen:1.7B', label: 'Qwen3-TTS 1.7B', engine: 'qwen' },
-  { value: 'qwen:0.6B', label: 'Qwen3-TTS 0.6B', engine: 'qwen' },
-  { value: 'qwen_custom_voice:1.7B', label: 'Qwen CustomVoice 1.7B', engine: 'qwen_custom_voice' },
-  { value: 'qwen_custom_voice:0.6B', label: 'Qwen CustomVoice 0.6B', engine: 'qwen_custom_voice' },
-  { value: 'qwen_voice_design', label: 'Qwen VoiceDesign 1.7B', engine: 'qwen_voice_design' },
-  { value: 'moss_tts', label: 'MOSS-TTS Nano (CPU)', engine: 'moss_tts' },
-  { value: 'luxtts', label: 'LuxTTS', engine: 'luxtts' },
-  { value: 'chatterbox', label: 'Chatterbox', engine: 'chatterbox' },
-  { value: 'chatterbox_turbo', label: 'Chatterbox Turbo', engine: 'chatterbox_turbo' },
-  { value: 'tada:1B', label: 'TADA 1B', engine: 'tada' },
-  { value: 'tada:3B', label: 'TADA 3B Multilingual', engine: 'tada' },
-  { value: 'kokoro', label: 'Kokoro 82M', engine: 'kokoro' },
-  { value: 'omnivoice', label: 'OmniVoice (non-commercial)', engine: 'omnivoice' },
-] as const;
 
 const ENGINE_DESCRIPTIONS: Record<string, string> = {
   qwen: 'Multi-language, two sizes',
@@ -62,17 +44,6 @@ const CLONING_ENGINES = new Set([
 
 /** Engines that synthesise a voice from a written description. */
 export const DESIGN_ENGINES = new Set(['qwen_voice_design']);
-
-const OPTIONAL_OPTIONS = [
-  { value: 'qwen:1.7B-8bit', label: 'Qwen3-TTS 1.7B 8-bit (Experimental)', engine: 'qwen', modelName: 'qwen-tts-1.7B-8bit' },
-  { value: 'qwen:1.7B-4bit', label: 'Qwen3-TTS 1.7B 4-bit (Experimental)', engine: 'qwen', modelName: 'qwen-tts-1.7B-4bit' },
-] as const;
-
-function getAvailableOptions(selectedProfile: VoiceProfileResponse | null | undefined, names: ReadonlySet<string>) {
-  const options = [...ENGINE_OPTIONS, ...OPTIONAL_OPTIONS.filter((option) => names.has(option.modelName))];
-  if (!selectedProfile) return options;
-  return options.filter((opt) => isProfileCompatibleWithEngine(selectedProfile, opt.engine));
-}
 
 function getSelectValue(engine: string, modelSize?: string): string {
   if (engine === 'qwen') return `qwen:${modelSize || '1.7B'}`;
@@ -143,13 +114,24 @@ export function EngineModelSelector({ form, compact, selectedProfile }: EngineMo
   const language = form.watch('language');
   const selectValue = getSelectValue(engine, modelSize);
   const discovered = useAvailableTtsModels();
-  const availableOptions = getAvailableOptions(selectedProfile, discovered.names);
+  const availableOptions = TTS_MODEL_OPTIONS.filter(
+    (option) =>
+      (!option.optional || discovered.models.has(option.modelName)) &&
+      (!selectedProfile || isProfileCompatibleWithEngine(selectedProfile, option.engine)),
+  );
+  const selectedOption = availableOptions.find((option) => option.value === selectValue);
+  const selectedModel = selectedOption && discovered.models.get(selectedOption.modelName);
 
-  const currentEngineAvailable = availableOptions.some((opt) => opt.value === selectValue);
+  const currentEngineAvailable = !!selectedOption;
 
   useEffect(() => {
-    if (discovered.loading && engine === 'qwen' && modelSize?.endsWith('bit') &&
-        (!selectedProfile || isProfileCompatibleWithEngine(selectedProfile, engine))) return;
+    if (
+      discovered.loading &&
+      engine === 'qwen' &&
+      modelSize?.endsWith('bit') &&
+      (!selectedProfile || isProfileCompatibleWithEngine(selectedProfile, engine))
+    )
+      return;
     if (!currentEngineAvailable && availableOptions.length > 0) {
       const fallback =
         availableOptions.find((option) => option.engine === engine) ?? availableOptions[0];
@@ -160,7 +142,16 @@ export function EngineModelSelector({ form, compact, selectedProfile }: EngineMo
     if (!languages.some((option) => option.value === language)) {
       form.setValue('language', languages[0]?.value ?? 'en');
     }
-  }, [availableOptions, currentEngineAvailable, discovered.loading, engine, form, language, modelSize, selectedProfile]);
+  }, [
+    availableOptions,
+    currentEngineAvailable,
+    discovered.loading,
+    engine,
+    form,
+    language,
+    modelSize,
+    selectedProfile,
+  ]);
 
   const itemClass = compact ? 'text-xs text-muted-foreground' : undefined;
   const triggerClass = compact
@@ -168,20 +159,56 @@ export function EngineModelSelector({ form, compact, selectedProfile }: EngineMo
     : undefined;
 
   return (
-    <Select value={selectValue} onValueChange={(v) => applyEngineSelection(form, v)}>
-      <FormControl>
-        <SelectTrigger className={triggerClass}>
-          <SelectValue />
-        </SelectTrigger>
-      </FormControl>
-      <SelectContent side={compact ? 'top' : undefined}>
-        {availableOptions.map((opt) => (
-          <SelectItem key={opt.value} value={opt.value} className={itemClass}>
-            {opt.label}
-          </SelectItem>
+    <>
+      <Select value={selectValue} onValueChange={(v) => applyEngineSelection(form, v)}>
+        <FormControl>
+          <SelectTrigger className={triggerClass}>
+            <SelectValue>{selectedOption?.label}</SelectValue>
+          </SelectTrigger>
+        </FormControl>
+        <SelectContent side={compact ? 'top' : undefined} className="max-w-[calc(100vw-2rem)]">
+          {availableOptions.map((option) => {
+            const model = discovered.models.get(option.modelName);
+            const status =
+              model &&
+              (model.downloading
+                ? 'Downloading'
+                : model.downloaded
+                  ? 'Downloaded'
+                  : 'Available to download');
+            return (
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                textValue={option.label}
+                className={itemClass}
+              >
+                <span className="block">{option.label}</span>
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {getModelAcceleration(option)}
+                  {status && ` · ${status}`}
+                </span>
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      {selectedModel &&
+        !selectedModel.downloaded &&
+        (selectedModel.downloading ? (
+          <output className="block text-xs text-muted-foreground">Downloading model…</output>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={discovered.startingDownload}
+            onClick={() => discovered.download(selectedModel)}
+          >
+            Download model
+          </Button>
         ))}
-      </SelectContent>
-    </Select>
+    </>
   );
 }
 

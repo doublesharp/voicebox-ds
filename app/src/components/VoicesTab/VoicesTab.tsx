@@ -206,11 +206,6 @@ export function VoicesTab() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="mr-auto min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">{t('voicesTab.title')}</h1>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t('voicesTab.description', {
-                  defaultValue: 'Your voices, reference audio and delivery defaults.',
-                })}
-              </p>
             </div>
             <div className="relative min-w-[160px] w-[220px] max-w-full">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

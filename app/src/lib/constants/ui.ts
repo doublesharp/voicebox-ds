@@ -11,6 +11,9 @@ const isWindows = typeof navigator !== 'undefined' && navigator.userAgent.includ
  */
 export const TOP_SAFE_AREA_PADDING = isWindows ? 'pt-8' : 'pt-12';
 
+export const DIALOG_LAYOUT =
+  'visible-scrollbar w-[calc(100vw-1.5rem)] max-w-lg max-h-[calc(100dvh-1.5rem)] overflow-y-auto overscroll-contain scroll-py-4 gap-4 rounded-2xl p-[clamp(1rem,4vw,1.5rem)]';
+
 /**
  * Bottom safe area padding - height of the audio player
  * Follows the measured global player height, including its error state.

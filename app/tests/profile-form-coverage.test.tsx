@@ -22,6 +22,13 @@ let updateHandler: (arg: any) => Promise<void> = async () => {};
 let avatarHandler: (arg: any) => Promise<void> = async () => {};
 let deleteHandler: (arg: any) => Promise<void> = async () => {};
 let convertHandler: (file: File) => Promise<Blob> = async () => new Blob(['wav'], { type: 'audio/wav' });
+let completeRecording: ((blob: Blob, duration: number) => void) | undefined;
+let finishingRecording: (() => void) | undefined;
+const cancelRecording = () => {
+  finishingRecording = undefined;
+};
+const cancelSystemRecording = () => {};
+const cleanupAudio = () => {};
 const voices = [{ voice_id: 'v1', name: 'Voice One', gender: 'female', language: 'en' }];
 const mutation = (key: string, result?: unknown) => ({
   isPending: false,
@@ -54,13 +61,16 @@ mock.module('../src/lib/queryClient', () => ({ queryClient: {} }));
 mock.module('@tanstack/react-query', () => ({ useQuery: () => ({ data: { voices } }) }));
 mock.module('../src/lib/api/client', () => ({ apiClient: {} }));
 mock.module('../src/lib/hooks/useAudioPlayer', () => ({
-  useAudioPlayer: () => ({ isPlaying: false, playPause() {}, cleanup() {} }),
+  useAudioPlayer: () => ({ isPlaying: false, playPause() {}, cleanup: cleanupAudio }),
 }));
 mock.module('../src/lib/hooks/useAudioRecording', () => ({
-  useAudioRecording: () => ({ startRecording() {}, stopRecording() {}, cancelRecording() {} }),
+  useAudioRecording: ({ onRecordingComplete }: { onRecordingComplete: typeof completeRecording }) => {
+    completeRecording = onRecordingComplete;
+    return { startRecording() {}, stopRecording() {}, cancelRecording };
+  },
 }));
 mock.module('../src/lib/hooks/useSystemAudioCapture', () => ({
-  useSystemAudioCapture: () => ({ startRecording() {}, stopRecording() {}, cancelRecording() {} }),
+  useSystemAudioCapture: () => ({ startRecording() {}, stopRecording() {}, cancelRecording: cancelSystemRecording }),
 }));
 mock.module('../src/lib/hooks/useTranscription', () => ({
   useTranscription: () => ({ mutateAsync: (arg: any) => transcribeHandler(arg) }),
@@ -163,6 +173,8 @@ afterEach(() => {
   avatarHandler = async () => {};
   deleteHandler = async () => {};
   convertHandler = async () => new Blob(['wav'], { type: 'audio/wav' });
+  completeRecording = undefined;
+  finishingRecording = undefined;
   useServerStore.setState({ serverUrl: 'http://server-a', serverRevision: 0 });
   profile = undefined;
   useUIStore.setState({ profileDialogOpen: false, editingProfileId: null, profileFormDraft: null });
@@ -478,6 +490,31 @@ async function mountSample(open = true, profileId = 'p') {
 const sampleText = () => input('Enter the exact text spoken in the audio...');
 const editSampleText = (value: string) => type('Enter the exact text spoken in the audio...', 'referenceText', value);
 
+test('reopening after an external close clears the sample, reference text and source tab', async () => {
+  await mountSample();
+  await upload(new File(['a'], 'voice.wav', { type: 'audio/wav' }));
+  await editSampleText('Old reference');
+  const tabs = () => view.root.findByType('tabs-mock' as never);
+  act(() => tabs().props.onValueChange('record'));
+  await act(async () => { view.update(<SampleUpload profileId="p" open={false} onOpenChange={() => {}} />); });
+  await act(async () => { view.update(<SampleUpload profileId="p" open onOpenChange={() => {}} />); });
+  expect(tabs().props.value).toBe('upload');
+  expect(view.root.findByType('audio-upload' as never).props.file).toBeUndefined();
+  expect(sampleText().props.value).toBe('');
+});
+
+test('closing while a microphone recording is finishing prevents it from filling the next sample', async () => {
+  await mountSample();
+  const complete = completeRecording;
+  finishingRecording = () => complete?.(new Blob(['audio'], { type: 'audio/webm' }), 2);
+  click('Cancel');
+  await act(async () => { view.update(<SampleUpload profileId="p" open={false} onOpenChange={() => {}} />); });
+  await act(async () => { view.update(<SampleUpload profileId="p" open onOpenChange={() => {}} />); });
+  act(() => finishingRecording?.());
+  expect(view.root.findByType('audio-upload' as never).props.file).toBeUndefined();
+  expect(calls.toast.some((item) => item.title === 'Recording complete')).toBe(false);
+});
+
 test('sample upload ignores a transcript for a replaced audio file', async () => {
   let resolve!: (value: { text: string }) => void;
   transcribeHandler = () => new Promise((r) => { resolve = r; });
@@ -649,7 +686,7 @@ test('a current sample upload failure stays visible and retains form data', asyn
   await upload(new File(['a'], 'voice.wav', { type: 'audio/wav' }));
   await editSampleText('Words');
   await submit();
-  expect(calls.toast.at(-1)).toEqual(expect.objectContaining({ title: 'Error', description: 'upload failed' }));
+  expect(calls.toast.at(-1)).toEqual(expect.objectContaining({ title: 'Could not add sample', description: 'upload failed' }));
   expect(sampleText().props.value).toBe('Words');
   expect(view.root.findByType('audio-upload' as never).props.file.name).toBe('voice.wav');
 });
