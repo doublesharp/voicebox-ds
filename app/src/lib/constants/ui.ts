@@ -25,7 +25,7 @@ export function isProjectWorkspacePath(path: string): boolean {
   return /^\/studio\/projects\/[^/]+\/[^/]+\/?$/.test(path);
 }
 
-/** Keep the shell offset synchronized with the mounted global player and its actual size. */
+/** Keep the shell offset synchronized with its mounted audio controls and their actual size. */
 export function observeGlobalPlayerHeight(shell: HTMLElement): () => void {
   let player: Element | null = null;
   const updateHeight = () => {
@@ -36,7 +36,7 @@ export function observeGlobalPlayerHeight(shell: HTMLElement): () => void {
   };
   const resize = new ResizeObserver(updateHeight);
   const sync = () => {
-    const next = shell.querySelector('.app-global-player');
+    const next = shell.querySelector('.app-global-player, .studio-transport');
     if (next !== player) {
       if (player) resize.unobserve(player);
       player = next;

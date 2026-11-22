@@ -53,9 +53,12 @@
   min-width: 0;
   border: 1px solid hsl(var(--input));
   background: hsl(var(--background));
-  background-image: linear-gradient(45deg, transparent 50%, hsl(var(--muted-foreground)) 50%),
+  background-image:
+    linear-gradient(45deg, transparent 50%, hsl(var(--muted-foreground)) 50%),
     linear-gradient(135deg, hsl(var(--muted-foreground)) 50%, transparent 50%);
-  background-position: calc(100% - 15px) 50%, calc(100% - 11px) 50%;
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 11px) 50%;
   background-size: 4px 4px;
   background-repeat: no-repeat;
   color: inherit;
@@ -290,6 +293,20 @@
   gap: 12px;
   min-width: 0;
 }
+.studio-pronunciation-rules {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.studio-pronunciation-rule-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.studio-pronunciation-rule-options label {
+  min-height: 32px;
+}
 .studio-pronunciation-preview {
   display: grid;
   gap: 8px;
@@ -297,7 +314,7 @@
   border-radius: 9px;
   padding: 12px;
 }
-.studio-pronunciation-preview > output,
+.studio-pronunciation-preview > .studio-take-script,
 .studio-pronunciation-preview > ul {
   max-height: 120px;
   overflow-y: auto;
@@ -305,6 +322,20 @@
 }
 .studio-pronunciation-preview > button {
   justify-self: start;
+}
+@media (min-width: 1000px) {
+  .studio-dictionary-modal {
+    max-width: 56rem;
+  }
+  .studio-pronunciation {
+    grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+    align-items: start;
+    gap: 20px;
+  }
+  .studio-pronunciation-preview {
+    position: sticky;
+    top: 0;
+  }
 }
 .studio-modal form > .studio-primary {
   margin-top: 12px;
@@ -468,10 +499,11 @@
 }
 .studio-project-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
-  min-height: 70px;
+  padding: 8px 16px;
+  min-height: 60px;
   border-bottom: 1px solid hsl(var(--border));
 }
 .studio-back {
@@ -486,16 +518,22 @@
   min-width: 90px;
   flex: 1 1 auto;
 }
-.studio-title-block > input {
-  border: 0;
+.studio .studio-title-block > input {
+  border-color: transparent;
   background: transparent;
-  font-size: 15px;
+  box-shadow: none;
+  font-size: 16px;
   font-weight: 600;
   height: 27px;
   min-width: 80px;
   width: 100%;
-  padding: 0 2px;
+  padding: 0 4px;
   text-overflow: ellipsis;
+}
+.studio .studio-title-block > input:hover:not(:disabled),
+.studio .studio-title-block > input:focus-visible {
+  border-color: hsl(var(--input));
+  background: hsl(var(--background));
 }
 .studio-save-state {
   display: block;
@@ -522,11 +560,12 @@
 }
 .studio-workspace-bar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 0 16px;
-  min-height: 49px;
+  min-height: 42px;
   border-bottom: 1px solid hsl(var(--border));
   background: hsl(var(--card));
 }
@@ -542,7 +581,7 @@
   border-bottom: 2px solid transparent;
   font-size: 12px;
   color: hsl(var(--muted-foreground));
-  padding: 12px 0;
+  padding: 9px 0;
 }
 .studio-workspace-tabs > a.is-active {
   color: hsl(var(--foreground));
@@ -637,13 +676,16 @@
   margin: 0 auto;
 }
 .studio-script > .studio-section-title {
-  margin-bottom: 26px;
+  margin-bottom: 14px;
 }
 .studio-script .studio-section-title {
   flex-wrap: wrap;
   gap: 8px;
 }
 .studio-script .studio-section-title > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
   margin-right: auto;
 }
 .studio-script .studio-section-title > button {
@@ -658,7 +700,7 @@
 .studio-passage-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
 }
 .studio-passage {
   border: 1px solid hsl(var(--border));
@@ -704,16 +746,36 @@
   font-size: 9px;
   white-space: nowrap;
 }
-.studio-script-input {
+.studio-script-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  margin: 5px 0;
+}
+/* Mirror the text so wrapped lines size the editor in desktop WebViews as well. */
+.studio-script-field > span,
+.studio .studio-script-input {
+  grid-area: 1 / 1;
   font-size: 15px;
-  line-height: 1.8;
+  line-height: 1.65;
+  padding: 5px 0;
+  min-block-size: 37px;
+  max-block-size: 14lh;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.studio-script-field > span {
+  visibility: hidden;
+  overflow: hidden;
+}
+.studio .studio-script-input {
   background: transparent;
   box-shadow: none;
   border: 0;
-  padding: 13px 0;
   border-radius: 0;
-  min-height: 105px;
   color: hsl(var(--foreground));
+  overflow-y: auto;
+  resize: none;
 }
 .studio-script-input:focus-visible {
   box-shadow: none;
@@ -764,6 +826,32 @@
 .studio-generate-box > .studio-field {
   margin: 0;
 }
+.studio-generate-box + .studio-advanced {
+  margin-top: 0;
+  border-top: 0;
+}
+.studio-take-request-error {
+  display: grid;
+  gap: 5px;
+  border: 1px solid hsl(var(--border));
+  border-left: 3px solid hsl(var(--destructive));
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: hsl(var(--background));
+  overflow-wrap: anywhere;
+}
+.studio-take-request-error details {
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+}
+.studio-recovery-trigger {
+  border-color: hsl(var(--destructive));
+}
+@media (max-width: 479px) {
+  .studio-script-toolbar > div:first-child > .studio-note {
+    display: none;
+  }
+}
 .studio-takes {
   display: flex;
   flex-direction: column;
@@ -812,6 +900,28 @@
   font-size: 10px;
   color: hsl(var(--muted-foreground));
   cursor: pointer;
+}
+
+@media (min-width: 1200px) {
+  .workspace-edit .studio-main-pane {
+    background: hsl(var(--background));
+  }
+  .studio-script {
+    padding: 0 clamp(20px, 3vw, 44px) 36px;
+  }
+  .studio-script > .studio-script-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    min-height: 56px;
+    padding: 12px 0;
+    border-bottom: 1px solid hsl(var(--border));
+    background: hsl(var(--background));
+  }
+  .studio-passage,
+  .studio-script-input {
+    scroll-margin-top: 68px;
+  }
 }
 .studio-timeline-disclosure span {
   margin-left: auto;
@@ -1253,7 +1363,8 @@
     padding: 6px 10px;
   }
   .studio-workspace-bar {
-    padding: 0 10px;
+    flex-wrap: wrap;
+    padding: 0 10px 6px;
     gap: 6px;
   }
   .studio-workspace-tabs {
@@ -1273,7 +1384,7 @@
   .studio-passage-heading {
     gap: 7px;
   }
-  .studio-passage-footer > .studio-note {
+  .studio-timeline-take-note {
     display: none;
   }
   .studio-timeline {
@@ -1320,8 +1431,7 @@
     justify-content: flex-end;
   }
   .studio-workspace-bar {
-    flex-wrap: wrap;
-    padding-bottom: 6px;
+    align-items: flex-start;
   }
   .studio-workspace-tabs {
     flex: 1;

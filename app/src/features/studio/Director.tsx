@@ -10,13 +10,15 @@ import {
 import { useStudio } from './context';
 import { engineForPassage } from './domain';
 import { operationId } from './session';
-import { useDurableSubmission } from './submissions';
+import type { useDurableSubmission } from './submissions';
 import { TakeWorkflow } from './TakeWorkflow';
 import { Field, NumberField, StudioButton } from './ui';
 
 export function Director({
+  submission,
   onOpenPronunciation,
 }: {
+  submission: ReturnType<typeof useDurableSubmission<'generation'>>;
   onOpenPronunciation?: (opener: HTMLButtonElement) => void;
 }) {
   const studio = useStudio();
@@ -24,13 +26,7 @@ export function Director({
   const [count, setCount] = useState<1 | 2 | 3>(1);
   const [adopt, setAdopt] = useState(false);
   const [commercialOnly, setCommercialOnly] = useState(false);
-  const {
-    request,
-    rejected,
-    discardRejected,
-    error: submissionError,
-    submit,
-  } = useDurableSubmission(session.storage, client.baseUrl, project.id, 'generation');
+  const { request, rejected, discardRejected, error: submissionError, submit } = submission;
   const commercialFilter = request ? request.commercial_only === true : commercialOnly;
   const eligibleEngines = commercialFilter
     ? engines.filter((item) => item.commercial_use === 'allowed')
@@ -43,6 +39,31 @@ export function Director({
       )
     : profiles;
   const passage = project.document.passages.find((p) => p.id === selectedPassageId);
+  const submissionStatus =
+    submissionError || rejected ? (
+      <div role="alert" className="studio-take-request-error">
+        <strong>
+          {rejected
+            ? 'Take request rejected'
+            : request
+              ? 'Could not confirm the take request'
+              : 'Could not save the take request'}
+        </strong>
+        {request && !rejected ? (
+          <>
+            <p className="studio-note">Retry to check the same request for a result.</p>
+            <details>
+              <summary>Error details</summary>
+              {submissionError}
+            </details>
+          </>
+        ) : (
+          submissionError && <p className="studio-note">{submissionError}</p>
+        )}
+      </div>
+    ) : request && !studio.actionBusy ? (
+      <p className="studio-note">A take request is awaiting confirmation.</p>
+    ) : null;
   const engine = engineForPassage(passage, profiles, eligibleEngines);
   const recoveryChoices = save.status === 'recovery' ? session.recoverableJournals() : [];
   const recoveryPanel = recoveryChoices.length > 1 && (
@@ -68,24 +89,22 @@ export function Director({
         {recoveryPanel}
         <h2>Voice &amp; takes</h2>
         <p className="studio-note">Select a passage to assign a voice or generate takes.</p>
-        {submissionError && (
-          <p role="alert" className="studio-error">
-            {submissionError}
-          </p>
-        )}
+        {submissionStatus}
         {request && (
           <StudioButton
             disabled={studio.actionBusy}
             onClick={() =>
-              studio.runAction(() =>
-                submit(
-                  () => request,
-                  (input) => client.generate(project.id, input),
-                ),
+              studio.runAction(
+                () =>
+                  submit(
+                    () => request,
+                    (input) => client.generate(project.id, input),
+                  ),
+                { reportError: false },
               )
             }
           >
-            Retry same request
+            Retry take request
           </StudioButton>
         )}
         {rejected && (
@@ -98,6 +117,8 @@ export function Director({
   const selectedIds = studio.checkedPassages.length
     ? studio.checkedPassages.filter((id) => project.document.passages.some((p) => p.id === id))
     : [passage.id];
+  const firstTake =
+    count === 1 && !project.takes.some((take) => selectedIds.includes(take.passage_id));
   const missingReferences = project.document.passages.some(
     (item) =>
       selectedIds.includes(item.id) && hasMissingRegenerationReferences(item.voice_snapshot),
@@ -134,18 +155,20 @@ export function Director({
       await session.flush();
       if (session.getSnapshot().status !== 'saved') return;
     }
-    await studio.runAction(async () => {
-      await submit(
-        () => ({
-          idempotency_key: operationId(),
-          passage_ids: selectedIds,
-          count,
-          adopt,
-          ...(commercialOnly ? { commercial_only: true } : {}),
-        }),
-        (input) => client.generate(project.id, input),
-      );
-    });
+    await studio.runAction(
+      () =>
+        submit(
+          () => ({
+            idempotency_key: operationId(),
+            passage_ids: selectedIds,
+            count,
+            adopt,
+            ...(commercialOnly ? { commercial_only: true } : {}),
+          }),
+          (input) => client.generate(project.id, input),
+        ),
+      { reportError: false },
+    );
   };
   return (
     <div className="studio-inspector-content">
@@ -251,17 +274,7 @@ export function Director({
         <p className="studio-error">Choose a supported language in Generation settings.</p>
       )}
       <div className="studio-generate-box">
-        {submissionError && (
-          <p role="alert" className="studio-error">
-            {submissionError}
-          </p>
-        )}
-        {request && (
-          <p className="studio-note">
-            An earlier submission needs reconciliation. Retry sends its original passage selection,
-            count and adoption intent before a new request can be made.
-          </p>
-        )}
+        {submissionStatus}
         {rejected && (
           <StudioButton disabled={studio.actionBusy} onClick={discardRejected}>
             Dismiss rejected submission
@@ -286,10 +299,14 @@ export function Director({
           {studio.actionBusy
             ? 'Submitting…'
             : request
-              ? 'Retry same request'
+              ? 'Retry take request'
               : adopt
                 ? 'Generate and use'
-                : 'Generate alternatives'}
+                : firstTake
+                  ? selectedIds.length > 1
+                    ? 'Generate takes'
+                    : 'Generate take'
+                  : 'Generate alternatives'}
         </StudioButton>
         {onOpenPronunciation && (
           <Button

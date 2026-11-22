@@ -1,5 +1,4 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { isTauri } from '@tauri-apps/api/core';
 import { X } from 'lucide-react';
 import * as React from 'react';
 import { TitleBarDragRegion } from '@/components/TitleBarDragRegion';
@@ -34,7 +33,9 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, onPointerDownOutside, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay>{isTauri() && <TitleBarDragRegion className="absolute z-auto" />}</DialogOverlay>
+    <DialogOverlay>
+      <TitleBarDragRegion className="absolute z-auto" />
+    </DialogOverlay>
     <DialogPrimitive.Content
       ref={ref}
       onPointerDownOutside={(event) => {

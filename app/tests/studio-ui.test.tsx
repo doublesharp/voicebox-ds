@@ -9,9 +9,9 @@ import {
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { DialogContent } from '../src/components/ui/dialog';
 import { StudioClient } from '../src/features/studio/client';
-import { StudioContext, type StudioContextValue } from '../src/features/studio/context';
+import { StudioContext, type StudioContextValue, useStudio } from '../src/features/studio/context';
 import { Deliver } from '../src/features/studio/Deliver';
-import { Director } from '../src/features/studio/Director';
+import { Director as StudioDirector } from '../src/features/studio/Director';
 import type { StudioPlayback } from '../src/features/studio/playback';
 import { Review } from '../src/features/studio/Review';
 import {
@@ -22,12 +22,23 @@ import {
 import { ReviewSessions } from '../src/features/studio/review-session';
 import { ScriptEditor } from '../src/features/studio/ScriptEditor';
 import { ProjectSession } from '../src/features/studio/session';
+import { useDurableSubmission } from '../src/features/studio/submissions';
 import { Timeline } from '../src/features/studio/Timeline';
 import type { StudioCommand, StudioEngine, StudioProject } from '../src/features/studio/types';
 import { PlatformProvider } from '../src/platform/PlatformContext';
 import type { Platform } from '../src/platform/types';
 
 let renderer: ReactTestRenderer;
+function Director() {
+  const { session, client, project } = useStudio();
+  const submission = useDurableSubmission(
+    session.storage,
+    client.baseUrl,
+    project.id,
+    'generation',
+  );
+  return <StudioDirector submission={submission} />;
+}
 const sessions: Array<{ dispose(): void }> = [];
 afterEach(() => {
   act(() => renderer?.unmount());
@@ -399,11 +410,27 @@ describe('connected studio controls', () => {
       await button('Generate alternatives').props.onClick();
     });
     await act(async () => {
-      await button('Retry same request').props.onClick();
+      await button('Retry take request').props.onClick();
     });
     expect(generations).toHaveLength(2);
     expect(generations[0]).toEqual(generations[1]);
     expect(generations[0]).toMatchObject({ count: 3, adopt: false, passage_ids: ['line'] });
+  });
+  test('the first take can be generated and an uncertain response can be retried in place', async () => {
+    const project = fixture();
+    project.takes = [];
+    project.document.passages[0].selected_take_id = null;
+    project.document.clips = [];
+    const { generations } = await mount(<Director />, { project, failGenerate: true });
+    await act(async () => {
+      await button('Generate take').props.onClick();
+    });
+    expect(JSON.stringify(renderer.toJSON())).toContain('Could not confirm the take request');
+    await act(async () => {
+      await button('Retry take request').props.onClick();
+    });
+    expect(generations).toHaveLength(2);
+    expect(generations[1]).toEqual(generations[0]);
   });
   test('numeric placement, split and append send undoable project-sample commands', async () => {
     const { commands } = await mount(<Timeline />);
@@ -532,7 +559,7 @@ test('commercial policy survives an uncertain request and component restart', as
     renderer.root.findByProps({ 'aria-label': 'Commercial-use models only' }).props.checked,
   ).toBe(true);
   await act(async () => {
-    await button('Retry same request').props.onClick();
+    await button('Retry take request').props.onClick();
   });
   expect(reopened.generations[0]).toEqual(first.generations[0]);
 });
@@ -552,7 +579,7 @@ test('generation remount and restart replay the original identity and body befor
   first.session.dispose();
   const reopened = await mount(<Director />, { store });
   await act(async () => {
-    await button('Retry same request').props.onClick();
+    await button('Retry take request').props.onClick();
   });
   expect(reopened.generations).toEqual(first.generations);
 });
@@ -619,6 +646,25 @@ function sheetButton(label: string) {
   expect(item).toBeDefined();
   return item!;
 }
+test('delivery offers Mix when the project has no clips or checkpoints', async () => {
+  const project = fixture();
+  project.revisions = [];
+  project.document.clips = [];
+  let wentToMix = false;
+  await mount(
+    <Deliver
+      onGoToMix={() => {
+        wentToMix = true;
+      }}
+    />,
+    { project },
+  );
+  act(() => sheetButton('Go to Mix').props.onClick());
+  act(() =>
+    renderer.root.findByType(DialogContent).props.onCloseAutoFocus({ preventDefault() {} }),
+  );
+  expect(wentToMix).toBe(true);
+});
 test('render restart retains exact checkpoint, encoding and idempotency body', async () => {
   const store = new Map<string, string>();
   const project = fixture();

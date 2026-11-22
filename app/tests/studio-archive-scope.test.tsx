@@ -12,6 +12,7 @@ import { StudioContext, type StudioContextValue } from '../src/features/studio/c
 import { Director } from '../src/features/studio/Director';
 import type { StudioPlayback } from '../src/features/studio/playback';
 import { ProjectSession } from '../src/features/studio/session';
+import { useDurableSubmission } from '../src/features/studio/submissions';
 import type { StudioEngine, StudioProject } from '../src/features/studio/types';
 
 let renderer: ReactTestRenderer;
@@ -148,18 +149,27 @@ async function mountDirector(missing: boolean) {
     },
     canMutate: true,
   };
-  await act(async () => {
-    renderer = create(
-      <StudioContext.Provider value={value}>
-        <Director />
-      </StudioContext.Provider>,
+  function Harness() {
+    const submission = useDurableSubmission(
+      value.session.storage,
+      client.baseUrl,
+      project.id,
+      'generation',
     );
+    return (
+      <StudioContext.Provider value={value}>
+        <Director submission={submission} />
+      </StudioContext.Provider>
+    );
+  }
+  await act(async () => {
+    renderer = create(<Harness />);
   });
   return renderer.root.findAllByType('button').find((node) =>
     node.children
       .filter((child) => typeof child === 'string')
       .join('')
-      .includes('Generate alternatives'),
+      .includes('Generate takes'),
   );
 }
 

@@ -26,7 +26,7 @@ export interface StudioContextValue {
   setRevisionId: (id: string) => void;
   actionBusy: boolean;
   actionError: string | null;
-  runAction: (action: () => Promise<unknown>) => Promise<void>;
+  runAction: (action: () => Promise<unknown>, options?: { reportError: boolean }) => Promise<void>;
   canMutate: boolean;
 }
 export const StudioContext = createContext<StudioContextValue | null>(null);

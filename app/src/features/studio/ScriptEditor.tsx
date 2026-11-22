@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useStudio } from './context';
-import { splitScriptWithChapters } from './domain';
+import { isJobActive, splitScriptWithChapters } from './domain';
 import { EmptyState, Field, StudioButton } from './ui';
 
 export function ScriptEditor({
@@ -30,6 +30,11 @@ export function ScriptEditor({
   const [text, setText] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const passages = project.document.passages;
+  const generating = new Set(
+    project.jobs
+      .filter((job) => job.passage_id && isJobActive(job.status))
+      .map((job) => job.passage_id),
+  );
   const parsed = splitScriptWithChapters(text);
   const missingOrStaleIds = passages
     .filter((passage) => {
@@ -48,9 +53,12 @@ export function ScriptEditor({
     <section className="studio-script" aria-label="Script editor">
       <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
         {passages.length > 0 ? (
-          <div className="studio-section-title">
+          <header className="studio-section-title studio-script-toolbar">
             <div>
               <h2>Script</h2>
+              <span className="studio-note">
+                {passages.length} {passages.length === 1 ? 'passage' : 'passages'}
+              </span>
             </div>
             {onOpenPronunciation && (
               <button
@@ -79,7 +87,7 @@ export function ScriptEditor({
                 <Plus size={15} /> Add passages
               </button>
             </DialogTrigger>
-          </div>
+          </header>
         ) : (
           <EmptyState
             title={emptyAction ? 'Start your project' : 'Add a script'}
@@ -213,14 +221,20 @@ export function ScriptEditor({
                   {passage.locked ? <Lock size={14} /> : <Unlock size={14} />}
                 </button>
               </div>
-              <Textarea
-                aria-label={`Passage ${index + 1} text`}
-                className="studio-script-input"
-                value={currentText}
-                disabled={passage.locked || save.status === 'recovery'}
-                onFocus={() => studio.selectPassage(passage.id)}
-                onChange={(event) => session.editPassage(passage.id, { text: event.target.value })}
-              />
+              <div className="studio-script-field">
+                <span aria-hidden="true">{currentText} </span>
+                <Textarea
+                  aria-label={`Passage ${index + 1} text`}
+                  className="studio-script-input"
+                  rows={1}
+                  value={currentText}
+                  disabled={passage.locked || save.status === 'recovery'}
+                  onFocus={() => studio.selectPassage(passage.id)}
+                  onChange={(event) =>
+                    session.editPassage(passage.id, { text: event.target.value })
+                  }
+                />
+              </div>
               {(studio.selectedPassageId === passage.id || chapterTitle) && (
                 <details className="studio-passage-chapter">
                   <summary>{chapterTitle || 'Add chapter title'}</summary>
@@ -248,7 +262,16 @@ export function ScriptEditor({
                     <span aria-hidden="true">↗</span>
                   </button>
                 )}
-                {differing && <span className="studio-note">Timeline uses a different take</span>}
+                {generating.has(passage.id) ? (
+                  <span className="studio-note">Generating…</span>
+                ) : takeCount === 0 ? (
+                  <span className="studio-note">No take yet</span>
+                ) : null}
+                {differing && (
+                  <span className="studio-note studio-timeline-take-note">
+                    Timeline uses a different take
+                  </span>
+                )}
                 <div className="studio-passage-actions">
                   <button
                     className="studio-icon-button"

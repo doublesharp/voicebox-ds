@@ -23,7 +23,7 @@ export function Toaster() {
           <ToastClose aria-label="Dismiss notification" />
         </Toast>
       ))}
-      <ToastViewport className="pointer-events-none sm:bottom-[var(--app-player-height,0px)]" />
+      <ToastViewport className="pointer-events-none bottom-[var(--app-player-height,0px)]" />
     </ToastProvider>
   );
 }

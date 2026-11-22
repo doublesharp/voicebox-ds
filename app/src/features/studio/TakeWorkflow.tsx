@@ -161,11 +161,7 @@ export function TakeWorkflow({
           Replace linked timeline clips when choosing
         </label>
       )}
-      {!takes.length && (
-        <p className="studio-note">
-          Completed performances appear here. Your existing take stays selected if a job fails.
-        </p>
-      )}
+      {!takes.length && <p className="studio-note">No takes yet.</p>}
       {takes.length >= 2 && (
         <section aria-label="A/B take comparison" className="studio-take">
           <h4>A/B comparison</h4>

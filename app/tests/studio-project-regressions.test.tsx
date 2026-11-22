@@ -66,6 +66,7 @@ mock.module('../src/platform/PlatformContext', () => ({ usePlatform: () => platf
 mock.module('../src/features/studio/client', () => ({
   StudioApiError: class extends Error {},
   StudioClient: class {
+    constructor(readonly baseUrl: string) {}
     retryJob() {
       return retryJob();
     }
@@ -79,12 +80,13 @@ mock.module('../src/features/studio/client', () => ({
 }));
 mock.module('../src/features/studio/session', () => ({
   operationId: () => 'test-operation',
+  storageKeys: () => [...storage.keys()],
   errorMessage: (e: any) => e.message,
   ProjectSession: class {
     state: any;
     listeners = new Set<() => void>();
     disposed = false;
-    constructor(_client: any, id: string) {
+    constructor(_client: any, id: string, readonly storage: unknown) {
       this.state = { project: noProject ? null : project(id), status: initialStatus, recoverySaved: true };
       sessions.push(this);
     }
@@ -378,6 +380,7 @@ test('playback clock updates transport without rerendering script and keeps manu
   hasPassage = true;
   hasTake = true;
   await mount();
+  act(() => renderer.root.findByProps({ className: 'studio-timeline-disclosure' }).props.onClick());
   const player = playbackInstances.at(-1);
   const before = scriptRenders;
   act(() => player.tick(1.25));

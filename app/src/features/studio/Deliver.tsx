@@ -1,4 +1,4 @@
-import { Download, FileArchive, Headphones } from 'lucide-react';
+import { ArrowRight, Download, FileArchive, Headphones } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
@@ -21,10 +21,16 @@ import { useDurableSubmission } from './submissions';
 import { Field, StudioButton } from './ui';
 import { useRevisionDocument } from './useRevisionDocument';
 
-export function Deliver({ onCreateCheckpoint }: { onCreateCheckpoint?: () => void }) {
+export function Deliver({
+  onCreateCheckpoint,
+  onGoToMix,
+}: {
+  onCreateCheckpoint?: () => void;
+  onGoToMix?: () => void;
+}) {
   const studio = useStudio();
   const [open, setOpen] = useState(false);
-  const checkpointRequested = useRef(false);
+  const nextAction = useRef<(() => void) | undefined>();
   const platform = usePlatform();
   const { project, client, session, revisionId, setRevisionId } = studio;
   const [kind, setKind] = useState<'mix' | 'stems'>('mix');
@@ -88,10 +94,11 @@ export function Deliver({ onCreateCheckpoint }: { onCreateCheckpoint?: () => voi
       <DialogContent
         className="studio studio-modal studio-deliver"
         onCloseAutoFocus={(event) => {
-          if (!checkpointRequested.current) return;
-          checkpointRequested.current = false;
+          const action = nextAction.current;
+          if (!action) return;
+          nextAction.current = undefined;
           event.preventDefault();
-          onCreateCheckpoint?.();
+          action();
         }}
       >
         <DialogHeader>
@@ -132,11 +139,23 @@ export function Deliver({ onCreateCheckpoint }: { onCreateCheckpoint?: () => voi
                   primary
                   disabled={!studio.canMutate || studio.actionBusy}
                   onClick={() => {
-                    checkpointRequested.current = true;
+                    nextAction.current = onCreateCheckpoint;
                     setOpen(false);
                   }}
                 >
                   Create checkpoint
+                </StudioButton>
+              )}
+              {!project.document.clips.length && onGoToMix && (
+                <StudioButton
+                  primary
+                  onClick={() => {
+                    nextAction.current = onGoToMix;
+                    setOpen(false);
+                  }}
+                >
+                  <ArrowRight size={15} />
+                  Go to Mix
                 </StudioButton>
               )}
             </div>

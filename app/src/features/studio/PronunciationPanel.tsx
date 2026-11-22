@@ -43,6 +43,7 @@ export function PronunciationPanel({
 }) {
   const studio = useStudio();
   const { project, session, client, profiles, engines, save } = studio;
+  const [queuedPassage, setQueuedPassage] = useState<string | null>(null);
   const saved = project.document.pronunciation_rules ?? [];
   const serialized = JSON.stringify(saved);
   const key = `voicebox-studio:pronunciation:${encodeURIComponent(client.baseUrl)}:${project.id}`;
@@ -239,19 +240,22 @@ export function PronunciationPanel({
       await session.flush();
       if (session.getSnapshot().status !== 'saved') return;
     }
-    await studio.runAction(async () => {
-      await submit(
-        () => ({
-          idempotency_key: operationId(),
-          passage_ids: [passage.id],
-          count: 1,
-          adopt: false,
-        }),
-        (input) => client.generate(project.id, input),
-      );
-      if (alive.current)
-        setNotice('Audio preview queued. Play the new alternative in Takes when it’s ready.');
-    });
+    await studio.runAction(
+      async () => {
+        setQueuedPassage(null);
+        await submit(
+          () => ({
+            idempotency_key: operationId(),
+            passage_ids: [passage.id],
+            count: 1,
+            adopt: false,
+          }),
+          (input) => client.generate(project.id, input),
+        );
+        if (alive.current) setQueuedPassage(request?.passage_ids[0] ?? passage.id);
+      },
+      { reportError: false },
+    );
   };
 
   const content = (
@@ -277,8 +281,13 @@ export function PronunciationPanel({
           disabled={studio.actionBusy || (!request && !!previewBlocked)}
           onClick={audition}
         >
-          {request ? 'Retry audio preview' : 'Generate audio preview'}
+          {request ? 'Retry audio preview' : 'Generate preview take'}
         </StudioButton>
+        {queuedPassage === passage.id && (
+          <output className="studio-note">
+            Preview queued in Takes. Select Audition when it’s ready.
+          </output>
+        )}
         {rejected && (
           <StudioButton onClick={discardRejected} disabled={studio.actionBusy}>
             Dismiss rejected audition
@@ -290,188 +299,192 @@ export function PronunciationPanel({
           </p>
         )}
       </section>
-      <div className="studio-action-row">
-        <StudioButton
-          disabled={disabled || conflict || rules.length >= 200}
-          onClick={() =>
-            edit([
-              ...rules,
-              {
-                id: operationId(),
-                source: '',
-                replacement: '',
-                profile_id: null,
-                case_sensitive: false,
-                whole_word: true,
-              },
-            ])
-          }
-        >
-          Add pronunciation rule
-        </StudioButton>
-
-        <StudioButton
-          primary
-          disabled={disabled || !changed || !!invalid || conflict}
-          onClick={saveRules}
-        >
-          Save dictionary
-        </StudioButton>
-        {(draft || unreadable) && (
-          <StudioButton disabled={studio.actionBusy} onClick={discard}>
-            Discard dictionary draft
-          </StudioButton>
-        )}
-      </div>
-      {notice && <output className="studio-note">{notice}</output>}
-      {conflict && (
-        <p role="alert" className="studio-error">
-          Saved rules changed while this draft was open. Your draft is retained locally; discard it
-          to load the saved dictionary before editing.
-        </p>
-      )}
-      {changed && invalid && <output className="studio-note">{invalid}</output>}
-      {storageError && (
-        <p role="alert" className="studio-error">
-          {storageError}
-        </p>
-      )}
-      {importError && (
-        <p role="alert" className="studio-error">
-          {importError}
-        </p>
-      )}
-      {jargonSuggestions.length > 0 && (
-        <details className="studio-advanced">
-          <summary>Suggested terms ({jargonSuggestions.length})</summary>
-          <ul>
-            {jargonSuggestions.slice(0, 25).map((item) => (
-              <li key={item.source}>
-                <strong>{item.source}</strong> ({item.count}×) → {item.suggested_replacement}{' '}
-                <StudioButton
-                  disabled={disabled || conflict || rules.length >= 200}
-                  onClick={() =>
-                    edit([
-                      ...rules,
-                      {
-                        id: operationId(),
-                        source: item.source,
-                        replacement: item.suggested_replacement,
-                        profile_id: null,
-                        case_sensitive: item.case_sensitive,
-                        whole_word: item.whole_word,
-                      },
-                    ])
-                  }
-                >
-                  + Add
-                </StudioButton>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {rules.map((rule, index) => (
-        <fieldset key={rule.id} className="studio-take">
-          <legend>Rule {index + 1}</legend>
-          <div className="studio-field-grid">
-            <Field label="Written text">
-              <Input
-                aria-label={`Rule ${index + 1} written text`}
-                value={rule.source}
-                maxLength={200}
-                disabled={disabled || conflict}
-                onChange={(event) => update(rule.id, { source: event.target.value })}
-              />
-            </Field>
-            <Field label="Spoken alias">
-              <Input
-                aria-label={`Rule ${index + 1} spoken alias`}
-                value={rule.replacement}
-                maxLength={500}
-                disabled={disabled || conflict}
-                onChange={(event) => update(rule.id, { replacement: event.target.value })}
-              />
-            </Field>
-          </div>
-          <Field label="Applies to">
-            <select
-              aria-label={`Rule ${index + 1} scope`}
-              value={rule.profile_id ?? ''}
-              disabled={disabled || conflict}
-              onChange={(event) => update(rule.id, { profile_id: event.target.value || null })}
-            >
-              <option value="">Whole project</option>
-              {rule.profile_id && !profiles.some((profile) => profile.id === rule.profile_id) && (
-                <option value={rule.profile_id}>Saved voice</option>
-              )}
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <label className="studio-check">
-            <input
-              type="checkbox"
-              aria-label={`Rule ${index + 1} case sensitive`}
-              checked={rule.case_sensitive}
-              disabled={disabled || conflict}
-              onChange={(event) => update(rule.id, { case_sensitive: event.target.checked })}
-            />{' '}
-            Match case
-          </label>
-          <label className="studio-check">
-            <input
-              type="checkbox"
-              aria-label={`Rule ${index + 1} whole words`}
-              checked={rule.whole_word}
-              disabled={disabled || conflict}
-              onChange={(event) => update(rule.id, { whole_word: event.target.checked })}
-            />{' '}
-            Whole words only
-          </label>
-          <StudioButton
-            disabled={disabled || conflict}
-            onClick={() => edit(rules.filter((item) => item.id !== rule.id))}
-          >
-            Remove rule {index + 1}
-          </StudioButton>
-        </fieldset>
-      ))}
-      <details className="studio-advanced">
-        <summary>Dictionary tools</summary>
+      <div className="studio-pronunciation-rules">
         <div className="studio-action-row">
           <StudioButton
             disabled={disabled || conflict || rules.length >= 200}
-            onClick={mergeFirmwarePack}
+            onClick={() =>
+              edit([
+                ...rules,
+                {
+                  id: operationId(),
+                  source: '',
+                  replacement: '',
+                  profile_id: null,
+                  case_sensitive: false,
+                  whole_word: true,
+                },
+              ])
+            }
           >
-            Load Embedded &amp; Firmware pack
+            Add pronunciation rule
           </StudioButton>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            aria-label="Import pronunciation JSON"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (file) void handleImportFile(file);
-            }}
-          />
+
           <StudioButton
-            disabled={disabled || conflict || rules.length >= 200}
-            onClick={() => importInputRef.current?.click()}
+            primary={changed}
+            disabled={disabled || !changed || !!invalid || conflict}
+            onClick={saveRules}
           >
-            Import JSON
+            Save dictionary
           </StudioButton>
-          <StudioButton disabled={!rules.length} onClick={exportRulesJson}>
-            Export JSON
-          </StudioButton>
+          {(draft || unreadable) && (
+            <StudioButton disabled={studio.actionBusy} onClick={discard}>
+              Discard dictionary draft
+            </StudioButton>
+          )}
         </div>
-      </details>
+        {notice && <output className="studio-note">{notice}</output>}
+        {conflict && (
+          <p role="alert" className="studio-error">
+            Saved rules changed while this draft was open. Your draft is retained locally; discard
+            it to load the saved dictionary before editing.
+          </p>
+        )}
+        {changed && invalid && <output className="studio-note">{invalid}</output>}
+        {storageError && (
+          <p role="alert" className="studio-error">
+            {storageError}
+          </p>
+        )}
+        {importError && (
+          <p role="alert" className="studio-error">
+            {importError}
+          </p>
+        )}
+        {jargonSuggestions.length > 0 && (
+          <details className="studio-advanced">
+            <summary>Suggested terms ({jargonSuggestions.length})</summary>
+            <ul>
+              {jargonSuggestions.slice(0, 25).map((item) => (
+                <li key={item.source}>
+                  <strong>{item.source}</strong> ({item.count}×) → {item.suggested_replacement}{' '}
+                  <StudioButton
+                    disabled={disabled || conflict || rules.length >= 200}
+                    onClick={() =>
+                      edit([
+                        ...rules,
+                        {
+                          id: operationId(),
+                          source: item.source,
+                          replacement: item.suggested_replacement,
+                          profile_id: null,
+                          case_sensitive: item.case_sensitive,
+                          whole_word: item.whole_word,
+                        },
+                      ])
+                    }
+                  >
+                    + Add
+                  </StudioButton>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        {rules.map((rule, index) => (
+          <fieldset key={rule.id} className="studio-take">
+            <legend>Rule {index + 1}</legend>
+            <div className="studio-field-grid">
+              <Field label="Written text">
+                <Input
+                  aria-label={`Rule ${index + 1} written text`}
+                  value={rule.source}
+                  maxLength={200}
+                  disabled={disabled || conflict}
+                  onChange={(event) => update(rule.id, { source: event.target.value })}
+                />
+              </Field>
+              <Field label="Spoken alias">
+                <Input
+                  aria-label={`Rule ${index + 1} spoken alias`}
+                  value={rule.replacement}
+                  maxLength={500}
+                  disabled={disabled || conflict}
+                  onChange={(event) => update(rule.id, { replacement: event.target.value })}
+                />
+              </Field>
+            </div>
+            <Field label="Applies to">
+              <select
+                aria-label={`Rule ${index + 1} scope`}
+                value={rule.profile_id ?? ''}
+                disabled={disabled || conflict}
+                onChange={(event) => update(rule.id, { profile_id: event.target.value || null })}
+              >
+                <option value="">Whole project</option>
+                {rule.profile_id && !profiles.some((profile) => profile.id === rule.profile_id) && (
+                  <option value={rule.profile_id}>Saved voice</option>
+                )}
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="studio-pronunciation-rule-options">
+              <label className="studio-check">
+                <input
+                  type="checkbox"
+                  aria-label={`Rule ${index + 1} case sensitive`}
+                  checked={rule.case_sensitive}
+                  disabled={disabled || conflict}
+                  onChange={(event) => update(rule.id, { case_sensitive: event.target.checked })}
+                />{' '}
+                Match case
+              </label>
+              <label className="studio-check">
+                <input
+                  type="checkbox"
+                  aria-label={`Rule ${index + 1} whole words`}
+                  checked={rule.whole_word}
+                  disabled={disabled || conflict}
+                  onChange={(event) => update(rule.id, { whole_word: event.target.checked })}
+                />{' '}
+                Whole words only
+              </label>
+              <StudioButton
+                disabled={disabled || conflict}
+                onClick={() => edit(rules.filter((item) => item.id !== rule.id))}
+              >
+                Remove rule {index + 1}
+              </StudioButton>
+            </div>
+          </fieldset>
+        ))}
+        <details className="studio-advanced">
+          <summary>Dictionary tools</summary>
+          <div className="studio-action-row">
+            <StudioButton
+              disabled={disabled || conflict || rules.length >= 200}
+              onClick={mergeFirmwarePack}
+            >
+              Load Embedded &amp; Firmware pack
+            </StudioButton>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              hidden
+              aria-label="Import pronunciation JSON"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (file) void handleImportFile(file);
+              }}
+            />
+            <StudioButton
+              disabled={disabled || conflict || rules.length >= 200}
+              onClick={() => importInputRef.current?.click()}
+            >
+              Import JSON
+            </StudioButton>
+            <StudioButton disabled={!rules.length} onClick={exportRulesJson}>
+              Export JSON
+            </StudioButton>
+          </div>
+        </details>
+      </div>
     </div>
   );
   if (!dialog) return content;

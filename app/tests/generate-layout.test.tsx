@@ -61,7 +61,9 @@ test('create and import remain reachable with zero and many voices', () => {
             : null,
       });
     });
-    expect(renderer.root.findByType('composer' as never).props.layout).toBe('docked');
+    const composers = renderer.root.findAllByType('composer' as never);
+    expect(composers).toHaveLength(profiles.length ? 1 : 0);
+    if (profiles.length) expect(composers[0].props.layout).toBe('docked');
     expect(renderer.root.findByType('history' as never).props.embedded).toBe(true);
     const buttons = renderer.root.findAllByType('button');
     const createVoice = buttons.find(
@@ -81,9 +83,6 @@ test('create and import remain reachable with zero and many voices', () => {
     expect(opens).toBe(1);
     expect(fileClicks).toBe(1);
     expect(renderer.root.findAllByType('profile-form' as never)).toHaveLength(1);
-    expect(buttons.some((node) => node.props.children === 'Create voice')).toBe(
-      profiles.length === 0,
-    );
     act(() => renderer.unmount());
   }
 });

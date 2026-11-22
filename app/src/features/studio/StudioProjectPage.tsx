@@ -3,6 +3,7 @@ import {
   Captions,
   ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Command,
   LayoutPanelLeft,
   List,
@@ -28,7 +29,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { HelpButton } from '@/components/ui/HelpButton';
 import { Hint } from '@/components/ui/Hint';
 import { Input } from '@/components/ui/input';
 import { stopNative } from '@/lib/audio/playbackOwnership';
@@ -51,6 +51,7 @@ import { ReviewSessions } from './review-session';
 import { ScriptEditor } from './ScriptEditor';
 import { StudioTransport } from './StudioTransport';
 import { errorMessage, ProjectSession, type RecoveryStorage } from './session';
+import { useDurableSubmission } from './submissions';
 import { ClipInspector, Mixer, Timeline } from './Timeline';
 import type { StudioEngine } from './types';
 import { Field, StudioButton } from './ui';
@@ -98,6 +99,12 @@ function ProjectWorkspace({
     () => new ProjectSession(client, projectId, storage),
     [client, projectId],
   );
+  const takeSubmission = useDurableSubmission(
+    session.storage,
+    client.baseUrl,
+    projectId,
+    'generation',
+  );
   const reviewSessions = useMemo(
     () => new ReviewSessions(new ReviewClient(server), projectId, storage),
     [server, projectId],
@@ -132,7 +139,7 @@ function ProjectWorkspace({
   const [pronunciationOpen, setPronunciationOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [timelineOpen, setTimelineOpen] = useState<boolean | null>(null);
+  const [showTimeline, setTimelineOpen] = useState(false);
   const [outlineVisible, setOutlineVisible] = useState<boolean | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -260,7 +267,7 @@ function ProjectWorkspace({
     [session],
   );
   const runAction = useCallback(
-    async (action: () => Promise<unknown>) => {
+    async (action: () => Promise<unknown>, { reportError } = { reportError: true }) => {
       const isCurrent = () => isCurrentServer({ serverUrl: server, serverRevision });
       if (busyRef.current || !isCurrent()) return;
       busyRef.current = true;
@@ -270,7 +277,7 @@ function ProjectWorkspace({
         await action();
         if (alive.current && isCurrent()) await session.refresh();
       } catch (error) {
-        if (alive.current && isCurrent()) setActionError(errorMessage(error));
+        if (reportError && alive.current && isCurrent()) setActionError(errorMessage(error));
       } finally {
         busyRef.current = false;
         if (alive.current && isCurrent()) setActionBusy(false);
@@ -364,9 +371,11 @@ function ProjectWorkspace({
     !hasClips &&
     !project.takes.length &&
     !project.assets.length &&
+    !takeSubmission.request &&
     save.status !== 'recovery';
-  const showTimeline = timelineOpen ?? hasClips;
   const showOutline = outlineVisible ?? workspace !== 'edit';
+  const takeRequestNeedsAttention =
+    workspace === 'edit' && !actionBusy && !!(takeSubmission.request || takeSubmission.error);
   const showProjectActions = !startingEdit || project.revision > 0;
   const pronunciationPassage =
     project.document.passages.find((passage) => passage.id === selectedPassageId) ??
@@ -553,10 +562,9 @@ function ProjectWorkspace({
               )}
               <DialogContent className="studio studio-modal">
                 <DialogHeader>
-                  <DialogTitle>Keep this moment.</DialogTitle>
+                  <DialogTitle>Create a checkpoint</DialogTitle>
                   <DialogDescription>
-                    Save an immutable checkpoint with pinned audio and mix settings. You can review,
-                    restore, or deliver it later.
+                    Save this version to review, restore, or export later.
                   </DialogDescription>
                 </DialogHeader>
                 <Field label="Checkpoint name">
@@ -628,7 +636,22 @@ function ProjectWorkspace({
               </DialogContent>
             </Dialog>
             {(!startingEdit || project.revisions.length > 0) && (
-              <Deliver onCreateCheckpoint={() => setCheckpointOpen(true)} />
+              <Deliver
+                onCreateCheckpoint={() => setCheckpointOpen(true)}
+                onGoToMix={
+                  workspace !== 'mix'
+                    ? () => {
+                        shellRef.current
+                          ?.querySelector<HTMLAnchorElement>('[data-workspace="mix"]')
+                          ?.focus();
+                        void navigate({
+                          to: '/studio/projects/$projectId/$workspace',
+                          params: { projectId, workspace: 'mix' },
+                        });
+                      }
+                    : undefined
+                }
+              />
             )}
           </div>
         </header>
@@ -645,43 +668,28 @@ function ProjectWorkspace({
                   to="/studio/projects/$projectId/$workspace"
                   params={{ projectId, workspace: mode }}
                   className={workspace === mode ? 'is-active' : ''}
+                  data-workspace={mode}
                   aria-current={workspace === mode ? 'page' : undefined}
                 >
-                  <span>
-                    {mode[0].toUpperCase() + mode.slice(1)}
-                    <small className="app-workspace-description">
-                      {
-                        {
-                          edit: 'Script & takes',
-                          mix: 'Arrange & mix',
-                          review: 'Review & approve',
-                        }[mode]
-                      }
-                    </small>
-                  </span>
+                  {mode[0].toUpperCase() + mode.slice(1)}
                 </Link>
               </Hint>
             ))}
           </nav>
-          {(!startingEdit || project.revisions.length > 0) && (
-            <>
-              <select
-                className="studio-checkpoint-picker"
-                aria-label="Current checkpoint"
-                value={revisionId}
-                onChange={(event) => setRevisionId(event.target.value)}
-              >
-                <option value="">Checkpoints</option>
-                {project.revisions.map((revision) => (
-                  <option key={revision.id} value={revision.id}>
-                    {revision.name}
-                  </option>
-                ))}
-              </select>
-              <HelpButton label="About checkpoints">
-                A checkpoint is a saved, unchangeable version you can review, restore or deliver.
-              </HelpButton>
-            </>
+          {project.revisions.length > 0 && (
+            <select
+              className="studio-checkpoint-picker"
+              aria-label="Current checkpoint"
+              value={revisionId}
+              onChange={(event) => setRevisionId(event.target.value)}
+            >
+              <option value="">Checkpoints</option>
+              {project.revisions.map((revision) => (
+                <option key={revision.id} value={revision.id}>
+                  {revision.name}
+                </option>
+              ))}
+            </select>
           )}
           <div className="studio-action-row">
             <Dialog open={captionsOpen} onOpenChange={setCaptionsOpen}>
@@ -739,8 +747,12 @@ function ProjectWorkspace({
                 </Dialog>
                 <Dialog open={inspectorOpen} onOpenChange={setInspectorOpen}>
                   <DialogTrigger asChild>
-                    <button type="button" className="studio-quiet studio-drawer-toggle">
-                      <PanelRight size={16} /> Inspector
+                    <button
+                      type="button"
+                      className={`studio-quiet studio-drawer-toggle${takeRequestNeedsAttention ? ' studio-recovery-trigger' : ''}`}
+                    >
+                      <PanelRight size={16} />
+                      {takeRequestNeedsAttention ? 'Review take request' : 'Inspector'}
                     </button>
                   </DialogTrigger>
                   <DialogContent
@@ -765,7 +777,10 @@ function ProjectWorkspace({
                     ) : (
                       <>
                         {selectedClipId && <ClipInspector />}
-                        <Director onOpenPronunciation={openPronunciation} />
+                        <Director
+                          submission={takeSubmission}
+                          onOpenPronunciation={openPronunciation}
+                        />
                       </>
                     )}
                   </DialogContent>
@@ -876,7 +891,7 @@ function ProjectWorkspace({
                   aria-expanded={showTimeline}
                   onClick={() => setTimelineOpen(!showTimeline)}
                 >
-                  <ChevronDown size={14} /> Timeline{' '}
+                  {showTimeline ? <ChevronDown size={14} /> : <ChevronUp size={14} />} Timeline{' '}
                   <span>{project.document.clips.length} clips</span>
                 </button>
                 {showTimeline && <Timeline compact />}
@@ -891,7 +906,7 @@ function ProjectWorkspace({
               ) : (
                 <>
                   {selectedClipId && <ClipInspector />}
-                  <Director onOpenPronunciation={openPronunciation} />
+                  <Director submission={takeSubmission} />
                 </>
               )}
             </aside>
@@ -941,7 +956,7 @@ function ProjectWorkspace({
         {!startingEdit && (
           <StudioTransport
             toggleTransport={toggleTransport}
-            hideWhenIdle={workspace === 'edit' && !hasClips && !project.takes.length}
+            hideWhenIdle={workspace === 'edit' && !hasClips && !showTimeline}
           />
         )}
         {pronunciationPassage && (
