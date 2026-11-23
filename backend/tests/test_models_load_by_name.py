@@ -133,6 +133,21 @@ def test_load_model_size_in_body_also_works(client, loaded):
     assert loaded["qwen_size"] == ["0.6B"]
 
 
+def test_legacy_load_refuses_a_cudagraph_variant_the_host_does_not_list(client, loaded, monkeypatch):
+    """The ?model_size= form bypasses the registry, so it must apply the same availability predicate."""
+    from backend.backends import qwen_cuda_variants
+
+    monkeypatch.setattr(qwen_cuda_variants, "cuda_graph_unavailable_reason", lambda: "No CUDA device is available")
+    response = client.post("/models/load?model_size=1.7B-cudagraph")
+    assert response.status_code == 400
+    assert "No CUDA device is available" in response.json()["detail"]
+    assert loaded["qwen_size"] == []
+
+    monkeypatch.setattr(qwen_cuda_variants, "cuda_graph_unavailable_reason", lambda: None)
+    assert client.post("/models/load?model_size=1.7B-cudagraph").status_code == 200
+    assert loaded["qwen_size"] == ["1.7B-cudagraph"]
+
+
 def test_unload_by_model_name_targets_that_model(client, loaded):
     response = client.post("/models/unload", json={"model_name": "chatterbox-tts"})
 

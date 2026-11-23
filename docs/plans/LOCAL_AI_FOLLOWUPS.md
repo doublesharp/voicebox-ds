@@ -57,8 +57,17 @@ The benchmark admits Qwen Base, CustomVoice, VoiceDesign and Chatterbox Turbo,
 requires an explicit `--device`, records device identity and per-stage memory,
 and runs on native Windows with exclusive, alias-refusing output. It still uses
 the complete-array API and does not measure first-model-frame latency. Turbo
-conditioning reuse passed every gating CUDA check without backend changes. C1
-and C2 have not started.
+conditioning reuse passed every gating CUDA check without backend changes.
+
+C1 status (2026-11-02, same host): Qwen Base 0.6B and 1.7B have opt-in,
+Experimental CUDA-graph variants on faster-qwen3-tts 0.3.2, in process, with
+native streaming. See
+[../cuda-c1-qwen-cudagraph-2026-11-02.md](../cuda-c1-qwen-cudagraph-2026-11-02.md).
+They ran 4.8 to 12.2 times faster than stock with matching durations and
+speaker similarity and close ASR error (one 1.7B names-and-numbers gap is
+unresolved); listening review has not happened. CustomVoice and VoiceDesign graph
+variants, and separate FlashAttention or torch.compile experiments, were not
+attempted. C2 has not started.
 
 ## Dependency and capability decisions
 

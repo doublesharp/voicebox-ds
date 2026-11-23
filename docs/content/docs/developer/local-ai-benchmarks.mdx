@@ -16,6 +16,14 @@ Use an explicit local reference you are authorized to use for Base models.
 | `qwen_custom_voice` | `mlx` or `pytorch` | `0.6B`, `1.7B` | `--preset-voice Ryan` (or another built-in Qwen speaker) |
 | `qwen_voice_design` | `mlx` or `pytorch` | `1.7B` | `--design-prompt "A clear voice with natural pacing."` |
 | `chatterbox_turbo` | `pytorch` | `default` | `--reference /absolute/reference.wav --reference-text "Transcript"` (English only) |
+| `qwen` | `pytorch`, `--device cuda` only | `0.6B-cudagraph`, `1.7B-cudagraph` | As Base |
+
+The CUDA-graph sizes admit the same pinned snapshot as the stock size. The run
+fails if the loaded adapter's `runtime_identity` does not match the requested
+runtime, and records `runtime_identity`, the `graph_capture` time inside load,
+and `steps`, `hit_eos` and `max_new_tokens` per generation. `--seeds 42,7,1234`
+cycles seeds across generations; `--warmup-repeats N` marks generations after
+the cold one as warmup, excluded from the warm distribution.
 
 `--device` is required: `mlx` with the MLX backend, `cpu` or `cuda` (or
 `cuda:N`) with PyTorch. `cpu` forces CPU and hides every GPU (`CUDA_VISIBLE_DEVICES=-1`) before any
@@ -188,6 +196,22 @@ explicit references. Gating checks decide the exit status; parity and repeat
 reproducibility are recorded with their bit-exact outcome rather than assumed.
 `--lifecycle-cycles N` adds N gated load/prepare/generate/unload cycles. The
 NVIDIA results are in `docs/cuda-c0-qualification-2026-10-30.md`.
+
+## Stock vs candidate comparisons
+
+`scripts/compare-local-tts.py` runs the benchmark for a baseline and a
+candidate of the same base size in fresh processes, one at a time, in ABBA
+order over an even number of rounds, with a fixed corpus, both references and
+the same seeds. It records VRAM in use before each process, refuses to compare
+a side with no warm runs, and reports p50/p95 with counts and two labelled
+ratios: warm generation time and `wall_audio_rtf`. Read per-process results
+before trusting a pooled ratio; on the reference laptop stock Qwen ran in two
+host modes. It then calls `scripts/score-local-tts.py`, which scores every WAV
+offline with a pinned Whisper base (WER/CER with Whisper's normalizer on both
+sides, repetition and omission flags) and an uncalibrated speaker-similarity
+signal, and writes a blind audition manifest. `scripts/qualify-qwen-cudagraph.py`
+gates the CUDA-graph variants' capture, replay, seed, speaker, bound, recovery
+and lifecycle behavior. Results: `docs/cuda-c1-qwen-cudagraph-2026-11-02.md`.
 
 ## Recorded integration smoke
 
