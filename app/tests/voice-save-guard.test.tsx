@@ -12,6 +12,8 @@ const requests: Array<{ values: { name: string }; finish: () => void; promise: P
 mock.module('../src/lib/hooks/useProfiles', () => ({
   useProfiles: () => ({ data: profiles }),
   useProfile: (id: string) => ({ data: profiles.find((p) => p.id === id) }),
+  useDeleteProfile: () => ({ mutateAsync: async () => {} }),
+  useExportProfile: () => ({ mutateAsync: async () => {} }),
   useUpdateProfile: () => ({
     isPending: false,
     mutateAsync: ({ data }: { data: { name: string } }) => {

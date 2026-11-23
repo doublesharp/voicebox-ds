@@ -1,4 +1,6 @@
-import { type ComponentProps, useEffect, useMemo, useRef, useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { type ComponentProps, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { hasMissingRegenerationReferences } from './ArchiveScopeControls';
 import { useStudio } from './context';
 import { engineForPassage } from './domain';
+import { PronunciationRecording } from './PronunciationRecording';
 import {
   EMBEDDED_FIRMWARE_PACK,
   type PronunciationRule,
@@ -43,7 +46,11 @@ export function PronunciationPanel({
 }) {
   const studio = useStudio();
   const { project, session, client, profiles, engines, save } = studio;
+  const ruleControlId = useId();
+  const [previewPassageId, setPreviewPassageId] = useState<string | null>(null);
   const [queuedPassage, setQueuedPassage] = useState<string | null>(null);
+  const [recordingRuleId, setRecordingRuleId] = useState<string | null>(null);
+  const activeRecorder = useRef<string | null>(null);
   const saved = project.document.pronunciation_rules ?? [];
   const serialized = JSON.stringify(saved);
   const key = `voicebox-studio:pronunciation:${encodeURIComponent(client.baseUrl)}:${project.id}`;
@@ -87,33 +94,12 @@ export function PronunciationPanel({
     };
   }, []);
   const rules = draft?.rules ?? saved;
+  const rulesRef = useRef(rules);
+  rulesRef.current = rules;
   const changed = JSON.stringify(rules) !== serialized;
   const conflict = !!draft && draft.base !== serialized && changed;
   const invalid = pronunciationError(rules);
-  const preview = previewPronunciation(currentText, rules, passage.profile_id);
-  const jargonSuggestions = useMemo(
-    () => scanScriptJargon(project.document.passages, rules),
-    [project.document.passages, rules],
-  );
-  const disabled = !studio.canMutate || studio.actionBusy || unreadable;
-  const engine = engineForPassage(passage, profiles, engines);
-  const previewBlocked = changed
-    ? 'Save the dictionary to generate an audio preview.'
-    : passage.locked
-      ? 'Unlock this passage to generate a preview.'
-      : !passage.voice_snapshot
-        ? 'Assign a voice to this passage first.'
-        : !engine?.ready
-          ? 'The assigned voice model must be ready first.'
-          : hasMissingRegenerationReferences(passage.voice_snapshot)
-            ? 'Restore the voice reference audio to generate a preview.'
-            : !currentText.trim()
-              ? 'Add text to this passage first.'
-              : disabled || save.status === 'recovery'
-                ? 'Finish the current project action first.'
-                : null;
-  // Auditions own an independent pending request, so another generate action can
-  // never be mistaken for a pronunciation audition or change its adoption intent.
+  // Preview requests have their own journal and cannot replace the selected take.
   const {
     request,
     rejected,
@@ -126,8 +112,38 @@ export function PronunciationPanel({
     `${project.id}:pronunciation`,
     'generation',
   );
+  const passages = project.document.passages;
+  const target =
+    passages.find((item) => item.id === (request?.passage_ids[0] ?? previewPassageId)) ?? passage;
+  const previewText =
+    target.id === passage.id ? currentText : (save.drafts[target.id]?.text ?? target.text);
+  const canUseRecordings =
+    target.voice_snapshot?.engine === 'qwen' && target.voice_snapshot?.voice_type === 'cloned';
+  const preview = previewPronunciation(previewText, rules, target.profile_id, canUseRecordings);
+  const jargonSuggestions = useMemo(
+    () => scanScriptJargon(project.document.passages, rules),
+    [project.document.passages, rules],
+  );
+  const disabled = !studio.canMutate || studio.actionBusy || unreadable;
+  const engine = engineForPassage(target, profiles, engines);
+  const previewBlocked = changed
+    ? 'Save the dictionary to generate an audio preview.'
+    : target.locked
+      ? 'Unlock this passage to generate a preview.'
+      : !target.voice_snapshot
+        ? 'Assign a voice to this passage first.'
+        : !engine?.ready
+          ? 'The assigned voice model must be ready first.'
+          : hasMissingRegenerationReferences(target.voice_snapshot)
+            ? 'Restore the voice reference audio to generate a preview.'
+            : !previewText.trim()
+              ? 'Add text to this passage first.'
+              : disabled || save.status === 'recovery'
+                ? 'Finish the current project action first.'
+                : null;
 
   const edit = (next: PronunciationRule[]) => {
+    rulesRef.current = next;
     const nextDraft = { base: draft?.base ?? serialized, rules: next };
     setDraft(nextDraft);
     setNotice('');
@@ -152,7 +168,31 @@ export function PronunciationPanel({
     }
   };
   const update = (id: string, change: Partial<PronunciationRule>) =>
-    edit(rules.map((rule) => (rule.id === id ? { ...rule, ...change } : rule)));
+    edit(rulesRef.current.map((rule) => (rule.id === id ? { ...rule, ...change } : rule)));
+
+  async function attachRecording(ruleId: string, file: File) {
+    let failure: unknown;
+    let attached = false;
+    await studio.runAction(async () => {
+      try {
+        const asset = await client.uploadAsset(project.id, file);
+        if (alive.current && rulesRef.current.some((rule) => rule.id === ruleId)) {
+          update(ruleId, { recording_asset_id: asset.id });
+          attached = true;
+        }
+      } catch (error) {
+        failure = error;
+        throw error;
+      }
+    }, { reportError: false });
+    if (failure) throw failure;
+    if (!attached) throw new Error('Could not attach the recording. Try again.');
+  }
+
+  const clearRecording = () => {
+    activeRecorder.current = null;
+    setRecordingRuleId(null);
+  };
 
   const mergeFirmwarePack = () => {
     setImportError('');
@@ -187,7 +227,7 @@ export function PronunciationPanel({
     const payload = JSON.stringify(
       {
         version: 1,
-        rules: rules.map(({ source, replacement, case_sensitive, whole_word }) => ({
+        rules: rules.filter((rule) => rule.replacement.trim()).map(({ source, replacement, case_sensitive, whole_word }) => ({
           source,
           replacement,
           case_sensitive,
@@ -246,13 +286,16 @@ export function PronunciationPanel({
         await submit(
           () => ({
             idempotency_key: operationId(),
-            passage_ids: [passage.id],
+            passage_ids: [target.id],
             count: 1,
             adopt: false,
           }),
           (input) => client.generate(project.id, input),
         );
-        if (alive.current) setQueuedPassage(request?.passage_ids[0] ?? passage.id);
+        if (alive.current) {
+          setPreviewPassageId(target.id);
+          setQueuedPassage(target.id);
+        }
       },
       { reportError: false },
     );
@@ -262,6 +305,22 @@ export function PronunciationPanel({
     <div className="studio-pronunciation">
       <section className="studio-pronunciation-preview" aria-label="Pronunciation preview">
         <h3>Spoken text preview</h3>
+        {passages.length > 1 && (
+          <Field label="Preview passage">
+            <select
+              aria-label="Preview passage"
+              value={target.id}
+              disabled={studio.actionBusy || !!request}
+              onChange={(event) => setPreviewPassageId(event.target.value)}
+            >
+              {passages.map((item, index) => (
+                <option key={item.id} value={item.id}>
+                  {index + 1}. {(item.chapter || item.text).slice(0, 65)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <output className="studio-take-script" aria-label="Spoken text preview">
           {preview.text}
         </output>
@@ -273,8 +332,13 @@ export function PronunciationPanel({
               </li>
             ))}
           </ul>
-        ) : (
+        ) : !preview.recordings.size ? (
           <p className="studio-note">No substitutions in this passage.</p>
+        ) : null}
+        {preview.recordings.size > 0 && (
+          <p className="studio-note">
+            Recorded guide: {rules.filter((rule) => preview.recordings.has(rule.id)).map((rule) => rule.source).join(', ')}
+          </p>
         )}
         {!request && previewBlocked && <p className="studio-note">{previewBlocked}</p>}
         <StudioButton
@@ -283,7 +347,7 @@ export function PronunciationPanel({
         >
           {request ? 'Retry audio preview' : 'Generate preview take'}
         </StudioButton>
-        {queuedPassage === passage.id && (
+        {queuedPassage === target.id && (
           <output className="studio-note">
             Preview queued in Takes. Select Audition when it’s ready.
           </output>
@@ -300,7 +364,7 @@ export function PronunciationPanel({
         )}
       </section>
       <div className="studio-pronunciation-rules">
-        <div className="studio-action-row">
+        <div className="studio-action-row studio-dictionary-actions">
           <StudioButton
             disabled={disabled || conflict || rules.length >= 200}
             onClick={() =>
@@ -322,13 +386,13 @@ export function PronunciationPanel({
 
           <StudioButton
             primary={changed}
-            disabled={disabled || !changed || !!invalid || conflict}
+            disabled={disabled || !changed || !!invalid || conflict || !!recordingRuleId}
             onClick={saveRules}
           >
             Save dictionary
           </StudioButton>
           {(draft || unreadable) && (
-            <StudioButton disabled={studio.actionBusy} onClick={discard}>
+            <StudioButton disabled={studio.actionBusy || !!recordingRuleId} onClick={discard}>
               Discard dictionary draft
             </StudioButton>
           )}
@@ -382,15 +446,28 @@ export function PronunciationPanel({
           </details>
         )}
         {rules.map((rule, index) => (
-          <fieldset key={rule.id} className="studio-take">
-            <legend>Rule {index + 1}</legend>
+          <fieldset key={rule.id} className="studio-pronunciation-rule">
+            <legend className="sr-only">Rule {index + 1}</legend>
+            <div className="studio-pronunciation-rule-heading">
+              <h3>Rule {index + 1}</h3>
+              <button
+                type="button"
+                className="studio-icon-button"
+                aria-label={`Remove rule ${index + 1}`}
+                title={`Remove rule ${index + 1}`}
+                disabled={disabled || conflict || recordingRuleId === rule.id}
+                onClick={() => edit(rules.filter((item) => item.id !== rule.id))}
+              >
+                <Trash2 size={15} />
+              </button>
+            </div>
             <div className="studio-field-grid">
               <Field label="Written text">
                 <Input
                   aria-label={`Rule ${index + 1} written text`}
                   value={rule.source}
                   maxLength={200}
-                  disabled={disabled || conflict}
+                  disabled={disabled || conflict || recordingRuleId === rule.id}
                   onChange={(event) => update(rule.id, { source: event.target.value })}
                 />
               </Field>
@@ -404,6 +481,20 @@ export function PronunciationPanel({
                 />
               </Field>
             </div>
+            <PronunciationRecording
+              source={rule.source}
+              audioUrl={rule.recording_asset_id ? client.assetAudio(rule.recording_asset_id) : undefined}
+              disabled={disabled || conflict || (recordingRuleId !== null && recordingRuleId !== rule.id)}
+              onStart={() => {
+                if (activeRecorder.current && activeRecorder.current !== rule.id) return false;
+                activeRecorder.current = rule.id;
+                setRecordingRuleId(rule.id);
+                return true;
+              }}
+              onFinish={clearRecording}
+              onAttach={(file) => attachRecording(rule.id, file)}
+              onRemove={() => update(rule.id, { recording_asset_id: undefined })}
+            />
             <Field label="Applies to">
               <select
                 aria-label={`Rule ${index + 1} scope`}
@@ -423,32 +514,26 @@ export function PronunciationPanel({
               </select>
             </Field>
             <div className="studio-pronunciation-rule-options">
-              <label className="studio-check">
-                <input
-                  type="checkbox"
+              <label className="studio-check" htmlFor={`${ruleControlId}-case-${index}`}>
+                <Checkbox
+                  id={`${ruleControlId}-case-${index}`}
                   aria-label={`Rule ${index + 1} case sensitive`}
                   checked={rule.case_sensitive}
                   disabled={disabled || conflict}
-                  onChange={(event) => update(rule.id, { case_sensitive: event.target.checked })}
-                />{' '}
+                  onCheckedChange={(checked) => update(rule.id, { case_sensitive: checked })}
+                />
                 Match case
               </label>
-              <label className="studio-check">
-                <input
-                  type="checkbox"
+              <label className="studio-check" htmlFor={`${ruleControlId}-words-${index}`}>
+                <Checkbox
+                  id={`${ruleControlId}-words-${index}`}
                   aria-label={`Rule ${index + 1} whole words`}
                   checked={rule.whole_word}
                   disabled={disabled || conflict}
-                  onChange={(event) => update(rule.id, { whole_word: event.target.checked })}
-                />{' '}
+                  onCheckedChange={(checked) => update(rule.id, { whole_word: checked })}
+                />
                 Whole words only
               </label>
-              <StudioButton
-                disabled={disabled || conflict}
-                onClick={() => edit(rules.filter((item) => item.id !== rule.id))}
-              >
-                Remove rule {index + 1}
-              </StudioButton>
             </div>
           </fieldset>
         ))}
@@ -489,7 +574,16 @@ export function PronunciationPanel({
   );
   if (!dialog) return content;
   return (
-    <Dialog open={dialog.open} onOpenChange={dialog.onOpenChange}>
+    <Dialog
+      open={dialog.open}
+      onOpenChange={(open) => {
+        if (!open) {
+          setPreviewPassageId(null);
+          clearRecording();
+        }
+        dialog.onOpenChange(open);
+      }}
+    >
       <DialogContent
         className="studio studio-modal studio-dictionary-modal"
         onCloseAutoFocus={dialog.onCloseAutoFocus}
@@ -497,10 +591,10 @@ export function PronunciationPanel({
         <DialogHeader>
           <DialogTitle>Pronunciation dictionary</DialogTitle>
           <DialogDescription>
-            Set how words sound. Your script keeps its original spelling.
+            Add a spoken alias or record a guide for a cloned Qwen voice.
           </DialogDescription>
         </DialogHeader>
-        {content}
+        <div className="studio-dictionary-scroll">{content}</div>
       </DialogContent>
     </Dialog>
   );

@@ -285,8 +285,15 @@
   display: grid;
   gap: 8px;
 }
-.studio-dictionary-modal {
+.studio.studio-dictionary-modal {
   max-width: 42rem;
+  overflow: hidden;
+}
+.studio-dictionary-scroll {
+  overflow: auto;
+  min-height: 0;
+  padding: 4px;
+  margin: -4px;
 }
 .studio-pronunciation {
   display: grid;
@@ -298,6 +305,28 @@
   gap: 12px;
   min-width: 0;
 }
+.studio-pronunciation-rule {
+  display: grid;
+  gap: 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  padding: 12px;
+  min-width: 0;
+  background: hsl(var(--card));
+}
+.studio-pronunciation-rule-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.studio-pronunciation-rule .studio-field,
+.studio-pronunciation-preview .studio-field {
+  margin: 0;
+}
+.studio-pronunciation-rule .studio-field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
 .studio-pronunciation-rule-options {
   display: flex;
   align-items: center;
@@ -305,7 +334,15 @@
   gap: 8px 14px;
 }
 .studio-pronunciation-rule-options label {
-  min-height: 32px;
+  min-height: 28px;
+}
+.studio-pronunciation-recording {
+  display: grid;
+  gap: 8px;
+}
+.studio-pronunciation-recording audio {
+  width: 100%;
+  height: 34px;
 }
 .studio-pronunciation-preview {
   display: grid;
@@ -324,7 +361,7 @@
   justify-self: start;
 }
 @media (min-width: 1000px) {
-  .studio-dictionary-modal {
+  .studio.studio-dictionary-modal {
     max-width: 56rem;
   }
   .studio-pronunciation {
@@ -335,6 +372,19 @@
   .studio-pronunciation-preview {
     position: sticky;
     top: 0;
+  }
+  .studio-dictionary-actions {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: hsl(var(--background));
+    padding: 4px 0 8px;
+  }
+}
+@media (max-width: 460px) {
+  .studio-pronunciation-rule .studio-field-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 }
 .studio-modal form > .studio-primary {
@@ -710,8 +760,8 @@
   transition: border-color 0.15s;
 }
 .studio-passage.is-selected {
-  border-color: hsl(var(--primary) / 0.55);
-  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.04);
+  border-color: hsl(var(--accent) / 0.65);
+  box-shadow: 0 0 0 2px hsl(var(--accent) / 0.07);
 }
 .studio-passage-heading {
   display: flex;
@@ -1200,8 +1250,6 @@
 .studio-jobs-disclosure {
   border-top: 1px solid hsl(var(--border));
   background: hsl(var(--card));
-  max-height: 30%;
-  overflow-y: auto;
   flex-shrink: 0;
 }
 .studio-jobs-disclosure > summary {
@@ -1214,6 +1262,9 @@
 .studio-job-list {
   display: flex;
   flex-direction: column;
+  max-height: min(22dvh, 11rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .studio-job {
   display: flex;
@@ -1223,6 +1274,10 @@
   border-top: 1px solid hsl(var(--border));
   padding: 10px 16px;
   font-size: 11px;
+  flex-shrink: 0;
+}
+.studio-job > div {
+  min-width: 0;
 }
 .studio-job strong {
   margin-right: 12px;
@@ -1230,8 +1285,12 @@
 .studio-job span {
   color: hsl(var(--muted-foreground));
 }
-.studio-job p {
+.studio-job-error {
   margin-top: 5px;
+}
+.studio-job-error p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
 }
 .studio-transport {
   display: flex;
@@ -1330,6 +1389,9 @@
   }
 }
 @media (max-width: 799px) {
+  .studio-captions-action > span {
+    display: none;
+  }
   .studio-projects {
     padding: 22px 0;
   }
@@ -1502,9 +1564,6 @@
     position: sticky;
     bottom: 0;
     z-index: 5;
-  }
-  .studio-jobs-disclosure {
-    max-height: 180px;
   }
 }
 .studio-phrase-range {

@@ -649,15 +649,13 @@ export function ModelManagement() {
         </div>
       )}
 
-      {/* Model list */}
-      <ModelResidencyControls models={voiceModels} />
-
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : modelStatus ? (
         <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pb-6">
+          <ModelResidencyControls models={voiceModels} />
           {sections.map((section) => (
             <div key={section.label}>
               <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1 px-1">

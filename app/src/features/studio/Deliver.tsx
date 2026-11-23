@@ -24,9 +24,11 @@ import { useRevisionDocument } from './useRevisionDocument';
 export function Deliver({
   onCreateCheckpoint,
   onGoToMix,
+  onGoToEdit,
 }: {
   onCreateCheckpoint?: () => void;
   onGoToMix?: () => void;
+  onGoToEdit?: () => void;
 }) {
   const studio = useStudio();
   const [open, setOpen] = useState(false);
@@ -67,6 +69,12 @@ export function Deliver({
     (j) => j.kind === 'render' || j.kind === 'mix' || j.kind === 'stems',
   );
   const files = project.deliverables.filter((file) => file.revision_id === revisionId);
+  const hasClips = project.document.clips.length > 0;
+  const hasCheckpoint = project.revisions.length > 0;
+  const needsTake =
+    !hasClips &&
+    project.document.passages.length > 0 &&
+    !project.document.passages.some((passage) => passage.selected_take_id);
   const render = async () => {
     if (!request && (!revision || flight.errors.length)) return;
     await studio.runAction(async () => {
@@ -87,7 +95,10 @@ export function Deliver({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button type="button" className="studio-primary">
+        <button
+          type="button"
+          className={hasCheckpoint || !!request ? 'studio-primary' : 'studio-quiet'}
+        >
           <Download size={15} /> Deliver
         </button>
       </DialogTrigger>
@@ -107,7 +118,7 @@ export function Deliver({
             Export audio from a checkpoint or save a project archive.
           </DialogDescription>
         </DialogHeader>
-        {project.revisions.length > 0 ? (
+        {hasCheckpoint ? (
           <Field label="Source checkpoint">
             <select
               value={revisionId}
@@ -128,13 +139,15 @@ export function Deliver({
         ) : (
           !request && (
             <div className="studio-preflight">
-              <h3>Create a checkpoint to export audio</h3>
+              <h3>{hasClips ? 'Create a checkpoint to export audio' : 'Add audio to export'}</h3>
               <p className="studio-note">
-                {project.document.clips.length
+                {hasClips
                   ? 'A checkpoint saves the arrangement you want to export.'
-                  : 'Add audio to the timeline in Mix, then save a checkpoint.'}
+                  : needsTake
+                    ? 'Choose or generate a take in Edit, or import audio in Mix.'
+                    : 'Add audio to the timeline in Mix, then save a checkpoint.'}
               </p>
-              {!!project.document.clips.length && onCreateCheckpoint && (
+              {hasClips && onCreateCheckpoint && (
                 <StudioButton
                   primary
                   disabled={!studio.canMutate || studio.actionBusy}
@@ -146,17 +159,32 @@ export function Deliver({
                   Create checkpoint
                 </StudioButton>
               )}
-              {!project.document.clips.length && onGoToMix && (
-                <StudioButton
-                  primary
-                  onClick={() => {
-                    nextAction.current = onGoToMix;
-                    setOpen(false);
-                  }}
-                >
-                  <ArrowRight size={15} />
-                  Go to Mix
-                </StudioButton>
+              {!hasClips && (
+                <div className="studio-action-row">
+                  {needsTake && onGoToEdit && (
+                    <StudioButton
+                      primary
+                      onClick={() => {
+                        nextAction.current = onGoToEdit;
+                        setOpen(false);
+                      }}
+                    >
+                      Go to Edit
+                    </StudioButton>
+                  )}
+                  {onGoToMix && (
+                    <StudioButton
+                      primary={!needsTake || !onGoToEdit}
+                      onClick={() => {
+                        nextAction.current = onGoToMix;
+                        setOpen(false);
+                      }}
+                    >
+                      <ArrowRight size={15} />
+                      Go to Mix
+                    </StudioButton>
+                  )}
+                </div>
               )}
             </div>
           )

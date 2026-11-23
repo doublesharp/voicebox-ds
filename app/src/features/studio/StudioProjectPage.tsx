@@ -36,6 +36,7 @@ import { isCurrentServer } from '@/lib/serverScope';
 import { usePlatform } from '@/platform/PlatformContext';
 import { usePlayerStore } from '@/stores/playerStore';
 import { useServerStore } from '@/stores/serverStore';
+import { useUIStore } from '@/stores/uiStore';
 import { CaptionsPanel } from './CaptionsPanel';
 import { StudioClient, type StudioProfile } from './client';
 import { StudioContext } from './context';
@@ -123,6 +124,7 @@ function ProjectWorkspace({
   const [profiles, setProfiles] = useState<StudioProfile[]>([]);
   const [engines, setEngines] = useState<StudioEngine[]>([]);
   const [capabilitiesError, setCapabilitiesError] = useState<string | null>(null);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(true);
   const [selectedPassageId, setSelectedPassageId] = useState<string | null>(null);
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [checkedPassages, setCheckedPassages] = useState<string[]>([]);
@@ -224,6 +226,9 @@ function ProjectWorkspace({
       .catch((error) => {
         if (!request.signal.aborted)
           setCapabilitiesError(`Voice capabilities unavailable: ${errorMessage(error)}`);
+      })
+      .finally(() => {
+        if (!request.signal.aborted) setCapabilitiesLoading(false);
       });
     return () => request.abort();
   }, [client]);
@@ -384,6 +389,19 @@ function ProjectWorkspace({
     pronunciationOpener.current = opener;
     setPronunciationOpen(true);
   };
+  const goToWorkspace = (next: Workspace) => {
+    shellRef.current?.querySelector<HTMLAnchorElement>(`[data-workspace="${next}"]`)?.focus();
+    void navigate({
+      to: '/studio/projects/$projectId/$workspace',
+      params: { projectId, workspace: next },
+    });
+  };
+  const createVoice = async () => {
+    await navigate({ to: '/voices' });
+    const { setEditingProfileId, setProfileDialogOpen } = useUIStore.getState();
+    setEditingProfileId(null);
+    setProfileDialogOpen(true);
+  };
   const statusLabels = {
     loading: 'Loading',
     saved: 'Saved',
@@ -470,6 +488,7 @@ function ProjectWorkspace({
         profiles,
         engines,
         capabilitiesError,
+        capabilitiesLoading,
         playback,
         selectedPassageId,
         selectedClipId,
@@ -638,19 +657,8 @@ function ProjectWorkspace({
             {(!startingEdit || project.revisions.length > 0) && (
               <Deliver
                 onCreateCheckpoint={() => setCheckpointOpen(true)}
-                onGoToMix={
-                  workspace !== 'mix'
-                    ? () => {
-                        shellRef.current
-                          ?.querySelector<HTMLAnchorElement>('[data-workspace="mix"]')
-                          ?.focus();
-                        void navigate({
-                          to: '/studio/projects/$projectId/$workspace',
-                          params: { projectId, workspace: 'mix' },
-                        });
-                      }
-                    : undefined
-                }
+                onGoToMix={workspace !== 'mix' ? () => goToWorkspace('mix') : undefined}
+                onGoToEdit={() => goToWorkspace('edit')}
               />
             )}
           </div>
@@ -697,10 +705,11 @@ function ProjectWorkspace({
                 <DialogTrigger asChild>
                   <button
                     type="button"
-                    className="studio-quiet"
+                    className="studio-quiet studio-captions-action"
                     aria-label="Open captions and video timing"
+                    title="Captions & video"
                   >
-                    <Captions size={16} /> Captions &amp; video
+                    <Captions size={16} /> <span>Captions &amp; video</span>
                   </button>
                 </DialogTrigger>
               )}
@@ -766,10 +775,12 @@ function ProjectWorkspace({
                   >
                     <DialogHeader>
                       <DialogTitle>
-                        {workspace === 'mix' ? 'Mix settings' : 'Passage settings'}
+                        {workspace === 'mix' ? 'Mix settings' : 'Voice & takes'}
                       </DialogTitle>
-                      <DialogDescription>
-                        Settings follow the selected passage or project mix.
+                      <DialogDescription className="sr-only">
+                        {workspace === 'mix'
+                          ? 'Settings for the project mix.'
+                          : 'Settings for the selected passage.'}
                       </DialogDescription>
                     </DialogHeader>
                     {workspace === 'mix' ? (
@@ -778,6 +789,8 @@ function ProjectWorkspace({
                       <>
                         {selectedClipId && <ClipInspector />}
                         <Director
+                          showTitle={false}
+                          onCreateVoice={createVoice}
                           submission={takeSubmission}
                           onOpenPronunciation={openPronunciation}
                         />
@@ -906,7 +919,7 @@ function ProjectWorkspace({
               ) : (
                 <>
                   {selectedClipId && <ClipInspector />}
-                  <Director submission={takeSubmission} />
+                  <Director submission={takeSubmission} onCreateVoice={createVoice} />
                 </>
               )}
             </aside>
@@ -928,9 +941,14 @@ function ProjectWorkspace({
                 .map((job) => (
                   <div className="studio-job" key={job.id}>
                     <div>
-                      <strong>{job.kind}</strong>
+                      <strong>{job.kind === 'generation' ? 'Take generation' : 'Audio export'}</strong>
                       <span>{job.phase?.replace(/_/g, ' ') ?? job.status}</span>
-                      {job.error && <p className="studio-error">{job.error}</p>}
+                      {job.error && (
+                        <details className="studio-job-error">
+                          <summary>Error details</summary>
+                          <p>{job.error}</p>
+                        </details>
+                      )}
                     </div>
                     {isJobActive(job.status) && (
                       <StudioButton

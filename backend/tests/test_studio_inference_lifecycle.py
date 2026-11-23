@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from backend import backends
 from backend.routes import models as model_routes
@@ -14,7 +15,7 @@ from backend.studio.jobs import synthesize
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stage", ["load", "prompt"])
-async def test_legacy_preparation_waits_for_studio_lifecycle(monkeypatch, stage):
+async def test_legacy_preparation_waits_for_studio_lifecycle(monkeypatch, tmp_path, stage):
     entered = asyncio.Event()
     release = asyncio.Event()
     calls = []
@@ -64,7 +65,9 @@ async def test_legacy_preparation_waits_for_studio_lifecycle(monkeypatch, stage)
             },
         }
     }
-    first = asyncio.create_task(synthesize(request, SimpleNamespace(asset_path=lambda ident: ident)))
+    reference = tmp_path / "reference"
+    sf.write(reference, np.zeros(100, dtype=np.float32), 24000, format="WAV")
+    first = asyncio.create_task(synthesize(request, SimpleNamespace(root=tmp_path, asset_path=lambda _: reference)))
     await entered.wait()
     second = asyncio.create_task(
         generation.generate_audio_sync(

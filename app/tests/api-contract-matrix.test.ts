@@ -185,11 +185,11 @@ test('multipart and binary endpoints preserve protocol and reject errors', async
     expect(await call()).toEqual({ id: 'ok' });
     globalThis.fetch = (async () => new Response('null', { status: 503 })) as typeof fetch;
     await expect(call()).rejects.toThrow(
-      path === '/generate/import' ? 'null' : 'HTTP error! status: 503',
+      path === '/generate/import' ? 'HTTP 503' : 'HTTP error! status: 503',
     );
     globalThis.fetch = (async () =>
       new Response('invalid', { status: 503, statusText: 'Unavailable' })) as typeof fetch;
-    await expect(call()).rejects.toThrow(path === '/generate/import' ? 'invalid' : 'Unavailable');
+    await expect(call()).rejects.toThrow('Unavailable');
     globalThis.fetch = (async () => {
       throw new Error('offline');
     }) as typeof fetch;

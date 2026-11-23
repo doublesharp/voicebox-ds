@@ -1,6 +1,6 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterEach, expect, mock, test } from 'bun:test';
 import type { ReactNode } from 'react';
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { StudioClient } from '../src/features/studio/client';
 import { StudioContext, type StudioContextValue } from '../src/features/studio/context';
@@ -8,6 +8,21 @@ import { PronunciationPanel } from '../src/features/studio/PronunciationPanel';
 import { previewPronunciation, type PronunciationRule } from '../src/features/studio/pronunciation';
 import { ProjectSession } from '../src/features/studio/session';
 import type { StudioCommand, StudioProject } from '../src/features/studio/types';
+
+mock.module('../src/lib/hooks/useAudioRecording', () => ({
+  useAudioRecording: ({ onRecordingComplete }: { onRecordingComplete: (blob: Blob) => void }) => {
+    const [isRecording, setRecording] = useState(false);
+    return {
+      isRecording,
+      startRecording: async () => setRecording(true),
+      stopRecording: () => {
+        setRecording(false);
+        onRecordingComplete(new Blob(['guide'], { type: 'audio/wav' }));
+      },
+      cancelRecording: () => setRecording(false),
+    };
+  },
+}));
 
 let renderer: ReactTestRenderer;
 let session: ProjectSession;
@@ -31,7 +46,7 @@ function text(node: ReactNode): string {
 function button(label: string) {
   const node = renderer.root
     .findAllByType('button')
-    .find((node) => text(node.props.children) === label);
+    .find((node) => text(node.props.children).trim() === label);
   expect(node).toBeDefined();
   return node!;
 }
@@ -82,11 +97,22 @@ function project(): StudioProject {
 }
 async function mount(options: { failGeneration?: boolean; failSave?: boolean } = {}) {
   let current = project();
+  current.document.passages.push({
+    ...current.document.passages[0],
+    id: 'next-line',
+    text: 'Another API call.',
+    selected_take_id: null,
+  });
   const commands: StudioCommand[] = [];
+  const uploads: File[] = [];
   const generations: Array<Record<string, unknown>> = [];
   const memory = new Map<string, string>();
   let failGeneration = !!options.failGeneration;
   const client = new StudioClient('http://test', (async (url, init) => {
+    if (String(url).endsWith('/projects/p/assets')) {
+      uploads.push((init?.body as FormData).get('file') as File);
+      return Response.json({ id: 'guide-audio' });
+    }
     if (String(url).endsWith('/commands')) {
       const command = JSON.parse(String(init?.body)) as StudioCommand;
       commands.push(command);
@@ -164,6 +190,7 @@ async function mount(options: { failGeneration?: boolean; failSave?: boolean } =
   });
   return {
     commands,
+    uploads,
     generations,
     memory,
     show: (show: boolean) => renderer.update(<Harness show={show} />),
@@ -177,6 +204,21 @@ async function mount(options: { failGeneration?: boolean; failSave?: boolean } =
     },
   };
 }
+
+test('recording is playable after saving a rule without a typed alias', async () => {
+  const { commands, uploads, show } = await mount();
+  const alias = renderer.root.findAllByType('input').find((node) => node.props['aria-label'] === 'Rule 1 spoken alias')!;
+  act(() => alias.props.onChange({ target: { value: '' } }));
+  act(() => button('Record pronunciation').props.onClick());
+  act(() => button('Stop recording').props.onClick());
+  await act(async () => button('Use recording').props.onClick());
+  expect(uploads.map((file) => file.name)).toEqual(['pronunciation.wav']);
+  await act(async () => button('Save dictionary').props.onClick());
+  expect(commands[0].payload.rules).toEqual([rule({ replacement: '', recording_asset_id: 'guide-audio' })]);
+  act(() => show(false));
+  act(() => show(true));
+  expect(renderer.root.findByType('audio').props.src).toBe('http://test/studio/v1/assets/guide-audio/audio');
+});
 
 test('preview applies scoped aliases once, chooses longest phrases, and respects word boundaries', () => {
   const rules = [
@@ -252,6 +294,23 @@ test('audition is an alternative take and uncertain responses retry the same per
   expect(result.generations[1]).toEqual(result.generations[0]);
   expect(result.commands).toHaveLength(0);
   expect(session.getSnapshot().project!.document.passages[0].selected_take_id).toBe('original');
+});
+
+test('selecting another preview passage changes the text and queues that passage', async () => {
+  const result = await mount();
+  const picker = renderer.root.findByProps({ 'aria-label': 'Preview passage' });
+  act(() => picker.props.onChange({ target: { value: 'next-line' } }));
+  expect(renderer.root.findByProps({ 'aria-label': 'Spoken text preview' }).props.children).toBe(
+    'Another A P I call.',
+  );
+  await act(async () => {
+    await button('Generate preview take').props.onClick();
+  });
+  expect(result.generations[0]).toMatchObject({
+    passage_ids: ['next-line'],
+    count: 1,
+    adopt: false,
+  });
 });
 test('failed dictionary save preserves the local draft and recovery command', async () => {
   const result = await mount({ failSave: true });

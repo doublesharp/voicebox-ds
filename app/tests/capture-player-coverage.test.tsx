@@ -22,6 +22,7 @@ function makeWave() {
       }),
     fail: (index = 0) => rejects[index](new Error('old source failed')),
     getDuration: () => 12,
+    getMediaElement: () => null,
     isPlaying: () => false,
     seekTo: () => {},
     pause: () => {},

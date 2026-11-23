@@ -13,7 +13,7 @@ function text(value: unknown): string {
 function button(label: string) {
   return renderer.root.findAllByType('button').find((node) => text(node.props.children) === label)!;
 }
-async function mount(withSpeechReview = false) {
+async function mount(withSpeechReview = false, takeIds = ['base', 'donor']) {
   const commands: Array<{ type: string; payload: unknown }> = [];
   const generations: unknown[] = [];
   const auditions: unknown[][] = [];
@@ -59,7 +59,7 @@ async function mount(withSpeechReview = false) {
             ]
           : [],
       },
-      takes: ['base', 'donor'].map((id) => ({
+      takes: takeIds.map((id) => ({
         id,
         passage_id: 'line',
         asset_id: id,
@@ -122,6 +122,11 @@ async function mount(withSpeechReview = false) {
     );
   return { commands, generations, auditions, edit };
 }
+
+test('phrase repair is hidden until a take exists', async () => {
+  await mount(false, []);
+  expect(renderer.toJSON()).toBeNull();
+});
 
 test('repair uses source ranges in working samples and publishes an alternative without selecting it', async () => {
   const result = await mount();

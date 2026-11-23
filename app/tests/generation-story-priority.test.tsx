@@ -236,7 +236,7 @@ test('content sorts, reorders, removes, exports and reports failures', () => {
   act(() =>
     renderer.root
       .findByProps({ 'data-dnd': true })
-      .props.onDragEnd({ active: { id: 'g1' }, over: { id: 'g2' } }),
+      .props.onDragEnd({ active: { id: 'i1' }, over: { id: 'i2' } }),
   );
   expect(mutations.reorder.mutate.mock.calls[0][0]).toEqual({
     storyId: 'a',

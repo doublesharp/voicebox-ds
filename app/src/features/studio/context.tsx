@@ -13,6 +13,7 @@ export interface StudioContextValue {
   profiles: StudioProfile[];
   engines: StudioEngine[];
   capabilitiesError: string | null;
+  capabilitiesLoading?: boolean;
   playback: StudioPlayback;
   selectedPassageId: string | null;
   selectedClipId: string | null;

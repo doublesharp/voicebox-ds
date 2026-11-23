@@ -119,16 +119,22 @@ def validate_rules(rules):
     if not isinstance(rules, list) or len(rules) > 200:
         raise ValueError("Pronunciation rules must be a list of at most 200 entries")
     result, identifiers = [], set()
-    allowed = {"id", "source", "replacement", "profile_id", "case_sensitive", "whole_word"}
+    allowed = {"id", "source", "replacement", "profile_id", "case_sensitive", "whole_word", "recording_asset_id"}
     for value in rules:
         if not isinstance(value, dict) or set(value) - allowed:
             raise ValueError("Invalid pronunciation rule")
         rule = {"profile_id": None, "case_sensitive": False, "whole_word": True, **value}
+        replacement = rule.get("replacement")
+        recording = rule.get("recording_asset_id")
         if (
             any(
                 not isinstance(rule.get(key), str) or not rule[key].strip() or len(rule[key]) > limit
-                for key, limit in (("id", 120), ("source", 200), ("replacement", 500))
+                for key, limit in (("id", 120), ("source", 200))
             )
+            or not isinstance(replacement, str)
+            or len(replacement) > 500
+            or (not replacement.strip() and not recording)
+            or (recording is not None and (not isinstance(recording, str) or not recording.strip() or len(recording) > 120))
             or rule["id"] in identifiers
             or (
                 rule["profile_id"] is not None
@@ -152,15 +158,24 @@ def _word(character):
     return character.isalnum() or character == "_"
 
 
-def spoken_text(text, rules, profile_id=None):
+def supports_pronunciation_recordings(voice):
+    return bool(voice and voice.get("engine") == "qwen" and voice.get("voice_type") == "cloned")
+
+
+def pronunciation_input(text, rules, profile_id=None, *, use_recordings=False):
     """Leftmost-longest matches; equal-length voice rules precede project rules.
 
     Aliases are literal. Inserted replacements are not scanned again, and the
     source script remains the authoritative text for captions and provenance.
     """
-    applicable = [r for r in validate_rules(rules) if r["profile_id"] is None or r["profile_id"] == profile_id]
+    applicable = [
+        r for r in validate_rules(rules)
+        if (r["replacement"].strip() or (use_recordings and r.get("recording_asset_id")))
+        and (r["profile_id"] is None or r["profile_id"] == profile_id)
+    ]
     applicable.sort(key=lambda r: (-len(r["source"]), r["profile_id"] is None))
     output, index = [], 0
+    recordings = {}
     while index < len(text):
         for rule in applicable:
             end = index + len(rule["source"])
@@ -172,13 +187,23 @@ def spoken_text(text, rules, profile_id=None):
                 not rule["whole_word"]
                 or ((index == 0 or not _word(text[index - 1])) and (end == len(text) or not _word(text[end])))
             ):
-                output.append(rule["replacement"])
+                replacement = rule["replacement"] if rule["replacement"].strip() else actual
+                output.append(replacement)
+                if use_recordings and rule.get("recording_asset_id"):
+                    recordings.setdefault(rule["id"], {
+                        "asset_id": rule["recording_asset_id"],
+                        "reference_text": rule["replacement"].strip() or rule["source"],
+                    })
                 index = end
                 break
         else:
             output.append(text[index])
             index += 1
-    return "".join(output)
+    return "".join(output), list(recordings.values())
+
+
+def spoken_text(text, rules, profile_id=None):
+    return pronunciation_input(text, rules, profile_id)[0]
 
 
 def apply_pronunciation_command(doc, payload):
@@ -186,11 +211,13 @@ def apply_pronunciation_command(doc, payload):
         raise ValueError("Expected pronunciation rules")
     rules = validate_rules(payload["rules"])
     prior = doc.get("pronunciation_rules", [])
-    affected = [
-        p
-        for p in doc["passages"]
-        if spoken_text(p["text"], prior, p.get("profile_id")) != spoken_text(p["text"], rules, p.get("profile_id"))
-    ]
+    affected = []
+    for passage in doc["passages"]:
+        use_recordings = supports_pronunciation_recordings(passage.get("voice_snapshot"))
+        before = pronunciation_input(passage["text"], prior, passage.get("profile_id"), use_recordings=use_recordings)
+        after = pronunciation_input(passage["text"], rules, passage.get("profile_id"), use_recordings=use_recordings)
+        if before != after:
+            affected.append(passage)
     if any(p["locked"] for p in affected):
         raise ValueError(
             "A passage affected by pronunciation rules is locked; unlock it before changing its pronunciation"

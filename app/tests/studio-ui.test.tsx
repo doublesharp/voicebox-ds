@@ -29,7 +29,7 @@ import { PlatformProvider } from '../src/platform/PlatformContext';
 import type { Platform } from '../src/platform/types';
 
 let renderer: ReactTestRenderer;
-function Director() {
+function Director({ onCreateVoice }: { onCreateVoice?: () => void } = {}) {
   const { session, client, project } = useStudio();
   const submission = useDurableSubmission(
     session.storage,
@@ -37,7 +37,7 @@ function Director() {
     project.id,
     'generation',
   );
-  return <StudioDirector submission={submission} />;
+  return <StudioDirector submission={submission} onCreateVoice={onCreateVoice} />;
 }
 const sessions: Array<{ dispose(): void }> = [];
 afterEach(() => {
@@ -147,6 +147,7 @@ async function mount(
   options: {
     project?: StudioProject;
     engines?: StudioEngine[];
+    noVoices?: boolean;
     conflict?: boolean;
     failGenerate?: boolean;
     failRender?: boolean;
@@ -277,15 +278,17 @@ async function mount(
       project: save.project!,
       save,
       session,
-      profiles: [
-        {
-          id: 'voice',
-          name: 'Narrator',
-          default_engine: 'engine',
-          language: 'en',
-          voice_type: 'preset',
-        },
-      ],
+      profiles: options.noVoices
+        ? []
+        : [
+            {
+              id: 'voice',
+              name: 'Narrator',
+              default_engine: 'engine',
+              language: 'en',
+              voice_type: 'preset',
+            },
+          ],
       engines: options.engines ?? [engine],
       capabilitiesError: null,
       playback: {
@@ -350,6 +353,28 @@ function textContent(value: ReactNode): string {
 }
 
 describe('connected studio controls', () => {
+  test('an empty voice library offers voice creation in place of generation controls', async () => {
+    const project = fixture();
+    project.document.clips = [];
+    project.takes = [];
+    const passage = project.document.passages[0];
+    passage.profile_id = null;
+    passage.voice_snapshot = null;
+    passage.selected_take_id = null;
+    let opened = false;
+    await mount(
+      <Director
+        onCreateVoice={() => {
+          opened = true;
+        }}
+      />,
+      { project, noVoices: true },
+    );
+    act(() => button('Create voice').props.onClick());
+    expect(opened).toBe(true);
+    expect(renderer.root.findAllByProps({ 'aria-label': 'Passage voice' })).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('Generate take');
+  });
   test('script input remains visible and recoverable after a revision conflict', async () => {
     const { session, commands } = await mount(<ScriptEditor />, { conflict: true });
     act(() =>

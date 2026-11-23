@@ -333,7 +333,7 @@ test('device toggles cannot send overlapping updates based on stale assignments'
       );
     });
     const channel = view.root
-      .findAllByType('button')
+      .findAllByProps({ role: 'button' })
       .find((button) =>
         button.findAllByType('h3').some((title) => title.children.includes('Narration')),
       )!;
@@ -403,7 +403,7 @@ test('device toggles stay disabled when refreshing channel assignments fails', a
       );
     });
     const channel = view.root
-      .findAllByType('button')
+      .findAllByProps({ role: 'button' })
       .find((button) =>
         button.findAllByType('h3').some((title) => title.children.includes('Narration')),
       )!;
