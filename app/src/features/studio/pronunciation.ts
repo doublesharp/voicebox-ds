@@ -5,6 +5,7 @@ export interface PronunciationRule {
   profile_id: string | null;
   case_sensitive: boolean;
   whole_word: boolean;
+  recording_asset_id?: string;
 }
 
 export function pronunciationError(rules: PronunciationRule[]) {
@@ -15,12 +16,12 @@ export function pronunciationError(rules: PronunciationRule[]) {
       !rule.id ||
       ids.has(rule.id) ||
       !rule.source.trim() ||
-      !rule.replacement.trim() ||
+      (!rule.replacement.trim() && !rule.recording_asset_id) ||
       [...rule.source].length > 200 ||
       [...rule.replacement].length > 500 ||
       /[\r\n\0]/.test(rule.source + rule.replacement)
     )
-      return 'Each rule needs a word or phrase (up to 200 characters) and a spoken alias (up to 500 characters).';
+      return 'Enter a word or phrase and add a spoken alias or recording.';
     ids.add(rule.id);
   }
   return null;
@@ -31,9 +32,14 @@ export function previewPronunciation(
   text: string,
   rules: PronunciationRule[],
   profileId: string | null,
+  useRecordings = false,
 ) {
   const applicable = rules
-    .filter((rule) => rule.source && (!rule.profile_id || rule.profile_id === profileId))
+    .filter((rule) =>
+      rule.source &&
+      (rule.replacement.trim() || (useRecordings && rule.recording_asset_id)) &&
+      (!rule.profile_id || rule.profile_id === profileId),
+    )
     .slice()
     .sort(
       (a, b) =>
@@ -42,6 +48,7 @@ export function previewPronunciation(
     );
   const input = [...text];
   const output: string[] = [];
+  const recordings = new Set<string>();
   const substitutions: Array<{
     rule_id: string;
     source: string;
@@ -66,21 +73,19 @@ export function previewPronunciation(
     });
     if (match) {
       const end = index + [...match.source].length;
-      output.push(match.replacement);
-      substitutions.push({
-        rule_id: match.id,
-        source: input.slice(index, end).join(''),
-        replacement: match.replacement,
-        start: index,
-        end,
-      });
+      const source = input.slice(index, end).join('');
+      output.push(match.replacement.trim() ? match.replacement : source);
+      if (useRecordings && match.recording_asset_id) recordings.add(match.id);
+      if (match.replacement.trim()) {
+        substitutions.push({ rule_id: match.id, source, replacement: match.replacement, start: index, end });
+      }
       index = end;
     } else {
       output.push(input[index]);
       index++;
     }
   }
-  return { text: output.join(''), substitutions };
+  return { text: output.join(''), substitutions, recordings };
 }
 
 export interface PronunciationPackEntry {

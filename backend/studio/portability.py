@@ -75,6 +75,9 @@ def import_archive(store, archive_path):
         def document(value):
             if "take_annotations" in value:
                 value["take_annotations"] = {ref(key): item for key, item in value["take_annotations"].items()}
+            for rule in value.get("pronunciation_rules", []):
+                if rule.get("recording_asset_id") is not None:
+                    rule["recording_asset_id"] = ref(rule["recording_asset_id"])
             for item in value["passages"]:
                 passage(item)
             for track in value["tracks"]:
@@ -106,6 +109,8 @@ def import_archive(store, archive_path):
             if isinstance(take.get("request", {}).get("passage"), dict):
                 passage(take["request"]["passage"])
             request = take.get("request", {})
+            for recording in request.get("pronunciation_recordings", []):
+                recording["asset_id"] = ref(recording["asset_id"])
             composition = request.get("composition")
             if isinstance(composition, dict) and isinstance(composition.get("segments"), list):
                 for segment in composition["segments"]:

@@ -68,7 +68,7 @@ test('window attaches after async loading, scrolls to older rows, and retains an
   act(() => view!.update(<Harness loaded pin="0" />));
   expect(listeners.has('scroll')).toBe(true);
   expect(view!.root.findAllByType('span').length).toBeLessThan(20);
-  scrollTop = 152 * 500;
+  scrollTop = 116 * 500;
   act(() => listeners.get('scroll')!());
   const indices = view!.root.findAllByType('span').map((node) => node.props['data-index']);
   expect(indices).toContain(500);

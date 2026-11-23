@@ -165,6 +165,7 @@ export function PhraseRepairPanel({
       </StudioButton>
     </div>
   );
+  if (!takes.length && !generation.request && !generation.error) return null;
   return (
     <details className="studio-advanced studio-phrase-repairs">
       <summary>Phrase repairs &amp; comping</summary>
@@ -183,11 +184,7 @@ export function PhraseRepairPanel({
           );
         }}
       />
-      <p className="studio-note">
-        Generate a replacement word or phrase, then choose exact source ranges by listening. A new
-        take preserves every original; use it from Takes after review. Crossfades overlap the joins
-        and shorten the result.
-      </p>
+      <p className="studio-note">Listen to the source takes and choose the ranges to join.</p>
       <Field label="Replacement phrase text">
         <Input
           aria-label="Replacement phrase text"
@@ -231,10 +228,7 @@ export function PhraseRepairPanel({
           Dismiss rejected phrase generation
         </StudioButton>
       )}
-      <p className="studio-note">
-        The generated phrase appears as an alternative in Takes. Select it as a source below when
-        its job completes.
-      </p>
+      <p className="studio-note">Choose the phrase from Takes after it generates.</p>
       {!!takes.length && (
         <>
           <Field label="Edit mode">

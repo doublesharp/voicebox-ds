@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tempfile
 from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
@@ -26,20 +27,28 @@ from backend.utils.speech_delivery import apply_speed
 
 
 @pytest.mark.asyncio
-async def test_multisample_studio_voice_keeps_combined_wav_until_generate_finishes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("sample_count,source_format,with_guide", [(1, "WAV", False), (2, "WAV", False), (1, "FLAC", False), (1, "WAV", True)])
+async def test_studio_voice_keeps_named_wav_until_generate_finishes(tmp_path, monkeypatch, sample_count, source_format, with_guide):
     """Regression: MLX and Chatterbox read ref_audio lazily inside generate()."""
+    # Python can cache a temporary directory that disappears after startup.
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "removed-build-directory"))
     store = StudioStore(tmp_path / "studio")
     project = store.create_project("Clone", script="Testing multi sample voice.")
     assets = []
-    for idx in range(2):
-        src = tmp_path / f"ref_{idx}.wav"
-        sf.write(src, np.full(2400, 0.1 * (idx + 1), dtype=np.float32), 24000)
+    for idx in range(sample_count):
+        src = tmp_path / f"ref_{idx}"
+        sf.write(src, np.full(2400, 0.1 * (idx + 1), dtype=np.float32), 24000, format=source_format)
         assets.append(store.add_asset(project["id"], src))
 
     seen_ref_paths: list[tuple[str, bool]] = []
+    guide = tmp_path / "guide.wav"
+    sf.write(guide, np.full(2400, 0.2, dtype=np.float32), 24000)
 
     class LazyMLXBackend:
         async def combine_voice_prompts(self, paths, texts):
+            if with_guide:
+                assert paths[0] == str(store.asset_path(assets[0]["id"]))
+                assert texts == ["Reference", "Testing"]
             return np.full(4800, 0.1, dtype=np.float32), " ".join(texts)
 
         async def create_voice_prompt(self, audio_path, reference_text, use_cache=True):
@@ -48,6 +57,8 @@ async def test_multisample_studio_voice_keeps_combined_wav_until_generate_finish
         async def generate(self, text, voice_prompt, language="en", seed=None, instruct=None):
             ref = voice_prompt["ref_audio"]
             seen_ref_paths.append((ref, Path(ref).is_file()))
+            assert Path(ref).suffix == ".wav"
+            assert sf.info(ref).format == "WAV"
             return np.full(2400, 0.1, dtype=np.float32), 24000
 
     async def noop(*args, **kwargs):
@@ -64,17 +75,19 @@ async def test_multisample_studio_voice_keeps_combined_wav_until_generate_finish
         "engine": "qwen",
         "model_size": "1.7B",
         "voice_type": "cloned",
-        "samples": [
-            {"asset_id": assets[0]["id"], "reference_text": "One"},
-            {"asset_id": assets[1]["id"], "reference_text": "Two"},
-        ],
+        "samples": [{"asset_id": asset["id"], "reference_text": "Reference"} for asset in assets],
     }
-    audio, rate = await synthesize({"passage": p, "spoken_text": p["text"]}, store)
+    request = {"passage": p, "spoken_text": p["text"]}
+    if with_guide:
+        asset = store.add_asset(project["id"], guide)
+        request["pronunciation_recordings"] = [{"asset_id": asset["id"], "reference_text": "Testing"}]
+    audio, rate = await synthesize(request, store)
     assert rate == 24000 and len(audio) == 2400
     assert len(seen_ref_paths) == 1
-    combined_path, existed_during_generate = seen_ref_paths[0]
+    reference_path, existed_during_generate = seen_ref_paths[0]
     assert existed_during_generate is True
-    assert not Path(combined_path).exists()
+    assert not Path(reference_path).exists()
+    assert all(store.asset_path(asset["id"]).is_file() for asset in assets)
 
 
 def test_studio_ffmpeg_discovery_uses_desktop_fallback(monkeypatch):

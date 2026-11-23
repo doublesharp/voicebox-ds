@@ -5,6 +5,7 @@ import json
 
 import numpy as np
 import pytest
+import soundfile as sf
 
 from backend.studio.jobs import StudioJobs
 from backend.studio.storage import StudioStore, encode
@@ -131,6 +132,68 @@ def test_dictionary_command_is_revisioned_replayable_and_undoable(tmp_path):
     assert undone["document"].get("pronunciation_rules", []) == []
     restored = StudioStore(tmp_path).get_project(project["id"])
     assert restored["revision"] == 2
+
+
+def test_recorded_pronunciation_saves_without_alias_and_keeps_spoken_text(tmp_path):
+    from backend.studio.archive import write_archive
+    from backend.studio.portability import import_archive
+    from backend.studio.pronunciation import spoken_text
+
+    store = StudioStore(tmp_path / "studio")
+    project = store.create_project("Dictionary", script="Call API.")
+    other = store.create_project("Other")
+    recording = tmp_path / "example.wav"
+    sf.write(recording, np.full(2400, 0.1, dtype=np.float32), 24000)
+    foreign = store.add_asset(other["id"], recording)
+    with pytest.raises(ValueError, match="not in this project"):
+        store.command(project["id"], "foreign", 0, "set_pronunciation_rules", {
+            "rules": [rule(replacement="", recording_asset_id=foreign["id"])],
+        })
+
+    local = store.add_asset(project["id"], recording)
+    recorded = rule(replacement="", recording_asset_id=local["id"])
+    store.command(project["id"], "dictionary", 0, "set_pronunciation_rules", {"rules": [recorded]})
+    restored = StudioStore(store.root).get_project(project["id"])
+    assert restored["document"]["pronunciation_rules"] == [recorded]
+    assert spoken_text("Call API.", [recorded]) == "Call API."
+    assert restored["document"]["passages"][0]["input_revision"] == 0
+    archive = tmp_path / "dictionary.zip"
+    write_archive(restored, restored["assets"], store.asset_path, archive, take_scope="used")
+    imported = import_archive(store, archive)
+    imported_rule = imported["document"]["pronunciation_rules"][0]
+    assert imported_rule["recording_asset_id"] != local["id"]
+    assert store.asset_path(imported_rule["recording_asset_id"]).read_bytes() == recording.read_bytes()
+
+
+@pytest.mark.asyncio
+async def test_generation_freezes_only_recordings_used_by_the_selected_qwen_voice(tmp_path):
+    store = StudioStore(tmp_path / "studio")
+    project = store.create_project("Dictionary", script="Call API and API again.")
+    pid = project["document"]["passages"][0]["id"]
+    recording = tmp_path / "example.wav"
+    sf.write(recording, np.full(2400, 0.1, dtype=np.float32), 24000)
+    asset = store.add_asset(project["id"], recording)
+    with store.connect() as db:
+        doc = project["document"]
+        doc["passages"][0]["voice_snapshot"] = {"engine": "qwen", "voice_type": "cloned"}
+        db.execute("UPDATE projects SET document=? WHERE id=?", (encode(doc), project["id"]))
+    put_rules(store, project["id"], [
+        rule(replacement="", recording_asset_id=asset["id"]),
+        rule(source="USB", replacement="", recording_asset_id=asset["id"]),
+        rule(source="Call", replacement="", profile_id="a-different-voice", recording_asset_id=asset["id"]),
+    ])
+    pending, requests = [], []
+
+    async def synth(request):
+        requests.append(request)
+        return np.zeros(100, dtype="float32"), 1000
+
+    jobs = StudioJobs(store, synth=synth, capability_resolver=capabilities, enqueue=lambda _, coro: pending.append(coro))
+    jobs.submit(project["id"], "recorded-guide", [pid], 1, False)
+    put_rules(store, project["id"], [])
+    await pending.pop()
+    assert requests[0]["spoken_text"] == "Call API and API again."
+    assert requests[0]["pronunciation_recordings"] == [{"asset_id": asset["id"], "reference_text": "API"}]
 
 
 @pytest.mark.asyncio

@@ -116,7 +116,10 @@ def _validate_document(doc, assets, takes):
     from .captions import validate_caption_document
     from .pronunciation import validate_rules
 
-    validate_rules(doc.get("pronunciation_rules", []))
+    for rule in validate_rules(doc.get("pronunciation_rules", [])):
+        recording = rule.get("recording_asset_id")
+        if recording is not None and recording not in assets:
+            raise ValueError("A pronunciation recording is not in this project")
     validate_caption_document(doc, assets, takes)
     annotations = doc.get("take_annotations", {})
     if not isinstance(annotations, dict):
@@ -216,6 +219,15 @@ def _validate_project(project, assets):
             raise ValueError("invalid take request")
         if "passage" in take.get("request", {}) and not isinstance(take["request"]["passage"], dict):
             raise ValueError("invalid frozen passage snapshot")
+        recordings = take.get("request", {}).get("pronunciation_recordings", [])
+        if not isinstance(recordings, list) or len(recordings) > 200 or any(
+            not isinstance(recording, dict)
+            or not isinstance(recording.get("asset_id"), str)
+            or recording["asset_id"] not in assets
+            or not isinstance(recording.get("reference_text"), str)
+            for recording in recordings
+        ):
+            raise ValueError("invalid take pronunciation recording")
     documents = [project["document"]]
     revisions = _records(project.get("revisions", []), "revision")
     from .review_schema import validate_reviews

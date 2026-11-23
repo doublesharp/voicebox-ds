@@ -2,11 +2,14 @@
 
 import copy
 import json
+from pathlib import Path
+from shutil import copyfile
+from tempfile import TemporaryDirectory
 
 from ..utils.inference import serialized_inference
 from .capabilities import freeze_passage, resolve_voice
 from .job_state import enrich_job, phase, start_attempt
-from .pronunciation import spoken_text, validate_rules
+from .pronunciation import pronunciation_input, supports_pronunciation_recordings, validate_rules
 from .storage import Conflict, NotFound, encode, now, uid
 
 
@@ -71,7 +74,10 @@ class StudioJobs:
                 p = copy.deepcopy(p)
                 if phrase_text is not None:
                     p["text"] = phrase_text
-                spoken = spoken_text(p["text"], rules, p.get("profile_id"))
+                spoken, pronunciation_recordings = pronunciation_input(
+                    p["text"], rules, p.get("profile_id"),
+                    use_recordings=supports_pronunciation_recordings(p.get("voice_snapshot")),
+                )
                 caps, effective = freeze_passage({**p, "text": spoken}, self.capability_resolver)
                 if commercial_only and caps.get("commercial_use") != "allowed":
                     raise ValueError(f"Passage {ident}: model is not eligible for commercial-only generation")
@@ -86,8 +92,13 @@ class StudioJobs:
                         capabilities=caps,
                         effective_direction=effective,
                         spoken_text=spoken,
-                        pronunciation_rules=rules,
+                        pronunciation_rules=[
+                            {key: value for key, value in rule.items() if key != "recording_asset_id"}
+                            for rule in rules if rule["replacement"].strip()
+                        ],
                     )
+                    if pronunciation_recordings:
+                        frozen["pronunciation_recordings"] = pronunciation_recordings
                     if phrase_text is not None:
                         frozen["phrase_repair"] = {"source_text": original_text, "source_passage_id": ident}
                     if commercial_only:
@@ -338,28 +349,38 @@ async def synthesize(request, store, set_phase=None):
     await ensure_model_cached_or_raise(engine, size)
     model = get_tts_backend_for_engine(engine)
     await load_engine_model(engine, size)
-    combined_path = None
+    reference_dir = None
     try:
         if voice["voice_type"] == "preset":
             prompt = {k: voice[k] for k in ("voice_type", "preset_engine", "preset_voice_id")}
         elif voice["voice_type"] == "designed":
             prompt = {"voice_type": "designed", "design_prompt": voice["design_prompt"]}
         else:
+            import soundfile as sf
+
             samples = voice.get("samples", [])
             if not samples:
                 raise ValueError("Voice reference snapshot is missing")
+            samples = [*samples, *request.get("pronunciation_recordings", [])]
             paths = [str(store.asset_path(s["asset_id"])) for s in samples]
+            # Studio assets have opaque names, but some decoders require the WAV suffix.
+            # Keep the local reference until every generation chunk finishes reading it.
+            reference_staging = store.root / "tmp" / "references"
+            reference_staging.mkdir(parents=True, exist_ok=True)
+            reference_dir = TemporaryDirectory(prefix="reference-", dir=reference_staging)
+            reference_path = Path(reference_dir.name) / "reference.wav"
             if len(paths) == 1:
-                prompt, _ = await model.create_voice_prompt(paths[0], samples[0]["reference_text"], use_cache=False)
+                info = sf.info(paths[0])
+                if info.format == "WAV" and info.subtype == "PCM_16":
+                    copyfile(paths[0], reference_path)
+                else:
+                    waveform, sample_rate = sf.read(paths[0], dtype="float32")
+                    sf.write(str(reference_path), waveform, sample_rate, format="WAV")
+                reference_text = samples[0]["reference_text"]
             else:
-                import soundfile as sf
-
                 combined, reference_text = await model.combine_voice_prompts(paths, [s["reference_text"] for s in samples])
-                combined_path = store.asset_dir / (".combined-" + uid())
-                sf.write(str(combined_path), combined, 24000, format="WAV")
-                # Keep combined_path on disk until generate_chunked completes: MLX and
-                # Chatterbox backends store ref_audio lazily and read it inside generate().
-                prompt, _ = await model.create_voice_prompt(str(combined_path), reference_text, use_cache=False)
+                sf.write(str(reference_path), combined, 24000, format="WAV")
+            prompt, _ = await model.create_voice_prompt(str(reference_path), reference_text, use_cache=False)
         d = request.get("effective_direction", p["direction"])
         if set_phase:
             set_phase("generating")
@@ -383,5 +404,5 @@ async def synthesize(request, store, set_phase=None):
             audio = protect_audio_peak(apply_speed(audio, rate, speed))
         return audio, rate
     finally:
-        if combined_path is not None:
-            combined_path.unlink(missing_ok=True)
+        if reference_dir is not None:
+            reference_dir.cleanup()

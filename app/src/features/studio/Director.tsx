@@ -17,9 +17,13 @@ import { Field, NumberField, StudioButton } from './ui';
 export function Director({
   submission,
   onOpenPronunciation,
+  onCreateVoice,
+  showTitle = true,
 }: {
   submission: ReturnType<typeof useDurableSubmission<'generation'>>;
   onOpenPronunciation?: (opener: HTMLButtonElement) => void;
+  onCreateVoice?: () => void;
+  showTitle?: boolean;
 }) {
   const studio = useStudio();
   const { project, session, save, selectedPassageId, profiles, engines, client } = studio;
@@ -87,7 +91,7 @@ export function Director({
     return (
       <div className="studio-inspector-content">
         {recoveryPanel}
-        <h2>Voice &amp; takes</h2>
+        {showTitle && <h2>Voice &amp; takes</h2>}
         <p className="studio-note">Select a passage to assign a voice or generate takes.</p>
         {submissionStatus}
         {request && (
@@ -125,6 +129,36 @@ export function Director({
   );
   const direction = save.drafts[passage.id]?.direction ?? passage.direction;
   const currentText = save.drafts[passage.id]?.text ?? passage.text;
+  if (!passage.profile_id && !profiles.length && !request && !rejected) {
+    return (
+      <div className="studio-inspector-content">
+        {recoveryPanel}
+        {showTitle && <h2>Voice &amp; takes</h2>}
+        {submissionStatus}
+        <div className="studio-generate-box">
+          {studio.capabilitiesLoading ? (
+            <p className="studio-note">Loading voices…</p>
+          ) : studio.capabilitiesError ? (
+            <p role="alert" className="studio-error">
+              {studio.capabilitiesError}
+            </p>
+          ) : (
+            <>
+              <p className="studio-note">Create a voice to generate your first take.</p>
+              {onCreateVoice && (
+                <StudioButton primary onClick={onCreateVoice}>
+                  Create voice
+                </StudioButton>
+              )}
+            </>
+          )}
+        </div>
+        {project.takes.some((take) => take.passage_id === passage.id) && (
+          <TakeWorkflow key={passage.id} passage={passage} currentText={currentText} />
+        )}
+      </div>
+    );
+  }
   const disabled = !studio.canMutate || passage.locked;
   const profile = profiles.find((profile) => profile.id === passage.profile_id);
   const engineId =
@@ -173,13 +207,15 @@ export function Director({
   return (
     <div className="studio-inspector-content">
       {recoveryPanel}
-      <div className="studio-section-title">
-        <h2>Voice &amp; takes</h2>
-        {passage.locked && <span className="studio-status-chip">Locked</span>}
-        {!passage.locked && selectedIds.length > 1 && (
-          <span>{selectedIds.length} passages selected</span>
-        )}
-      </div>
+      {(showTitle || passage.locked || selectedIds.length > 1) && (
+        <div className="studio-section-title">
+          {showTitle && <h2>Voice &amp; takes</h2>}
+          {passage.locked && <span className="studio-status-chip">Locked</span>}
+          {!passage.locked && selectedIds.length > 1 && (
+            <span>{selectedIds.length} passages selected</span>
+          )}
+        </div>
+      )}
       {missingReferences && <RegenerationReferenceNotice />}
       <Field label="Voice">
         <select
@@ -218,9 +254,6 @@ export function Director({
           ))}
         </select>
       </Field>
-      {!profiles.length && (
-        <p className="studio-note">Create a voice in Voices, then return here to assign it.</p>
-      )}
       {studio.capabilitiesError && (
         <p aria-live="polite" className="studio-error">
           {studio.capabilitiesError}

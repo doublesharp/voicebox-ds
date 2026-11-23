@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, BookOpen, Lock, Plus, Trash2, Unlock } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ export function ScriptEditor({
 }) {
   const studio = useStudio();
   const { project, session, save, canMutate } = studio;
+  const passageControlId = useId();
   const [pasteOpen, setPasteOpen] = useState(false);
   const [text, setText] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -183,14 +185,14 @@ export function ScriptEditor({
               aria-label={`Passage ${index + 1}`}
             >
               <div className="studio-passage-heading">
-                <label className="studio-check">
-                  <input
-                    type="checkbox"
+                <label className="studio-check" htmlFor={`${passageControlId}-${index}`}>
+                  <Checkbox
+                    id={`${passageControlId}-${index}`}
                     aria-label={`Include passage ${index + 1}`}
                     checked={studio.checkedPassages.includes(passage.id)}
-                    onChange={(e) =>
+                    onCheckedChange={(checked) =>
                       studio.setCheckedPassages(
-                        e.target.checked
+                        checked
                           ? [...studio.checkedPassages, passage.id]
                           : studio.checkedPassages.filter((id) => id !== passage.id),
                       )
