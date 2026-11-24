@@ -55,16 +55,12 @@ export function ModelResidencyControls({ models }: { models: ModelStatus[] }) {
   const busy = update.isPending || warm.isPending;
   const error = update.error || warm.error || status.error;
   return (
-    <section className="rounded-lg border p-4 space-y-3" aria-label="Model readiness">
-      <div>
-        <h2 className="font-medium text-sm">Model readiness</h2>
-        <p className="text-xs text-muted-foreground">
-          Keep recently selected speech models loaded within session limits. Choosing another model
-          can release the oldest one.
-        </p>
-      </div>
+    <section
+      className="space-y-3 border-t border-border/60 px-3 py-3.5"
+      aria-label="Model readiness"
+    >
       <form
-        className="flex flex-wrap items-end gap-3"
+        className="flex flex-wrap items-end gap-x-3 gap-y-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (valid)
@@ -74,7 +70,10 @@ export function ModelResidencyControls({ models }: { models: ModelStatus[] }) {
             });
         }}
       >
-        <label className="text-xs space-y-1" htmlFor="resident-engine-limit">
+        <label
+          className="min-w-0 flex-1 basis-32 space-y-1 text-xs sm:flex-none"
+          htmlFor="resident-engine-limit"
+        >
           <span>Loaded speech engines (1–4)</span>
           <Input
             id="resident-engine-limit"
@@ -85,10 +84,13 @@ export function ModelResidencyControls({ models }: { models: ModelStatus[] }) {
             value={count}
             disabled={busy || !status.data}
             onChange={(event) => setEngineLimit(event.target.value)}
-            className="w-36"
+            className="w-full sm:w-36"
           />
         </label>
-        <label className="text-xs space-y-1" htmlFor="resident-weight-budget">
+        <label
+          className="min-w-0 flex-1 basis-32 space-y-1 text-xs sm:flex-none"
+          htmlFor="resident-weight-budget"
+        >
           <span>Estimated weight budget (MB)</span>
           <Input
             id="resident-weight-budget"
@@ -99,10 +101,10 @@ export function ModelResidencyControls({ models }: { models: ModelStatus[] }) {
             value={budget}
             disabled={busy || !status.data}
             onChange={(event) => setWeightBudget(event.target.value)}
-            className="w-40"
+            className="w-full sm:w-44"
           />
         </label>
-        <Button type="submit" size="sm" variant="outline" disabled={!valid || busy || !status.data}>
+        <Button type="submit" variant="outline" disabled={!valid || busy || !status.data}>
           {update.isPending ? 'Applying…' : 'Apply session limits'}
         </Button>
       </form>
@@ -114,27 +116,28 @@ export function ModelResidencyControls({ models }: { models: ModelStatus[] }) {
       <p className="text-xs text-muted-foreground">
         Weight sizes are estimates, not a RAM limit. Settings reset when the server restarts.
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-xs" htmlFor="prewarm-model">
-          Downloaded speech model
-        </label>
-        <select
-          id="prewarm-model"
-          value={selected}
-          onChange={(event) => setSelectedModel(event.target.value)}
-          className="max-w-full rounded-md border bg-background px-2 py-1.5 text-xs"
-          disabled={busy || !eligible.length}
-        >
-          {!eligible.length && <option value="">Download a speech model first</option>}
-          {eligible.map((model) => (
-            <option key={model.model_name} value={model.model_name}>
-              {model.display_name}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border-t border-border/60 pt-3">
+        <div className="w-full min-w-0 space-y-1 sm:w-auto">
+          <label className="block text-xs" htmlFor="prewarm-model">
+            Downloaded speech model
+          </label>
+          <select
+            id="prewarm-model"
+            value={selected}
+            onChange={(event) => setSelectedModel(event.target.value)}
+            className="block h-9 w-full max-w-full rounded-md border bg-background px-2 text-sm focus-visible:outline-2 focus-visible:outline-ring sm:w-64"
+            disabled={busy || !eligible.length}
+          >
+            {!eligible.length && <option value="">Download a speech model first</option>}
+            {eligible.map((model) => (
+              <option key={model.model_name} value={model.model_name}>
+                {model.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
         <Button
           type="button"
-          size="sm"
           disabled={busy || !eligible.some((model) => model.model_name === selected)}
           onClick={() => warm.mutate(selected)}
         >

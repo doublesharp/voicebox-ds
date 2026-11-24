@@ -10,12 +10,12 @@ Voicebox can run as a Docker container with a full web UI -- no desktop app requ
 ## Quick Start
 
 ```bash
-git clone https://github.com/jamiepine/voicebox.git
-cd voicebox
+git clone https://github.com/doublesharp/voicebox-ds.git
+cd voicebox-ds
 docker compose up
 ```
 
-Open [http://localhost:17493](http://localhost:17493) in your browser. The full Voicebox UI is served directly from the backend.
+Open [http://localhost:17601](http://localhost:17601) in your browser. The full Voicebox UI is served directly from the backend.
 
 <Callout type="info">
   The first build takes a few minutes (compiling the frontend, installing Python dependencies). Subsequent starts are fast thanks to Docker layer caching.
@@ -38,13 +38,14 @@ The backend serves the web UI automatically when the built frontend is present. 
 The default `docker-compose.yml` binds to localhost only, mounts persistent volumes for data and model cache, and sets sensible resource limits:
 
 ```yaml
+name: voicebox-ds
+
 services:
   voicebox:
     build: .
-    container_name: voicebox
     restart: unless-stopped
     ports:
-      - "127.0.0.1:17493:17493"
+      - "127.0.0.1:17601:17493"
     volumes:
       - ./output:/app/data/generations
       - voicebox-data:/app/data
@@ -64,7 +65,7 @@ By default the container only listens on `127.0.0.1`. To allow other machines on
 
 ```yaml
 ports:
-  - "0.0.0.0:17493:17493"
+  - "0.0.0.0:17601:17493"
 ```
 
 <Callout type="warn">
@@ -170,7 +171,7 @@ server {
     auth_basic_user_file /etc/nginx/.htpasswd;
 
     location / {
-        proxy_pass http://127.0.0.1:17493;
+        proxy_pass http://127.0.0.1:17601;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -212,29 +213,16 @@ deploy:
 ### Port already in use
 
 ```bash
-# Check what's using port 17493
-lsof -i :17493
+# Check what's using port 17601
+lsof -i :17601
 
 # Or use a different port
 ports:
   - "127.0.0.1:8080:17493"
 ```
 
-## Prebuilt Images (Coming Soon)
-
-We plan to publish prebuilt Docker images to GitHub Container Registry so you won't need to build locally:
-
-```bash
-# Not available yet — coming in a future release
-docker run -p 17493:17493 ghcr.io/jamiepine/voicebox:latest
-```
-
-The CPU image will be ~3-4 GB (Python + PyTorch + TTS packages). A separate CUDA tag (~6-8 GB) will be available for NVIDIA GPU users. This is normal for ML containers.
-
-For now, use `docker compose up` to build from source as described above.
-
 ## Connecting the Desktop App
 
-You can also use the desktop app as a frontend for a Docker-hosted backend. In the desktop app, go to **Settings -> Server**, enable **Remote Mode**, and enter `http://<server-ip>:17493`.
+You can also use the desktop app as a frontend for a Docker-hosted backend. In the desktop app, go to **Settings -> Server**, enable **Remote Mode**, and enter `http://<server-ip>:17601`.
 
 See the [Remote Mode guide](/overview/remote-mode) for details.

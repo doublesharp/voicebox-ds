@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import voiceboxLogo from '@/assets/voicebox-ds-icon.png';
 import { Hint } from '@/components/ui/Hint';
 import { APP_BRANDING } from '@/lib/constants/branding';
+import { isProjectWorkspacePath } from '@/lib/constants/ui';
 import { cn } from '@/lib/utils/cn';
 import { usePlatform } from '@/platform/PlatformContext';
 import type { UpdateStatus } from '@/platform/types';
@@ -34,6 +35,7 @@ interface SidebarProps {
 type NavItem = { path: string; icon: LucideIcon; labelKey?: string; label?: string };
 const createItems: NavItem[] = [
   { path: '/studio/projects', icon: FolderOpen, label: 'Projects' },
+  { path: '/stories', icon: AudioLines, labelKey: 'nav.stories' },
   { path: '/', icon: Volume2, labelKey: 'nav.generate' },
   { path: '/voices', icon: Mic, labelKey: 'nav.voices' },
   { path: '/captures', icon: Captions, labelKey: 'nav.captures' },
@@ -42,7 +44,6 @@ const toolItems: NavItem[] = [
   { path: '/effects', icon: Wand2, labelKey: 'nav.effects' },
   { path: '/models', icon: Box, labelKey: 'nav.models' },
 ];
-const stories: NavItem = { path: '/stories', icon: AudioLines, labelKey: 'nav.stories' };
 const settings: NavItem = { path: '/settings', icon: Settings, labelKey: 'nav.settings' };
 
 export function Sidebar({
@@ -57,6 +58,16 @@ export function Sidebar({
   const dragging = useRef<number | null>(null);
   const resize = (value: number) => onResize?.(Math.max(160, Math.min(280, value)));
   const path = useRouterState({ select: (state) => state.location.pathname });
+  const [wideRail, setWideRail] = useState(false);
+  useEffect(() => {
+    if (desktop || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(min-width: 1100px)');
+    const sync = () => setWideRail(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, [desktop]);
+  const showNavHints = desktop ? collapsed : !wideRail || isProjectWorkspacePath(path);
   const platform = usePlatform();
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(platform.updater.getStatus());
   useEffect(() => platform.updater.subscribe(setUpdateStatus), [platform.updater]);
@@ -67,7 +78,7 @@ export function Sidebar({
     const current =
       tab.path === '/' ? path === '/' : path === tab.path || path.startsWith(`${tab.path}/`);
     return (
-      <Hint key={tab.path} content={label}>
+      <Hint key={tab.path} content={label} enabled={showNavHints}>
         <Link
           to={tab.path}
           activeOptions={{ exact: tab.path === '/' }}
@@ -85,7 +96,7 @@ export function Sidebar({
     <aside
       className={cn(
         'app-rail fixed left-0 top-0 h-full bg-sidebar border-r border-border flex flex-col py-4 gap-3 overflow-y-auto',
-        isMacOS && 'pt-14',
+        desktop && isMacOS && 'pt-14',
       )}
     >
       {desktop && (
@@ -120,15 +131,7 @@ export function Sidebar({
       >
         <div className="flex flex-col gap-1">
           <span className="app-rail-group-label">Create</span>
-          {createItems.map((tab) => (
-            <span key={tab.path}>
-              {item(tab)}
-              {tab.path === '/studio/projects' &&
-                (path === '/stories' || path.startsWith('/stories/')) && (
-                  <span className="app-rail-nested">{item(stories)}</span>
-                )}
-            </span>
-          ))}
+          {createItems.map(item)}
         </div>
         <div className="flex flex-col gap-1">
           <span className="app-rail-group-label">Tools</span>

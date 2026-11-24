@@ -2,7 +2,7 @@
   <img src=".github/assets/icon-dark.webp" alt="Voicebox" width="120" height="120" />
 </p>
 
-<h1 align="center">Voicebox</h1>
+<h1 align="center">Voicebox DS</h1>
 
 <p align="center">
   <strong>The open-source AI voice studio.</strong><br/>
@@ -11,12 +11,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/jamiepine/voicebox/releases">
-    <img src="https://img.shields.io/github/downloads/jamiepine/voicebox/total?style=flat&color=blue" alt="Downloads" />
-  </a>
-  <a href="https://github.com/jamiepine/voicebox/releases/latest">
-    <img src="https://img.shields.io/github/v/release/jamiepine/voicebox?style=flat" alt="Release" />
-  </a>
   <a href="https://github.com/jamiepine/voicebox/stargazers">
     <img src="https://img.shields.io/github/stars/jamiepine/voicebox?style=flat" alt="Stars" />
   </a>
@@ -110,18 +104,11 @@ The two cloud incumbents sit on opposite halves of the voice I/O loop — Eleven
 
 ## Download
 
-| Platform              | Download                                               |
-| --------------------- | ------------------------------------------------------ |
-| macOS (Apple Silicon) | [Download DMG](https://voicebox.sh/download/mac-arm)   |
-| macOS (Intel)         | [Download DMG](https://voicebox.sh/download/mac-intel) |
-| Windows               | [Download MSI](https://voicebox.sh/download/windows)   |
-| Docker                | `docker compose up`                                    |
+Get the macOS (Apple Silicon) or Windows build from [Voicebox DS releases](https://github.com/doublesharp/voicebox-ds/releases) when available. See [test builds](docs/DOUBLESHARP_BUILDS.md) for the current build workflow.
 
-> **[View all binaries →](https://github.com/jamiepine/voicebox/releases/latest)**
+Open Voicebox DS and select **Try a voice** to hear your first take. To bring work from another install, import your exported voices or Studio projects. Each desktop app keeps its own library and model cache.
 
-> **Linux** — Pre-built binaries are not yet available. See [voicebox.sh/linux-install](https://voicebox.sh/linux-install) for build-from-source instructions.
-
-> **Having trouble?** See the [Troubleshooting Guide](docs/content/docs/overview/troubleshooting.mdx) for common install, generation, model-download, and GPU issues.
+For Docker, run `docker compose up --build` and open `http://127.0.0.1:17601`.
 
 ---
 
@@ -266,7 +253,7 @@ Also exposed as `POST /speak` for anything that doesn't speak MCP — ACP, A2A, 
 - **Bidirectional pill** — `recording`, `transcribing`, `refining`, and `speaking` are all states of the same OS-level overlay, so dictation and agent speech share one surface
 - **Per-agent voice binding** — in **Settings → MCP**, pin Claude Code to Morgan and Cursor to Scarlett so you can tell which agent is talking without looking. Each client's `last_seen_at` timestamp confirms the install actually took
 - **Always visible** — no silent background TTS; every agent-initiated speak surfaces the pill with the voice profile name for the full duration
-- **HTTP + stdio transports** — install as a URL in Claude Code / Cursor / Windsurf / VS Code MCP, or point stdio-only clients at the bundled `voicebox-mcp` binary
+- **HTTP + stdio transports** — install as a URL in Claude Code / Cursor / Windsurf / VS Code MCP, or point stdio-only clients at the bundled `voicebox-ds-mcp` binary
 
 ### Voice Personalities
 
@@ -308,23 +295,23 @@ Voicebox exposes a REST API for integrating voice I/O into your own apps and age
 
 ```bash
 # Generate speech
-curl -X POST http://127.0.0.1:17493/generate \
+curl -X POST http://127.0.0.1:17593/generate \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "profile_id": "abc123", "language": "en"}'
 
 # Agent voice output — any app or script can speak in a cloned voice
-curl -X POST http://127.0.0.1:17493/speak \
+curl -X POST http://127.0.0.1:17593/speak \
   -H "Content-Type: application/json" \
   -H "X-Voicebox-Client-Id: my-script" \
   -d '{"text": "Deploy complete.", "profile": "Morgan"}'
 
 # Transcribe an audio file
-curl -X POST http://127.0.0.1:17493/transcribe \
+curl -X POST http://127.0.0.1:17593/transcribe \
   -F "audio=@recording.wav" \
   -F "model=whisper-turbo"
 
 # List voice profiles
-curl http://127.0.0.1:17493/profiles
+curl http://127.0.0.1:17593/profiles
 ```
 
 `POST /speak` accepts `profile` as a name (case-insensitive) or id, and resolves via the same precedence as the MCP tool: explicit arg → per-client binding → `capture_settings.default_playback_voice_id`.
@@ -336,9 +323,9 @@ Voicebox ships a built-in **Model Context Protocol** server so any MCP-aware age
 **Claude Code one-liner:**
 
 ```
-claude mcp add voicebox \
+claude mcp add voicebox-ds \
   --transport http \
-  --url http://127.0.0.1:17493/mcp \
+  --url http://127.0.0.1:17593/mcp \
   --header "X-Voicebox-Client-Id: claude-code"
 ```
 
@@ -347,21 +334,21 @@ claude mcp add voicebox \
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "url": "http://127.0.0.1:17493/mcp",
+    "voicebox-ds": {
+      "url": "http://127.0.0.1:17593/mcp",
       "headers": { "X-Voicebox-Client-Id": "cursor" }
     }
   }
 }
 ```
 
-**Stdio fallback** for clients that don't speak HTTP MCP — point at the bundled `voicebox-mcp` binary inside the app:
+**Stdio fallback** for clients that don't speak HTTP MCP — point at the bundled `voicebox-ds-mcp` binary inside the app:
 
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "command": "/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp",
+    "voicebox-ds": {
+      "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp",
       "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
     }
   }
@@ -381,7 +368,7 @@ await voicebox_speak({
 
 **Use cases:** agent dev loops (voice in, voice out), game dialogue, podcast production, accessibility tools, voice assistants, content automation.
 
-Full API documentation available at `http://127.0.0.1:17493/docs`.
+Full API documentation available at `http://127.0.0.1:17593/docs`.
 
 ---
 
@@ -431,8 +418,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup and contribution guide
 ### Quick Start
 
 ```bash
-git clone https://github.com/jamiepine/voicebox.git
-cd voicebox
+git clone https://github.com/doublesharp/voicebox-ds.git
+cd voicebox-ds
 
 just setup   # creates Python venv, installs all deps
 just dev     # starts backend + desktop app

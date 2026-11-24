@@ -43,7 +43,7 @@ for (const [route, current] of [
     const active = links.filter((link) => link.props['aria-current'] === 'page');
     expect(active).toHaveLength(1);
     expect(active[0].props['aria-label']).toBe(current);
-    expect(links.some((link) => link.props.href === '/stories')).toBe(route === '/stories');
+    expect(links.some((link) => link.props.href === '/stories')).toBe(true);
   });
 }
 

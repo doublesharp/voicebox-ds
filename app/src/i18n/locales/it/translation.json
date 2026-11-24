@@ -294,6 +294,7 @@
     },
     "validation": {
       "nameRequired": "Il nome è richiesto",
+      "designPromptRequired": "Descrivi la voce.",
       "referenceRequired": "Il testo di riferimento è richiesto quando si aggiunge un campione",
       "sampleRequired": "Il campione audio è richiesto",
       "referenceTextRequired": "Il testo di riferimento è richiesto",
@@ -619,6 +620,7 @@
     }
   },
   "stories": {
+    "back": "Torna alle storie",
     "title": "Storie",
     "newStory": "Nuova storia",
     "loading": "Caricamento storie…",
@@ -667,6 +669,8 @@
     }
   },
   "storyContent": {
+    "generate": "Genera",
+    "export": "Esporta",
     "selectStory": {
       "title": "Seleziona una storia",
       "hint": "Scegli una storia dall'elenco per visualizzarne il contenuto"
@@ -781,6 +785,23 @@
       "placeholder": "Istruzioni di pronuncia — es. Parla lentamente con calore, Autorevole e chiaro…",
       "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
+    "delivery": {
+      "label": "Interpretazione",
+      "natural": "Naturale",
+      "upbeat": "Vivace",
+      "excited": "Entusiasta",
+      "custom": "Personalizzata",
+      "polish": "Rifinitura voce fuori campo",
+      "save": "Salva per questa voce",
+      "saved": "Salvato per questa voce",
+      "hear": "Ascolta",
+      "hearNatural": "Ascolta naturale",
+      "stop": "Ferma anteprima",
+      "stopNatural": "Ferma confronto",
+      "downloadHear": "Scarica e ascolta",
+      "previewFailed": "Anteprima vocale non riuscita",
+      "polishUnavailable": "La rifinitura non è disponibile. Scegli un altro effetto."
+    },
     "voiceSelector": {
       "placeholder": "Seleziona una voce…"
     },
@@ -804,6 +825,23 @@
   "main": {
     "importVoice": "Importa voce",
     "createVoice": "Crea voce",
+    "starter": {
+      "stepsLabel": "Passaggi iniziali",
+      "chooseStep": "Scegli una voce",
+      "sampleStep": "Primo audio",
+      "chooseHeading": "Crea il tuo primo audio",
+      "chooseDescription": "Genera una breve clip con una voce integrata.",
+      "sampleHeading": "Ascolta il tuo primo audio",
+      "voiceDescription": "Integrata · Inglese",
+      "createDescription": "Registra o carica un campione",
+      "importDescription": "Apri un backup .voicebox.zip",
+      "action": "Prova una voce",
+      "preparing": "Preparazione del campione…",
+      "ready": "Il campione è pronto.",
+      "failed": "Impossibile preparare il campione",
+      "play": "Riproduci campione",
+      "finish": "Apri Genera"
+    },
     "import": {
       "invalidTitle": "Tipo di file non valido",
       "invalidDescription": "Seleziona un file .voicebox.zip valido",
@@ -1392,6 +1430,9 @@
     "enable": "Enable microphones",
     "enabling": "Enabling…",
     "refresh": "Refresh microphones",
+    "permissionDeniedBrowser": "Accesso al microfono negato. Consentilo nelle impostazioni del sito e riprova.",
+    "permissionDeniedDesktop": "Accesso al microfono negato. Autorizza Voicebox nelle impostazioni di sistema e riprova.",
+    "openSettings": "Apri le impostazioni del microfono",
     "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
     "input": "Microphone {{number}}",
     "unavailable": "{{name}} (unavailable)",

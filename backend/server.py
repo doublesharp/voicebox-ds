@@ -291,7 +291,7 @@ if __name__ == "__main__":
         parser.add_argument(
             "--port",
             type=int,
-            default=8000,
+            default=config.DEFAULT_PORT,
             help="Port to bind to",
         )
         parser.add_argument(

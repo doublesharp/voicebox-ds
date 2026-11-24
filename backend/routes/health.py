@@ -7,13 +7,11 @@ import tempfile
 from pathlib import Path
 
 import torch
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Response
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 
 from .. import config, models
 from ..services import tts
-from ..database import get_db
 from ..utils.platform_detect import get_backend_type, is_amd_rocm_capable
 
 router = APIRouter()
@@ -55,8 +53,9 @@ async def watchdog_disable():
 
 
 @router.get("/health", response_model=models.HealthResponse)
-async def health():
+async def health(response: Response):
     """Health check endpoint."""
+    response.headers["X-Voicebox-Application"] = config.APPLICATION_ID
     tts_model = tts.get_tts_model()
     backend_type = get_backend_type()
 

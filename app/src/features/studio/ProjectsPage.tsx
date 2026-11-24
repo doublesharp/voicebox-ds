@@ -1,15 +1,28 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { ArrowRight, FileArchive, FolderOpen, Plus, Search, Upload } from 'lucide-react';
+import {
+  ChevronRight,
+  Ellipsis,
+  FileArchive,
+  FolderOpen,
+  Plus,
+  Search,
+  Upload,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useServerStore } from '@/stores/serverStore';
@@ -18,7 +31,7 @@ import { splitScript } from './domain';
 import { StorageCleanupDialog } from './StorageCleanupDialog';
 import { errorMessage } from './session';
 import type { StudioProject, StudioProjectSummary } from './types';
-import { EmptyState, Field, StudioButton } from './ui';
+import { Field, StudioButton } from './ui';
 import './studio.css';
 
 export function ProjectsPage() {
@@ -127,113 +140,131 @@ export function ProjectsPage() {
     `${p.name} ${p.client_label ?? ''}`.toLowerCase().includes(search.toLowerCase()),
   );
   const paragraphs = splitScript(script);
+  const projectMenus = (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className="studio-quiet" disabled={busy}>
+            <Upload size={15} aria-hidden="true" /> Import
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => archiveInput.current?.click()}>
+            <FileArchive size={15} className="mr-2" /> Project archive…
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setStoryOpen(true)}>Copy from Story…</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <details className="studio-project-more">
+        <summary className="studio-quiet" aria-label="More project actions">
+          <Ellipsis size={16} aria-hidden="true" />
+        </summary>
+        <div className="absolute right-0 z-20 mt-1 rounded-lg border bg-popover p-2 shadow-md">
+          <StorageCleanupDialog key={client.baseUrl} baseUrl={client.baseUrl} projects={projects} />
+        </div>
+      </details>
+    </>
+  );
   return (
     <section className="studio studio-projects" aria-label="Studio projects">
-      <header className="studio-landing-header">
-        <div>
-          <h1 className="text-xl font-semibold">Projects</h1>
-          <p>Bring your script, performances, and delivery together.</p>
-        </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <button className="studio-primary" type="button" hidden={!!toolbarTarget}>
-              <Plus size={16} /> New project
-            </button>
-          </DialogTrigger>
-          <DialogContent
-            className="studio studio-modal"
-            onCloseAutoFocus={(event) => {
-              if (toolbarTarget && desktopCreateButton.current) {
-                event.preventDefault();
-                desktopCreateButton.current.focus();
-              }
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <header className="studio-landing-header">
+          <h1>Projects</h1>
+          <div className="studio-project-actions">
+            {!toolbarTarget && projectMenus}
+            <DialogTrigger asChild>
+              <button className="studio-primary" type="button" hidden={!!toolbarTarget}>
+                <Plus size={16} aria-hidden="true" /> New project
+              </button>
+            </DialogTrigger>
+          </div>
+        </header>
+        <DialogContent
+          className="studio studio-modal"
+          aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            if (toolbarTarget && desktopCreateButton.current) {
+              event.preventDefault();
+              desktopCreateButton.current.focus();
+            }
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>New project</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void openProject(() =>
+                client.createProject({
+                  name: name.trim(),
+                  client_label: label.trim() || undefined,
+                  script,
+                  language,
+                }),
+              );
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Create a project</DialogTitle>
-              <DialogDescription>
-                Paste a script or begin with an empty canvas. Blank lines create separate passages.
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void openProject(() =>
-                  client.createProject({
-                    name: name.trim(),
-                    client_label: label.trim() || undefined,
-                    script,
-                    language,
-                  }),
-                );
-              }}
-            >
-              <Field label="Project name">
-                <Input
-                  autoFocus
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="A story worth telling"
-                  maxLength={200}
-                />
-              </Field>
-              <div className="studio-field-grid">
-                <Field label="Client / collection">
-                  <Input
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </Field>
-                <Field label="Language code">
-                  <Input
-                    required
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value)}
-                    placeholder="en"
-                  />
-                </Field>
-              </div>
-              <Field label="Script">
-                <Textarea
-                  value={script}
-                  onChange={(e) => setScript(e.target.value)}
-                  rows={6}
-                  placeholder="Paste your script here…"
-                />
-              </Field>
+            <Field label="Project name">
+              <Input
+                autoFocus
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={200}
+              />
+            </Field>
+            <Field label="Script">
+              <Textarea
+                value={script}
+                onChange={(e) => setScript(e.target.value)}
+                rows={5}
+                placeholder="Separate passages with a blank line."
+              />
+            </Field>
+            {paragraphs.length > 1 && (
               <details className="studio-paste-preview">
-                <summary>
-                  {paragraphs.length} {paragraphs.length === 1 ? 'passage' : 'passages'} in your
-                  script
-                </summary>
+                <summary>{paragraphs.length} passages</summary>
                 <ol>
                   {paragraphs.map((text, index) => (
                     <li key={`${index}-${text.slice(0, 20)}`}>{text}</li>
                   ))}
                 </ol>
               </details>
-              {error && (
-                <p role="alert" className="studio-error">
-                  {error}
-                </p>
-              )}
-              <button
-                className="studio-primary"
-                type="submit"
-                disabled={busy || !name.trim() || !language.trim()}
-              >
-                {busy ? 'Creating…' : 'Create project'}
-                <ArrowRight size={15} />
-              </button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </header>
+            )}
+            <details className="studio-project-options">
+              <summary>Project settings</summary>
+              <div className="studio-field-grid">
+                <Field label="Client / collection">
+                  <Input value={label} onChange={(event) => setLabel(event.target.value)} />
+                </Field>
+                <Field label="Language code">
+                  <Input
+                    required
+                    value={language}
+                    onChange={(event) => setLanguage(event.target.value)}
+                  />
+                </Field>
+              </div>
+            </details>
+            {error && (
+              <p role="alert" className="studio-error">
+                {error}
+              </p>
+            )}
+            <button
+              className="studio-primary"
+              type="submit"
+              disabled={busy || !name.trim() || !language.trim()}
+            >
+              {busy ? 'Creating…' : 'Create project'}
+            </button>
+          </form>
+        </DialogContent>
+      </Dialog>
       {toolbarTarget &&
         createPortal(
-          <>
+          <div className="studio studio-project-actions is-desktop">
             <button
               type="button"
               className="desktop-toolbar-button"
@@ -242,6 +273,7 @@ export function ProjectsPage() {
             >
               <Search size={16} aria-hidden="true" />
             </button>
+            {projectMenus}
             <button
               ref={desktopCreateButton}
               type="button"
@@ -251,7 +283,7 @@ export function ProjectsPage() {
             >
               <Plus size={15} aria-hidden="true" /> New project
             </button>
-          </>,
+          </div>,
           toolbarTarget,
         )}
       <div className="studio-project-toolbar">
@@ -265,37 +297,10 @@ export function ProjectsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <details className="relative">
-          <summary className="studio-quiet">Import</summary>
-          <div className="absolute right-0 z-20 mt-1 flex min-w-48 flex-col gap-1 rounded-lg border bg-popover p-2 shadow-md">
-            <StudioButton onClick={() => archiveInput.current?.click()} disabled={busy}>
-              <FileArchive size={15} /> Project archive…
-            </StudioButton>
-            <StudioButton onClick={() => setStoryOpen(true)} disabled={busy}>
-              <Upload size={15} /> Copy from Story…
-            </StudioButton>
-          </div>
-        </details>
-        <details className="relative">
-          <summary className="studio-quiet" aria-label="More project actions">
-            •••
-          </summary>
-          <div className="absolute right-0 z-20 mt-1 rounded-lg border bg-popover p-2 shadow-md">
-            <StorageCleanupDialog
-              key={client.baseUrl}
-              baseUrl={client.baseUrl}
-              projects={projects}
-            />
-          </div>
-        </details>
         <Dialog open={storyOpen} onOpenChange={setStoryOpen}>
-          <DialogContent className="studio studio-modal">
+          <DialogContent className="studio studio-modal" aria-describedby={undefined}>
             <DialogHeader>
-              <DialogTitle>Create a studio copy</DialogTitle>
-              <DialogDescription>
-                The original Story stays intact. Its audio and arrangement become owned project
-                assets.
-              </DialogDescription>
+              <DialogTitle>Copy from Story</DialogTitle>
             </DialogHeader>
             <Field label="Story">
               <select
@@ -311,9 +316,7 @@ export function ProjectsPage() {
                 ))}
               </select>
             </Field>
-            {!storiesLoading && !stories.length && (
-              <p>No Stories yet. You can open the earlier Stories workspace from this page.</p>
-            )}
+            {!storiesLoading && !stories.length && <p>No Stories yet.</p>}
             {error && (
               <p role="alert" className="studio-error">
                 {error}
@@ -347,16 +350,10 @@ export function ProjectsPage() {
           <StudioButton onClick={() => void load()}>Retry loading</StudioButton>
         </div>
       )}
-      {busy && <p aria-live="polite">Importing your project and validating audio…</p>}
-      <div className="studio-section-title">
-        <h2>Your projects</h2>
-        <span>
-          {filtered.length} {filtered.length === 1 ? 'project' : 'projects'}
-        </span>
-      </div>
+      {busy && !createOpen && !storyOpen && <output>Importing project…</output>}
       {loading ? (
         <p aria-live="polite" className="studio-loading">
-          Opening your studio…
+          Loading projects…
         </p>
       ) : filtered.length ? (
         <div className="studio-project-grid">
@@ -367,49 +364,34 @@ export function ProjectsPage() {
               params={{ projectId: project.id, workspace: 'edit' }}
               className="studio-project-card"
             >
-              <div className="studio-project-art">
-                <FolderOpen size={30} strokeWidth={1.3} />
-                <span>DS</span>
-              </div>
-              <div>
-                <span className="studio-eyebrow">{project.client_label || 'PERSONAL PROJECT'}</span>
-                <h3>{project.name}</h3>
-                <p>
-                  Draft {project.revision} <span aria-hidden="true">·</span>{' '}
-                  {new Date(project.updated_at).toLocaleDateString()}
+              <span className="studio-project-icon" aria-hidden="true">
+                <FolderOpen size={19} />
+              </span>
+              <div className="min-w-0">
+                <h2>{project.name}</h2>
+                <p className="studio-project-meta">
+                  {project.client_label && (
+                    <>
+                      <span>{project.client_label}</span>
+                      <span>·</span>
+                    </>
+                  )}
+                  <time dateTime={project.updated_at}>
+                    {new Date(project.updated_at).toLocaleDateString()}
+                  </time>
                 </p>
               </div>
-              <ArrowRight size={16} className="studio-card-arrow" />
+              <ChevronRight size={16} className="studio-card-arrow" aria-hidden="true" />
             </Link>
           ))}
         </div>
       ) : (
-        <EmptyState title={search ? 'No matching projects' : 'No projects yet'}>
-          {search
-            ? 'Try another title or client label.'
-            : 'Start with a script, import a Story, or reopen a complete project archive.'}
-        </EmptyState>
+        !error && (
+          <output className="studio-project-empty">
+            {search ? 'No matching projects' : 'No projects yet'}
+          </output>
+        )
       )}
-      <section
-        className="mt-10 rounded-lg border bg-card/40 p-4"
-        aria-labelledby="earlier-stories-heading"
-      >
-        <h2 id="earlier-stories-heading" className="text-base font-semibold">
-          Earlier Stories
-        </h2>
-        <p className="mt-2 text-muted-foreground">
-          Stories are the earlier arrangement workspace. They still work. Copy one into a project to
-          use Edit, Mix, Review and Deliver.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link to="/stories" className="studio-quiet">
-            Open Stories
-          </Link>
-          <StudioButton onClick={() => setStoryOpen(true)} disabled={busy}>
-            Copy into project
-          </StudioButton>
-        </div>
-      </section>
     </section>
   );
 }

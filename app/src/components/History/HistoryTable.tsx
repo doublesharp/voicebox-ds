@@ -14,7 +14,7 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { EffectsChainEditor } from '@/components/Effects/EffectsChainEditor';
@@ -66,8 +66,15 @@ import { usePlayerStore } from '@/stores/playerStore';
 import { useServerStore } from '@/stores/serverStore';
 import { HistoryPlaybackState, useHistoryWindow } from './historyWindow';
 
-export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
+export function HistoryTable({
+  embedded = false,
+  headingId,
+}: {
+  embedded?: boolean;
+  headingId?: string;
+}) {
   const { t } = useTranslation();
+  const transcriptIdPrefix = useId();
   const [page, setPage] = useState(0);
   const [pageCursor, setPageCursor] = useState<string>();
   const [focusedRow, setFocusedRow] = useState<string | null>(null);
@@ -103,6 +110,8 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
   const serverRevision = useServerStore((state) => state.serverRevision);
   const [expandedVersionsId, setExpandedVersionsId] = useState<string | null>(null);
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(() => new Set());
+  const retryRequests = useRef(new Set<string>());
+  const [retryingKeys, setRetryingKeys] = useState(() => new Set<string>());
   const toggleExpandedText = (generationId: string) => {
     setExpandedTextIds((prev) => {
       const next = new Set(prev);
@@ -316,11 +325,15 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
 
   const handleRetry = async (generationId: string) => {
     const scope = currentServerScope();
+    const key = `${scope.serverRevision}:${generationId}`;
+    if (retryRequests.current.has(key)) return;
+    retryRequests.current.add(key);
+    setRetryingKeys(new Set(retryRequests.current));
     try {
       const result = await apiClient.retryGeneration(generationId);
       if (!isCurrentServer(scope)) return;
       addPendingGeneration(result.id);
-      queryClient.invalidateQueries({ queryKey: ['history'] });
+      await queryClient.invalidateQueries({ queryKey: ['history'] });
     } catch (error) {
       if (!isCurrentServer(scope)) return;
       toast({
@@ -328,6 +341,9 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
         description: error instanceof Error ? error.message : 'Could not retry generation',
         variant: 'destructive',
       });
+    } finally {
+      retryRequests.current.delete(key);
+      setRetryingKeys(new Set(retryRequests.current));
     }
   };
 
@@ -604,11 +620,27 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
     menuRow,
   ]);
 
+  const header = embedded && (
+    <header className="mb-3 flex items-center justify-between gap-2">
+      <h2 id={headingId} className="text-sm font-semibold">
+        Recent takes
+      </h2>
+      {allHistory.length > 0 && (
+        <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums">
+          {Math.max(total, allHistory.length)}
+        </span>
+      )}
+    </header>
+  );
+
   if (isLoading && page === 0) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <>
+        {header}
+        <div className={cn('flex items-center justify-center', embedded ? 'py-7' : 'h-full')}>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </>
     );
   }
 
@@ -641,13 +673,15 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className={cn('flex flex-col min-h-0', !embedded && 'h-full')}>
-      {embedded && (
-        <p className="mb-2 text-xs text-muted-foreground">
-          {total} {total === 1 ? 'take' : 'takes'}
-        </p>
-      )}
+      {header}
       {history.length === 0 ? (
-        <div className="text-center py-12 pt-4 lg:pt-12 px-5 border-2 border-dashed mb-5 border-muted rounded-md text-muted-foreground flex-1 flex items-start lg:items-center justify-center">
+        <div
+          className={
+            embedded
+              ? 'rounded-lg border border-border/60 bg-muted/20 px-3 py-6 text-center text-sm text-muted-foreground'
+              : 'text-center py-12 pt-4 lg:pt-12 px-5 border-2 border-dashed mb-5 border-muted rounded-md text-muted-foreground flex-1 flex items-start lg:items-center justify-center'
+          }
+        >
           {t('history.empty')}
         </div>
       ) : (
@@ -686,6 +720,7 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                 const isInProgress = gen.status === 'loading_model' || gen.status === 'generating';
                 const isGenerating = isInProgress;
                 const isFailed = gen.status === 'failed';
+                const isRetrying = retryingKeys.has(`${serverRevision}:${gen.id}`);
                 const isPlayable = !isGenerating && !isFailed;
                 const hasVersions = gen.versions && gen.versions.length > 1;
                 const isVersionsExpanded = expandedVersionsId === gen.id;
@@ -710,10 +745,11 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                       {({ isSelected, isCurrentlyPlaying }) => (
                         <div
                           className={cn(
-                            'border rounded-lg bg-card transition-colors text-left w-full overflow-hidden',
+                            'border rounded-lg transition-colors text-left w-full overflow-hidden',
                             isSelected
                               ? 'border-accent/60 bg-muted/60'
                               : 'border-border/70 hover:border-border',
+                            !isSelected && (embedded ? 'bg-muted/15' : 'bg-card'),
                           )}
                         >
                           {/* Playable transcript area */}
@@ -722,9 +758,11 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                             role="button"
                             aria-disabled={!isPlayable}
                             aria-pressed={isSelected}
+                            aria-describedby={`${transcriptIdPrefix}-${gen.id}`}
                             tabIndex={isPlayable ? 0 : undefined}
                             className={cn(
                               'w-full px-3.5 pt-3 pb-2 outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset',
+                              embedded && 'px-3 py-2.5',
                               isPlayable && 'hover:bg-muted/40 cursor-pointer',
                             )}
                             aria-label={
@@ -763,9 +801,10 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                           >
                             <p
                               data-history-transcript
-                              aria-label={`Transcript for sample from ${gen.profile_name}, ${formatDuration(gen.duration ?? 0)}`}
+                              id={`${transcriptIdPrefix}-${gen.id}`}
                               className={cn(
                                 'w-full text-sm leading-relaxed text-foreground whitespace-pre-wrap break-words select-text',
+                                embedded && 'leading-snug',
                                 !isTextExpanded && isLongText && 'line-clamp-4',
                               )}
                             >
@@ -774,8 +813,18 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                           </div>
 
                           {/* Compact footer: metadata on left, horizontal action row on right */}
-                          <div className="flex items-center justify-between gap-2 px-3.5 pb-2.5 pt-0.5">
-                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 min-w-0 text-xs text-muted-foreground">
+                          <div
+                            className={cn(
+                              'flex items-center justify-between gap-2 px-3.5 pb-2.5 pt-0.5',
+                              embedded && 'flex-wrap gap-y-1 px-3 pb-2',
+                            )}
+                          >
+                            <div
+                              className={cn(
+                                'flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground',
+                                embedded && 'min-w-[min(100%,8rem)] flex-1 gap-y-0.5',
+                              )}
+                            >
                               <span className="font-medium text-foreground/80 truncate max-w-[160px]">
                                 {gen.profile_name}
                               </span>
@@ -809,7 +858,12 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                               )}
                             </div>
 
-                            <div className="shrink-0 flex items-center gap-0.5">
+                            <div
+                              className={cn(
+                                'shrink-0 flex items-center gap-0.5',
+                                embedded && 'ml-auto',
+                              )}
+                            >
                               {isPlayable && (
                                 <Hint
                                   content={isCurrentlyPlaying ? 'Restart playback' : 'Play take'}
@@ -874,9 +928,15 @@ export function HistoryTable({ embedded = false }: { embedded?: boolean }) {
                                     size="icon"
                                     className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted"
                                     aria-label="Retry generation"
+                                    title="Retry generation"
+                                    disabled={isRetrying}
                                     onClick={() => handleRetry(gen.id)}
                                   >
-                                    <RotateCcw className="h-3.5 w-3.5" />
+                                    {isRetrying ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                    )}
                                   </Button>
                                   <Button
                                     variant="ghost"

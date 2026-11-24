@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils/cn';
 
 /**
  * A section header with title and optional description, separated by a border.
@@ -13,12 +14,12 @@ export function SettingSection({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-2.5">
-      {title && <h3 className="text-sm font-semibold tracking-tight">{title}</h3>}
+    <section className="space-y-2">
+      {title && <h2 className="text-sm font-semibold tracking-tight">{title}</h2>}
       {description && (
         <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
       )}
-      <div className="overflow-hidden rounded-xl border border-border/70 bg-card/50 px-4 divide-y divide-border/50">
+      <div className="divide-y divide-border/50 rounded-xl border border-border/70 bg-card/50 px-3 sm:px-4">
         {children}
       </div>
     </section>
@@ -34,6 +35,7 @@ export function SettingRow({
   description,
   htmlFor,
   action,
+  actionClassName,
   children,
 }: {
   title: string;
@@ -41,16 +43,20 @@ export function SettingRow({
   htmlFor?: string;
   /** Right-aligned control (checkbox, button, badge, etc.) */
   action?: ReactNode;
+  actionClassName?: string;
   /** Full-width content rendered below the label row (for sliders, inputs, etc.) */
   children?: ReactNode;
 }) {
   return (
-    <div className="py-4">
-      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
-        <div className="min-w-0">
+    <div className="py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2.5">
+        <div className="min-w-0 flex-1 basis-44">
           <label
             htmlFor={htmlFor}
-            className={`text-sm font-medium leading-5 select-none ${htmlFor ? 'cursor-pointer' : ''}`}
+            className={cn(
+              'block break-words text-sm font-medium leading-5 select-none',
+              htmlFor && 'cursor-pointer',
+            )}
           >
             {title}
           </label>
@@ -60,7 +66,9 @@ export function SettingRow({
             </p>
           )}
         </div>
-        {action && <div className="shrink-0">{action}</div>}
+        {action && (
+          <div className={cn('min-w-0 max-w-full shrink-0', actionClassName)}>{action}</div>
+        )}
       </div>
       {children && <div className="mt-3">{children}</div>}
     </div>

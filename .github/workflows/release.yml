@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tauri/src-tauri/binaries
-          key: fork-sidecars-v1-${{ matrix.target }}-py312-${{ steps.source.outputs.backend }}
+          key: fork-sidecars-v2-${{ matrix.target }}-py312-${{ steps.source.outputs.backend }}
 
       - name: Reuse unchanged CUDA backend
         if: runner.os == 'Windows'
@@ -126,14 +126,15 @@ jobs:
           suffix=""
           if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
           for name in voicebox-server voicebox-mcp; do
+            packaged="voicebox-ds-${name#voicebox-}"
             if [ "$RUNNER_OS" = "macOS" ] && [ "$name" = "voicebox-server" ]; then
               cp -R "backend/dist/${name}" "tauri/src-tauri/binaries/${name}"
               if [ -d "tauri/src-tauri/binaries/${name}/_internal/Python.framework" ]; then
                 codesign --force --deep --sign - --timestamp=none "tauri/src-tauri/binaries/${name}/_internal/Python.framework"
               fi
-              cp "backend/dist/${name}/${name}" "tauri/src-tauri/binaries/${name}-${TARGET}"
+              cp "backend/dist/${name}/${name}" "tauri/src-tauri/binaries/${packaged}-${TARGET}"
             else
-              cp "backend/dist/${name}${suffix}" "tauri/src-tauri/binaries/${name}-${TARGET}${suffix}"
+              cp "backend/dist/${name}${suffix}" "tauri/src-tauri/binaries/${packaged}-${TARGET}${suffix}"
             fi
           done
 

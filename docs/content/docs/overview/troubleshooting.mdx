@@ -49,14 +49,14 @@ chmod +x voicebox-*.AppImage
 
 <AccordionGroup>
   <Accordion title="Port Already in Use">
-    Check if port 17493 is already in use:
+    Check if port 17593 is already in use:
 
     ```bash
     # macOS/Linux
-    lsof -i :17493
+    lsof -i :17593
 
     # Windows
-    powershell -Command "Get-NetTCPConnection -LocalPort 17493 -State Listen"
+    powershell -Command "Get-NetTCPConnection -LocalPort 17593 -State Listen"
     ```
 
     Kill the process using the port:
@@ -74,7 +74,7 @@ chmod +x voicebox-*.AppImage
 
     ```bash
     # macOS/Linux
-    chmod +x ~/Library/Application\ Support/sh.voicebox.app/backend/voicebox-server
+    chmod +x "/Applications/Voicebox DS.app/Contents/Resources/backend/voicebox-server"
     ```
   </Accordion>
 
@@ -83,12 +83,12 @@ chmod +x voicebox-*.AppImage
 
     **macOS:**
     ```bash
-    tail -f ~/Library/Application\ Support/sh.voicebox.app/logs/server.log
+    tail -f ~/Library/Application\ Support/com.doublesharp.voicebox.ds/logs/server.log
     ```
 
     **Windows:**
     ```bash
-    type %APPDATA%\sh.voicebox.app\logs\server.log
+    type %APPDATA%\com.doublesharp.voicebox.ds\logs\server.log
     ```
   </Accordion>
 </AccordionGroup>
@@ -375,21 +375,21 @@ bun run tauri build
 <Steps>
   <Step title="Ensure Backend is Running">
     ```bash
-    curl http://localhost:17493/openapi.json
+    curl http://localhost:17593/openapi.json
     ```
 
     Should return JSON. If not, start the backend.
   </Step>
 
   <Step title="Check Port">
-    Ensure nothing else is using port 17493
+    Ensure nothing else is using port 17593
   </Step>
 
   <Step title="Regenerate Manually">
     ```bash
     cd backend
     source venv/bin/activate
-    uvicorn main:app --reload --port 17493
+    uvicorn main:app --reload --port 17593
 
     # In another terminal
     ./scripts/generate-api.sh
@@ -410,8 +410,8 @@ bun run tauri build
 - Delete the lock file:
   ```bash
   # macOS
-  rm ~/Library/Application\ Support/sh.voicebox.app/data/voicebox.db-shm
-  rm ~/Library/Application\ Support/sh.voicebox.app/data/voicebox.db-wal
+  rm ~/Library/Application\ Support/com.doublesharp.voicebox.ds/voicebox.db-shm
+  rm ~/Library/Application\ Support/com.doublesharp.voicebox.ds/voicebox.db-wal
   ```
 
 ### Corrupted Database
@@ -428,10 +428,10 @@ bun run tauri build
 
 ```bash
 # macOS
-rm ~/Library/Application\ Support/sh.voicebox.app/data/voicebox.db*
+rm ~/Library/Application\ Support/com.doublesharp.voicebox.ds/voicebox.db*
 
 # Windows
-del %APPDATA%\sh.voicebox.app\data\voicebox.db*
+del %APPDATA%\com.doublesharp.voicebox.ds\voicebox.db*
 ```
 
 The wildcard also removes the `voicebox.db-wal` and `voicebox.db-shm` sidecar files that SQLite keeps next to the database in WAL mode, so the reset starts completely clean.
@@ -555,16 +555,16 @@ rmdir /s %USERPROFILE%\.cache\huggingface\hub\models--Qwen*
     Ensure the remote server is running:
 
     ```bash
-    curl http://<server-ip>:17493/health
+    curl http://<server-ip>:17593/health
     ```
   </Step>
 
   <Step title="Check Firewall">
-    Ensure port 17493 is open on the remote server:
+    Ensure port 17593 is open on the remote server:
 
     ```bash
     # Allow port on Ubuntu/Debian
-    sudo ufw allow 17493
+    sudo ufw allow 17593
     ```
   </Step>
 

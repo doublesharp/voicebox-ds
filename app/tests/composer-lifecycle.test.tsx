@@ -48,15 +48,18 @@ let hiddenProfile = false;
 let previewAvailable = false;
 let previewActive = false;
 const previewRequests: Record<string, unknown>[] = [];
+const previewModes: (string | undefined)[] = [];
 let previewStops = 0;
 let previewStopHandler: () => Promise<void> = async () => {};
 let mockServer = { serverUrl: 'http://server-a', serverRevision: 0 };
 mock.module('../src/lib/audio/useSpeechPreview', () => ({
   useSpeechPreview: () => ({
     available: previewAvailable,
+    bufferedAvailable: previewAvailable,
     active: previewActive,
-    start: async (request: Record<string, unknown>) => {
+    start: async (request: Record<string, unknown>, mode?: string) => {
       previewRequests.push(request);
+      previewModes.push(mode);
     },
     stop: async () => {
       previewStops++;
@@ -173,7 +176,6 @@ mock.module('../src/components/ui/select', () => ({
   SelectValue: () => null,
 }));
 mock.module('../src/components/Generation/EngineModelSelector', () => ({
-  getEngineDescription: () => 'Engine capabilities',
   EngineModelSelector: ({
     form,
     selectedProfile,
@@ -210,10 +212,11 @@ mock.module('../src/components/Generation/ParalinguisticInput', () => ({
 };
 const { FloatingGenerateBox } = await import('../src/components/Generation/FloatingGenerateBox');
 const { useGenerationDraftStore } = await import('../src/stores/generationDraftStore');
+const { useVoiceDeliveryStore } = await import('../src/stores/voiceDeliveryStore');
 let renderer: ReactTestRenderer;
-function mount() {
+function mount(layout: 'docked' | 'floating' = 'floating') {
   act(() => {
-    renderer = create(<FloatingGenerateBox />);
+    renderer = create(<FloatingGenerateBox layout={layout} />);
   });
 }
 function rerender() {
@@ -261,9 +264,11 @@ afterEach(() => {
     textRevision: 0,
     submitting: false,
     profileId: null,
+    profileServerRevision: 0,
     profileApplied: false,
     presetId: null,
     effectsOverridden: false,
+    voiceoverPolish: false,
   });
   ui.setState({ selectedProfileId: 'a', selectedEngine: 'qwen' });
   requests.length = 0;
@@ -276,6 +281,7 @@ afterEach(() => {
   previewAvailable = false;
   previewActive = false;
   previewRequests.length = 0;
+  previewModes.length = 0;
   previewStops = 0;
   previewStopHandler = async () => {};
   mockServer = { serverUrl: 'http://server-a', serverRevision: 0 };
@@ -614,6 +620,86 @@ test('desktop preview speaks the current script without saving or clearing the d
       .props.onClick();
   });
   expect(previewStops).toBe(1);
+});
+
+test('the delivery picker applies an expressive setting to the original cloned voice', async () => {
+  ui.setState({ selectedProfileId: 'b' });
+  mount('docked');
+  const upbeat = () =>
+    renderer.root.findAllByType('button').find((button) => button.children.includes('generation.delivery.upbeat'));
+  expect(upbeat()).toBeDefined();
+  act(() => upbeat()!.props.onClick());
+  expect(upbeat()!.props['aria-pressed']).toBe(true);
+  expect(ui.getState().selectedProfileId).toBe('b');
+
+  type('We made setup simpler. Try it today.');
+  await act(async () => {
+    await renderer.root.findByType('form').props.onSubmit({ preventDefault() {}, persist() {} });
+  });
+  expect(requests[0]).toMatchObject({
+    profile_id: 'b',
+    engine: 'chatterbox',
+    chatterbox_exaggeration: 0.7,
+    chatterbox_cfg_weight: 0.3,
+  });
+});
+
+test('Hear it and Hear Natural compare the same first sentence and effects without creating a take', async () => {
+  previewAvailable = true;
+  mount('docked');
+  type('We made setup simpler. Try it today.');
+  chooseEffects('custom');
+  const button = (label: string) =>
+    renderer.root.findAllByType('button').find((candidate) =>
+      candidate.props['aria-label'] === label || candidate.children.includes(label),
+    );
+  expect(button('generation.delivery.upbeat')).toBeDefined();
+  act(() => button('generation.delivery.upbeat')!.props.onClick());
+  const hear = button('generation.delivery.hear');
+  const natural = button('generation.delivery.hearNatural');
+  expect(hear).toBeDefined();
+  expect(natural).toBeDefined();
+  await act(async () => {
+    hear!.props.onClick();
+  });
+  await act(async () => {
+    natural!.props.onClick();
+  });
+  const shared = {
+    profile_id: 'a',
+    text: 'We made setup simpler.',
+    engine: 'chatterbox',
+    normalize: true,
+    speed: 1,
+    effects_chain: [{ type: 'custom' }],
+  };
+  expect(previewModes).toEqual(['buffered', 'buffered']);
+  expect(previewRequests[0]).toMatchObject({ ...shared, chatterbox_exaggeration: 0.7, chatterbox_cfg_weight: 0.3 });
+  expect(previewRequests[1]).toMatchObject(shared);
+  expect(previewRequests[1].chatterbox_exaggeration).toBeUndefined();
+  expect(previewRequests[1].chatterbox_cfg_weight).toBeUndefined();
+  expect(requests).toHaveLength(0);
+  expect(renderer.root.findByType('textarea').props.value).toBe('We made setup simpler. Try it today.');
+});
+
+test('a matching voice ID on another backend does not inherit saved delivery', () => {
+  useVoiceDeliveryStore.getState().save(mockServer.serverUrl, 'a', {
+    delivery: 'excited',
+    voiceoverPolish: false,
+  });
+  try {
+    mount('docked');
+    expect(useGenerationDraftStore.getState().values?.chatterboxExaggeration).toBe(0.8);
+    mockServer = { serverUrl: 'http://server-b', serverRevision: 1 };
+    act(() => renderer.update(<FloatingGenerateBox layout="docked" />));
+    expect(useGenerationDraftStore.getState().values?.chatterboxExaggeration).toBeUndefined();
+    const natural = renderer.root
+      .findAllByType('button')
+      .find((button) => button.children.includes('generation.delivery.natural'));
+    expect(natural?.props['aria-pressed']).toBe(true);
+  } finally {
+    useVoiceDeliveryStore.setState({ defaults: {} });
+  }
 });
 
 test('compose result from a previous server cannot replace the draft', async () => {

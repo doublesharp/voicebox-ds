@@ -10,8 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { microphoneErrorMessage, requestMicrophone } from '@/lib/utils/microphone';
+import {
+  isMicrophonePermissionDenied,
+  microphoneErrorMessage,
+  requestMicrophone,
+} from '@/lib/utils/microphone';
 import { useMicrophoneStore } from '@/stores/microphoneStore';
+import { MicrophonePermissionHelp } from './MicrophonePermissionHelp';
 
 const SYSTEM_DEFAULT = 'system-default';
 
@@ -21,7 +26,10 @@ export function MicrophoneSelector({ disabled = false }: { disabled?: boolean })
   const { deviceId, deviceLabel, setMicrophone } = useMicrophoneStore();
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [enumerationError, setEnumerationError] = useState<string | null>(null);
-  const [permissionError, setPermissionError] = useState<string | null>(null);
+  const [permissionError, setPermissionError] = useState<{
+    message: string;
+    denied: boolean;
+  } | null>(null);
   const [requesting, setRequesting] = useState(false);
   const refreshVersion = useRef(0);
   const permissionRequest = useRef<AbortController | null>(null);
@@ -74,14 +82,19 @@ export function MicrophoneSelector({ disabled = false }: { disabled?: boolean })
       });
       if (!controller.signal.aborted) await refresh();
     } catch (cause) {
-      if (!controller.signal.aborted) setPermissionError(microphoneErrorMessage(cause));
+      if (!controller.signal.aborted) {
+        setPermissionError({
+          message: microphoneErrorMessage(cause),
+          denied: isMicrophonePermissionDenied(cause),
+        });
+      }
     } finally {
       if (!controller.signal.aborted) setRequesting(false);
       if (permissionRequest.current === controller) permissionRequest.current = null;
     }
   };
 
-  const error = permissionError ?? enumerationError;
+  const error = permissionError?.message ?? enumerationError;
   const selectedUnavailable = deviceId && !devices.some((device) => device.deviceId === deviceId);
   const needsPermission = !devices.some((device) => device.label);
 
@@ -140,8 +153,7 @@ export function MicrophoneSelector({ disabled = false }: { disabled?: boolean })
           {requesting ? t('microphone.enabling') : t('microphone.enable')}
         </Button>
       )}
-      <p className="text-xs text-muted-foreground">{t('microphone.hint')}</p>
-      {error && (
+      {permissionError?.denied ? <MicrophonePermissionHelp /> : error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>

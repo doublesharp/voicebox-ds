@@ -11,7 +11,7 @@ pub(crate) fn is_windows_server_image(tasklist_csv: &str) -> bool {
             .trim_matches('"');
         matches!(
             image.to_ascii_lowercase().as_str(),
-            "voicebox-server.exe" | "voicebox-server-cuda.exe" | "voicebox-server-rocm.exe"
+            "voicebox-ds-server.exe" | "voicebox-server-cuda.exe" | "voicebox-server-rocm.exe"
         )
     })
 }
@@ -89,7 +89,11 @@ pub(crate) fn classify_listener(output: &str, healthy: bool) -> ListenerDecision
         Some(pid)
             if rows
                 .iter()
-                .all(|(name, row_pid)| is_server_name(name) && *row_pid == Some(pid)) =>
+                .all(|(name, row_pid)| {
+                    let bundled_name = is_server_name(name)
+                        || (cfg!(target_os = "linux") && *name == "voicebox-ds-ser");
+                    bundled_name && *row_pid == Some(pid)
+                }) =>
         {
             ListenerDecision::ReuseOwned(pid)
         }
@@ -103,7 +107,7 @@ fn is_server_name(name: &str) -> bool {
     // names can belong to external services and must not be terminated.
     matches!(
         name,
-        "voicebox-server" | "voicebox-server-cuda" | "voicebox-server-rocm"
+        "voicebox-ds-server" | "voicebox-server" | "voicebox-server-cuda" | "voicebox-server-rocm"
     )
 }
 
@@ -123,26 +127,6 @@ pub(crate) fn linux_server_executable(pid: u32) -> bool {
     linux_executable_matches(pid, |pid| {
         std::fs::read_link(format!("/proc/{pid}/exe")).ok()
     })
-}
-
-#[cfg(unix)]
-pub(crate) fn legacy_pids(output: &str, healthy: bool) -> Vec<u32> {
-    if !healthy || !has_listener_header(output) {
-        return Vec::new();
-    }
-    let rows: Vec<_> = listeners(output).collect();
-    let Some((_, Some(pid))) = rows.first().copied() else {
-        return Vec::new();
-    };
-    // A health response cannot identify which listener owns a shared port.
-    if pid <= 1
-        || !rows
-            .iter()
-            .all(|(name, row_pid)| is_server_name(name) && *row_pid == Some(pid))
-    {
-        return Vec::new();
-    }
-    vec![pid]
 }
 
 /// Detach a PID and its child together. A stale startup may only detach its
@@ -209,7 +193,7 @@ mod tests {
     #[test]
     fn windows_tasklist_accepts_only_the_server_executable_names() {
         for image in [
-            "voicebox-server.exe",
+            "voicebox-ds-server.exe",
             "VOICEBOX-SERVER-CUDA.EXE",
             "voicebox-server-rocm.exe",
         ] {
@@ -235,7 +219,7 @@ mod tests {
 
 #[cfg(all(test, unix))]
 mod listener_tests {
-    use super::{classify_listener, legacy_pids, ListenerDecision};
+    use super::{classify_listener, ListenerDecision};
 
     fn lsof(rows: &[(&str, &str)]) -> String {
         let mut output = String::from("COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n");
@@ -257,7 +241,7 @@ mod listener_tests {
     }
 
     #[test]
-    fn incomplete_listener_rows_prevent_process_ownership_and_legacy_cleanup() {
+    fn incomplete_listener_rows_prevent_process_ownership() {
         let header = "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n";
         let owned = "voicebox-server 123 user 9u IPv4 1 0t0 TCP localhost:17493 (LISTEN)\n";
         for malformed in ["mystery\n", "voicebox-server\n", "python   \n"] {
@@ -270,7 +254,6 @@ mod listener_tests {
                     ListenerDecision::ReuseExternal,
                     "{output:?}"
                 );
-                assert!(legacy_pids(&output, true).is_empty(), "{output:?}");
             }
         }
     }
@@ -292,7 +275,6 @@ mod listener_tests {
             classify_listener(output, true),
             ListenerDecision::ReuseOwned(123)
         );
-        assert_eq!(legacy_pids(output, true), vec![123]);
     }
 
     #[test]
@@ -347,27 +329,17 @@ mod listener_tests {
                 classify_listener(&lsof(&[("voicebox-server", pid)]), true),
                 ListenerDecision::ReuseExternal
             );
-            assert!(legacy_pids(&lsof(&[("voicebox-server", pid)]), true).is_empty());
         }
     }
 
     #[test]
-    fn legacy_cleanup_requires_health_and_a_recognized_server_name() {
-        let output = lsof(&[
-            ("voicebox-server", "123"),
-            ("voicebox-helper", "456"),
-            ("python", "789"),
-        ]);
-        assert!(legacy_pids(&output, false).is_empty());
-        assert!(legacy_pids(&output, true).is_empty());
-    }
-
-    #[test]
-    fn duplicate_lsof_rows_do_not_repeat_legacy_termination() {
+    fn duplicate_lsof_rows_can_identify_one_owner() {
         let duplicate = lsof(&[("voicebox-server", "123"), ("voicebox-server", "123")]);
-        assert_eq!(legacy_pids(&duplicate, true), vec![123]);
+        assert_eq!(
+            classify_listener(&duplicate, true),
+            ListenerDecision::ReuseOwned(123)
+        );
         let ambiguous = lsof(&[("voicebox-server", "123"), ("voicebox-server-rocm", "456")]);
-        assert!(legacy_pids(&ambiguous, true).is_empty());
         assert_eq!(
             classify_listener(&ambiguous, true),
             ListenerDecision::ReuseExternal
@@ -377,7 +349,7 @@ mod listener_tests {
 
 #[cfg(all(test, unix))]
 mod exact_identity_tests {
-    use super::{classify_listener, legacy_pids, ListenerDecision};
+    use super::{classify_listener, ListenerDecision};
 
     fn listener(name: &str, pid: u32) -> String {
         format!("COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n{name} {pid} user 9u IPv4 1 0t0 TCP localhost:8000 (LISTEN)\n")
@@ -401,7 +373,6 @@ mod exact_identity_tests {
                 ListenerDecision::ReuseExternal,
                 "{name}"
             );
-            assert!(legacy_pids(&output, true).is_empty(), "{name}");
         }
     }
 
@@ -417,12 +388,10 @@ mod exact_identity_tests {
                 classify_listener(&output, true),
                 ListenerDecision::ReuseOwned(123)
             );
-            assert_eq!(legacy_pids(&output, true), [123]);
             assert_eq!(
                 classify_listener(&output, false),
                 ListenerDecision::Conflict(name.into())
             );
-            assert!(legacy_pids(&output, false).is_empty());
         }
     }
 
@@ -463,7 +432,6 @@ mod exact_identity_tests {
             classify_listener(&output, true),
             ListenerDecision::ReuseExternal
         );
-        assert!(legacy_pids(&output, true).is_empty());
     }
 }
 
@@ -481,7 +449,7 @@ mod windows_listener_ownership_tests {
         let calls = Cell::new(0);
         let result = windows_listener_pid("123\n456\n", |pid| {
             calls.set(calls.get() + 1);
-            Some(row("voicebox-server.exe", pid))
+            Some(row("voicebox-ds-server.exe", pid))
         });
         assert_eq!(result, None);
         assert_eq!(
@@ -495,7 +463,7 @@ mod windows_listener_ownership_tests {
     fn malformed_or_system_pids_make_ownership_ambiguous() {
         for output in ["123\ninvalid\n", "123\n0\n", "123\n1\n", "123\n-3\n"] {
             assert_eq!(
-                windows_listener_pid(output, |pid| Some(row("voicebox-server.exe", pid))),
+                windows_listener_pid(output, |pid| Some(row("voicebox-ds-server.exe", pid))),
                 None,
                 "{output:?}"
             );
@@ -505,7 +473,7 @@ mod windows_listener_ownership_tests {
     #[test]
     fn tasklist_must_report_the_requested_pid() {
         assert_eq!(
-            windows_listener_pid("123\n", |_| Some(row("voicebox-server.exe", 456))),
+            windows_listener_pid("123\n", |_| Some(row("voicebox-ds-server.exe", 456))),
             None
         );
     }
@@ -514,7 +482,7 @@ mod windows_listener_ownership_tests {
     fn conflicting_tasklist_rows_are_not_owned() {
         let rows = format!(
             "{}\n{}",
-            row("voicebox-server.exe", 123),
+            row("voicebox-ds-server.exe", 123),
             row("unrelated.exe", 123)
         );
         assert_eq!(windows_listener_pid("123\n", |_| Some(rows.clone())), None);
@@ -549,7 +517,7 @@ mod windows_listener_ownership_tests {
     #[test]
     fn all_supported_windows_images_match_only_the_listening_pid() {
         for name in [
-            "voicebox-server.exe",
+            "voicebox-ds-server.exe",
             "voicebox-server-cuda.exe",
             "voicebox-server-rocm.exe",
         ] {
@@ -577,8 +545,8 @@ mod windows_listener_ownership_tests {
     fn multiple_rows_for_the_same_matching_process_are_allowed() {
         let rows = format!(
             "{}\n{}",
-            row("voicebox-server.exe", 123),
-            row("VOICEBOX-SERVER.EXE", 123)
+            row("voicebox-ds-server.exe", 123),
+            row("VOICEBOX-DS-SERVER.EXE", 123)
         );
         assert_eq!(
             windows_listener_pid("123\n123", |_| Some(rows.clone())),
@@ -589,7 +557,7 @@ mod windows_listener_ownership_tests {
 
 #[cfg(all(test, unix))]
 mod truncated_discovery_tests {
-    use super::{classify_listener, legacy_pids, ListenerDecision};
+    use super::{classify_listener, ListenerDecision};
 
     #[test]
     fn headerless_single_listener_is_not_treated_as_an_empty_port() {
@@ -605,7 +573,6 @@ mod truncated_discovery_tests {
                 matches!(classify_listener(row, true), ListenerDecision::Conflict(_)),
                 "{row}"
             );
-            assert!(legacy_pids(row, true).is_empty());
         }
     }
 
@@ -616,7 +583,6 @@ mod truncated_discovery_tests {
             classify_listener(output, true),
             ListenerDecision::Conflict(_)
         ));
-        assert!(legacy_pids(output, true).is_empty());
     }
 
     #[test]
@@ -633,7 +599,6 @@ mod truncated_discovery_tests {
                 ),
                 "{output:?}"
             );
-            assert!(legacy_pids(output, true).is_empty());
         }
     }
 

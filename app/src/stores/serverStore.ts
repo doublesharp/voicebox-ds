@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware';
 import { queryClient } from '@/lib/queryClient';
 import { useGenerationStore } from '@/stores/generationStore';
 
+export const LOCAL_SERVER_URL = 'http://127.0.0.1:17593';
+const retiredLocalUrls = ['http://127.0.0.1:17493', 'http://127.0.0.1:8000'];
+
 interface ServerStore {
   serverUrl: string;
   serverRevision: number;
@@ -40,10 +43,8 @@ function invalidateAllServerData() {
 }
 
 export function getDefaultServerUrl(): string {
-  const fallback = 'http://127.0.0.1:17493';
-
   if (!import.meta.env.PROD || typeof window === 'undefined') {
-    return fallback;
+    return LOCAL_SERVER_URL;
   }
 
   const { protocol, origin, hostname } = window.location;
@@ -51,7 +52,7 @@ export function getDefaultServerUrl(): string {
     return origin;
   }
 
-  return fallback;
+  return LOCAL_SERVER_URL;
 }
 
 export const useServerStore = create<ServerStore>()(
@@ -102,20 +103,23 @@ export const useServerStore = create<ServerStore>()(
       name: 'voicebox-server',
       // In-flight writes are process-local and must not survive a restart.
       partialize: ({ keepServerRunningSyncing: _pending, ...state }): Partial<ServerStore> => state,
-      version: 1,
-      migrate: (persistedState): Partial<ServerStore> => {
+      version: 2,
+      migrate: (persistedState, version): Partial<ServerStore> => {
         const state = persistedState as Partial<ServerStore>;
-        // Older versions did not record whether a URL was saved by the user.
-        // Only exact known defaults are safe to treat as automatic. Preserve
-        // all other URLs, including custom loopback ports, paths and protocols.
-        const isDefault =
-          !state.serverUrl ||
-          state.serverUrl === 'http://127.0.0.1:17493' ||
-          state.serverUrl === getDefaultServerUrl() ||
-          // Desktop upgrades retire this old bundled port. Preserve it only
-          // when the user explicitly selected remote-server mode.
-          (state.serverUrl === 'http://127.0.0.1:8000' && state.mode !== 'remote');
-        return { ...state, serverUrlSource: isDefault ? 'auto' : 'custom' };
+        const defaultUrl = getDefaultServerUrl();
+        const wasLocalDefault = retiredLocalUrls.includes(state.serverUrl ?? '');
+        const isAutomatic =
+          version === 0
+            ? !state.serverUrl ||
+              state.serverUrl === defaultUrl ||
+              state.serverUrl === LOCAL_SERVER_URL ||
+              (wasLocalDefault && state.mode !== 'remote')
+            : state.serverUrlSource !== 'custom';
+        return {
+          ...state,
+          serverUrl: isAutomatic ? defaultUrl : state.serverUrl,
+          serverUrlSource: isAutomatic ? 'auto' : 'custom',
+        };
       },
     },
   ),

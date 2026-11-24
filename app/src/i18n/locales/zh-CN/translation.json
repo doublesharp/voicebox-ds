@@ -294,6 +294,7 @@
     },
     "validation": {
       "nameRequired": "请输入名称",
+      "designPromptRequired": "请描述声音。",
       "referenceRequired": "添加样本时需要参考文本",
       "sampleRequired": "需要音频样本",
       "referenceTextRequired": "需要参考文本",
@@ -619,6 +620,7 @@
     }
   },
   "stories": {
+    "back": "返回故事列表",
     "title": "故事",
     "newStory": "新建故事",
     "loading": "加载故事中…",
@@ -667,6 +669,8 @@
     }
   },
   "storyContent": {
+    "generate": "生成",
+    "export": "导出",
     "selectStory": {
       "title": "选择一个故事",
       "hint": "从列表中选择一个故事以查看其内容"
@@ -781,6 +785,23 @@
       "placeholder": "传达说明——例如:温柔缓慢地说、威严清晰…",
       "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
+    "delivery": {
+      "label": "语气",
+      "natural": "自然",
+      "upbeat": "轻快",
+      "excited": "热情",
+      "custom": "自定义",
+      "polish": "旁白润色",
+      "save": "保存此声音的设置",
+      "saved": "已为此声音保存",
+      "hear": "试听",
+      "hearNatural": "试听自然语气",
+      "stop": "停止试听",
+      "stopNatural": "停止对比",
+      "downloadHear": "下载并试听",
+      "previewFailed": "试听失败",
+      "polishUnavailable": "旁白润色不可用。请选择其他效果。"
+    },
     "voiceSelector": {
       "placeholder": "选择声音…"
     },
@@ -804,6 +825,23 @@
   "main": {
     "importVoice": "导入声音",
     "createVoice": "创建声音",
+    "starter": {
+      "stepsLabel": "首次使用步骤",
+      "chooseStep": "选择语音",
+      "sampleStep": "首段音频",
+      "chooseHeading": "创作第一段音频",
+      "chooseDescription": "使用内置语音生成一段简短的试听音频。",
+      "sampleHeading": "试听第一段音频",
+      "voiceDescription": "内置 · 英语",
+      "createDescription": "录制或上传语音样本",
+      "importDescription": "打开 .voicebox.zip 备份",
+      "action": "试用语音",
+      "preparing": "正在准备试听音频…",
+      "ready": "试听音频已准备好。",
+      "failed": "无法准备试听音频",
+      "play": "播放试听",
+      "finish": "打开生成界面"
+    },
     "import": {
       "invalidTitle": "文件类型无效",
       "invalidDescription": "请选择有效的 .voicebox.zip 文件",
@@ -1392,6 +1430,9 @@
     "enable": "Enable microphones",
     "enabling": "Enabling…",
     "refresh": "Refresh microphones",
+    "permissionDeniedBrowser": "麦克风访问权限已被拒绝。请在站点设置中允许访问，然后重试。",
+    "permissionDeniedDesktop": "麦克风访问权限已被拒绝。请在系统设置中允许 Voicebox 访问麦克风，然后重试。",
+    "openSettings": "打开麦克风设置",
     "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
     "input": "Microphone {{number}}",
     "unavailable": "{{name}} (unavailable)",

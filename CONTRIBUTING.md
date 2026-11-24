@@ -93,7 +93,7 @@ On Windows, to build with CUDA support for local testing:
 just build-local  # Build CPU + CUDA server binaries + Tauri installer
 ```
 
-This builds the CPU sidecar (bundled with the app), the CUDA binary (placed in `%APPDATA%/sh.voicebox.app/backends/` for runtime GPU switching), and the installable Tauri app.
+This builds the CPU sidecar (bundled with the app), the CUDA binary (placed in `%APPDATA%/com.doublesharp.voicebox.ds/backends/` for runtime GPU switching), and the installable Tauri app.
 
 Creates platform-specific installers (`.dmg`, `.msi`, `.AppImage`) in `tauri/src-tauri/target/release/bundle/`.
 
@@ -307,7 +307,32 @@ Currently, testing is primarily manual. When adding tests:
 
 - **Backend**: Use pytest for Python tests
 - **Frontend**: Use Vitest for React component tests
-- **E2E**: Use Playwright for end-to-end tests (future)
+- **E2E**: Run the Playwright browser journeys with `bun run test:e2e`.
+
+From the repository root, run `bun x playwright install chromium` once. Start a local
+Voicebox backend with a fresh data directory for the run. Set
+`VOICEBOX_E2E_WORKDIR` to a fresh absolute path before running the commands below.
+The suite creates Studio projects that remain in that directory. With the backend
+virtual environment active:
+
+```sh
+python -m backend.main --port 17494 --data-dir "$VOICEBOX_E2E_WORKDIR/backend"
+```
+
+In a second terminal, point Playwright at that backend and choose an output directory
+for screenshots and failure traces. On the shared Macs, use paths on `/Volumes/Scratch`
+for both directories.
+
+```sh
+VOICEBOX_E2E_API_URL=http://127.0.0.1:17494 \
+VOICEBOX_E2E_OUTPUT_DIR="$VOICEBOX_E2E_WORKDIR/screenshots" bun run test:e2e
+```
+
+Playwright starts Vite on port 5173. To use an existing frontend from this checkout,
+set `VOICEBOX_E2E_WEB_URL` and allow its origin in `VOICEBOX_CORS_ORIGINS` if it uses
+another port. The tests use real project, voice, Story, effects, and render endpoints.
+Speech inference and captured transcripts use fixtures. The permission recovery
+test records from Chromium's synthetic microphone.
 
 ## Pull Request Process
 
@@ -367,7 +392,7 @@ See [docs/content/docs/overview/troubleshooting.mdx](docs/content/docs/overview/
 
 - **Backend won't start:** Check Python version (must be 3.12), ensure venv is activated, install dependencies
 - **Tauri build fails:** Ensure Rust is installed, clean build with `cd tauri/src-tauri && cargo clean`
-- **OpenAPI client generation fails:** Ensure backend is running, check `curl http://localhost:17493/openapi.json`
+- **OpenAPI client generation fails:** Ensure backend is running, check `curl http://localhost:17593/openapi.json`
 
 ## Questions?
 

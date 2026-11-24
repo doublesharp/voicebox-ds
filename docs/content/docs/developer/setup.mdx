@@ -88,7 +88,7 @@ Run `just --list` to see all available commands. Highlights:
 | `just build` | CPU server binary + Tauri installer |
 | `just build-local` | **Windows:** CPU + CUDA server binaries + Tauri installer |
 | `just build-server` | CPU server binary only |
-| `just build-server-cuda` | **Windows:** CUDA server binary only, placed in `%APPDATA%/sh.voicebox.app/backends/cuda` for local testing |
+| `just build-server-cuda` | **Windows:** CUDA server binary only, placed in `%APPDATA%/com.doublesharp.voicebox.ds/backends/cuda` for local testing |
 | `just build-tauri` | Tauri app only |
 | `just build-web` | Web app only |
 
@@ -114,7 +114,7 @@ Run `just --list` to see all available commands. Highlights:
 | Command | Description |
 |---------|-------------|
 | `just generate-api` | Generate TypeScript API client from the backend's OpenAPI schema |
-| `just docs` | Open `http://localhost:17493/docs` in your browser |
+| `just docs` | Open `http://localhost:17593/docs` in your browser |
 | `just logs` | Tail backend logs |
 | `just clean` | Remove build artifacts |
 | `just clean-python` | Remove the Python venv + `__pycache__` |
@@ -251,7 +251,7 @@ Start the backend:
 ```bash
 cd backend
 source venv/bin/activate
-uvicorn main:app --reload --port 17493
+uvicorn main:app --reload --port 17593
 ```
 
 In a new terminal, start the desktop app:
@@ -284,7 +284,7 @@ bun run tauri dev
     - Check Python version (must be 3.12)
     - Ensure virtual environment is activated: `source backend/venv/bin/activate`
     - Verify all dependencies are installed: `pip install -r requirements.txt`
-    - Check if port 17493 is available
+    - Check if port 17593 is available
   </Accordion>
 
   <Accordion title="Tauri build fails">
@@ -294,9 +294,9 @@ bun run tauri dev
   </Accordion>
 
   <Accordion title="OpenAPI client generation fails">
-    - Ensure backend is running: `curl http://localhost:17493/openapi.json`
+    - Ensure backend is running: `curl http://localhost:17593/openapi.json`
     - Check network connectivity
-    - Verify the backend is accessible at localhost:17493
+    - Verify the backend is accessible at localhost:17593
   </Accordion>
 </AccordionGroup>
 

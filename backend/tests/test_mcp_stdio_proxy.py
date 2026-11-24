@@ -1,10 +1,23 @@
 """Protocol behavior of the stdio-to-HTTP bridge, without a running server."""
+import io
 import json
+import sys
 
 import httpx
 import pytest
 
 from backend.mcp_shim import __main__ as proxy
+
+
+@pytest.mark.asyncio
+async def test_stdio_reads_utf8_even_if_piped_stream_uses_a_windows_code_page(monkeypatch):
+    text = "ação, coração, você — こんにちは"
+    request = {"id": 1, "method": "tools/call", "params": {"text": text}}
+    raw = json.dumps(request, ensure_ascii=False) + "\n"
+    with io.TextIOWrapper(io.BytesIO(raw.encode("utf-8")), encoding="cp1252") as stdin:
+        monkeypatch.setattr(sys, "stdin", stdin)
+        assert json.loads(await proxy._read_stdin_line()) == request
+        assert await proxy._read_stdin_line() is None
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Link, useMatchRoute } from '@tanstack/react-router';
-import { Dices, Loader2, SlidersHorizontal, Sparkles, Wand2 } from 'lucide-react';
+import { useMatchRoute } from '@tanstack/react-router';
+import { Dices, Headphones, Loader2, SlidersHorizontal, Sparkles, Wand2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Hint } from '@/components/ui/Hint';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -24,23 +25,39 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
 import { useSpeechPreview } from '@/lib/audio/useSpeechPreview';
+import {
+  applyDelivery,
+  DELIVERY_PARAMETERS,
+  DELIVERY_PRESETS,
+  type DeliveryPreset,
+  previewSentence,
+  selectedDelivery,
+  supportsExpressiveDelivery,
+} from '@/lib/constants/delivery';
 import { engineSupportsInstruct } from '@/lib/constants/engines';
 import { getLanguageOptionsForEngine, type LanguageCode } from '@/lib/constants/languages';
-import { useGenerationForm } from '@/lib/hooks/useGenerationForm';
-import { currentServerScope, isCurrentServer, requireCurrentServer, type ServerScope } from '@/lib/serverScope';
+import { getTtsModelOption } from '@/lib/constants/ttsModels';
+import { type GenerationFormValues, useGenerationForm } from '@/lib/hooks/useGenerationForm';
+import {
+  currentServerScope,
+  isCurrentServer,
+  requireCurrentServer,
+  type ServerScope,
+} from '@/lib/serverScope';
 import { useProfile, useProfiles } from '@/lib/hooks/useProfiles';
 import { useStory } from '@/lib/hooks/useStories';
 import { cn } from '@/lib/utils/cn';
 import { useGenerationDraftStore } from '@/stores/generationDraftStore';
 import { useGenerationStore } from '@/stores/generationStore';
+import { useServerStore } from '@/stores/serverStore';
 import { useStoryStore } from '@/stores/storyStore';
 import { useUIStore } from '@/stores/uiStore';
-import { EngineModelSelector, getEngineDescription } from './EngineModelSelector';
+import { useVoiceDeliveryStore, voiceDeliveryDefaults } from '@/stores/voiceDeliveryStore';
+import { EngineModelSelector } from './EngineModelSelector';
 import { ParalinguisticInput } from './ParalinguisticInput';
 import { SpeechSettings } from './SpeechSettings';
 
 interface FloatingGenerateBoxProps {
-  isPlayerOpen?: boolean;
   layout?: 'docked' | 'floating';
   showVoiceSelector?: boolean;
 }
@@ -50,6 +67,9 @@ export function FloatingGenerateBox({
   showVoiceSelector = false,
 }: FloatingGenerateBoxProps) {
   const { t } = useTranslation();
+  const floating = layout === 'floating';
+  const serverUrl = useServerStore((state) => state.serverUrl);
+  const serverRevision = useServerStore((state) => state.serverRevision);
   const selectedProfileId = useUIStore((state) => state.selectedProfileId);
   const setSelectedProfileId = useUIStore((state) => state.setSelectedProfileId);
   const setSelectedEngine = useUIStore((state) => state.setSelectedEngine);
@@ -59,8 +79,16 @@ export function FloatingGenerateBox({
   const [isInstructExpanded, setIsInstructExpanded] = useState(false);
   const selectedPresetId = useGenerationDraftStore((state) => state.presetId);
   const draftProfileId = useGenerationDraftStore((state) => state.profileId);
+  const draftServerRevision = useGenerationDraftStore((state) => state.profileServerRevision);
   const profileApplied = useGenerationDraftStore((state) => state.profileApplied);
   const setSelectedPresetId = useGenerationDraftStore((state) => state.setPresetId);
+  const voiceoverPolish = useGenerationDraftStore((state) => state.voiceoverPolish);
+  const setVoiceoverPolish = useGenerationDraftStore((state) => state.setVoiceoverPolish);
+  const savedDelivery = useVoiceDeliveryStore((state) =>
+    selectedProfileId
+      ? voiceDeliveryDefaults(state.defaults, serverUrl, selectedProfileId)
+      : undefined,
+  );
   const mountedRef = useRef(false);
   const profileIdentity = useRef({ id: selectedProfileId, revision: 0 });
   if (profileIdentity.current.id !== selectedProfileId) {
@@ -93,8 +121,9 @@ export function FloatingGenerateBox({
   const { data: currentStory } = useStory(selectedStoryId);
   const addPendingStoryAdd = useGenerationStore((s) => s.addPendingStoryAdd);
   const { toast } = useToast();
+  const [previewMode, setPreviewMode] = useState<'selected' | 'natural'>('selected');
   const preview = useSpeechPreview(selectedProfileId, (description) => {
-    toast({ title: 'Speech preview failed', description, variant: 'destructive' });
+    toast({ title: t('generation.delivery.previewFailed'), description, variant: 'destructive' });
   });
 
   const composeMutation = useMutation({
@@ -114,14 +143,31 @@ export function FloatingGenerateBox({
 
   // Fetch effect presets for the dropdown
   const { data: effectPresets } = useQuery({
-    queryKey: ['effect-presets'],
-    queryFn: () => apiClient.listEffectPresets(),
+    queryKey: ['effect-presets', serverUrl, serverRevision],
+    queryFn: () => {
+      requireCurrentServer({ serverUrl, serverRevision });
+      return apiClient.listEffectPresets();
+    },
+  });
+  const voiceoverPreset = effectPresets?.find(
+    (preset) => preset.is_builtin && preset.name === 'YouTube Narration',
+  );
+  const polishOn =
+    voiceoverPolish || (!!voiceoverPreset && selectedPresetId === voiceoverPreset.id);
+  const modelStatus = useQuery({
+    queryKey: ['modelStatus', serverUrl, serverRevision],
+    queryFn: () => {
+      requireCurrentServer({ serverUrl, serverRevision });
+      return apiClient.getModelStatus();
+    },
+    enabled: !floating,
+    retry: false,
   });
 
   // Calculate if track editor is visible (on stories route with items)
   const hasTrackEditor = isStoriesRoute && currentStory && currentStory.items.length > 0;
 
-  const { form, handleSubmit, isPending } = useGenerationForm({
+  const { form, handleSubmit, generationRequest, isPending } = useGenerationForm({
     onSuccess: async (generationId) => {
       setIsExpanded(false);
       // Defer the story add until TTS completes -- useGenerationProgress handles it
@@ -130,23 +176,28 @@ export function FloatingGenerateBox({
       }
     },
     getEffectsChain: () => {
-      if (!useGenerationDraftStore.getState().effectsOverridden) {
+      const draft = useGenerationDraftStore.getState();
+      if (draft.voiceoverPolish) {
+        if (voiceoverPreset) return voiceoverPreset.effects_chain;
+        throw new Error(t('generation.delivery.polishUnavailable'));
+      }
+      if (!draft.effectsOverridden) {
         if (!selectedProfile || selectedProfile.id !== selectedProfileId)
           throw new Error('Voice defaults are still loading. Try again in a moment.');
         return selectedProfile.effects_chain ?? [];
       }
       // An empty chain explicitly disables effects; omission asks the backend
       // to apply voice defaults, which would contradict the None selection.
-      if (!selectedPresetId) return [];
+      if (!draft.presetId) return [];
       // Profile's own effects chain (no matching preset)
-      if (selectedPresetId === '_profile') {
+      if (draft.presetId === '_profile') {
         if (!selectedProfile || selectedProfile.id !== selectedProfileId)
           throw new Error('Voice defaults are still loading. Try again in a moment.');
         return selectedProfile.effects_chain ?? [];
       }
       if (!effectPresets)
         throw new Error('Effect presets are still loading. Try again in a moment.');
-      const preset = effectPresets.find((p) => p.id === selectedPresetId);
+      const preset = effectPresets.find((p) => p.id === draft.presetId);
       if (!preset)
         throw new Error('The selected effect preset is unavailable. Choose another preset.');
       return preset.effects_chain;
@@ -199,19 +250,11 @@ export function FloatingGenerateBox({
   }, [watchedEngine, setSelectedEngine]);
 
   // Apply defaults once for each selected profile, not on refetch or remount.
-  type EngineValue =
-    | 'qwen'
-    | 'luxtts'
-    | 'chatterbox'
-    | 'chatterbox_turbo'
-    | 'tada'
-    | 'kokoro'
-    | 'qwen_custom_voice'
-    | 'qwen_voice_design'
-    | 'omnivoice';
   useEffect(() => {
     const draft = useGenerationDraftStore.getState();
-    draft.selectProfile(selectedProfileId);
+    draft.selectProfile(selectedProfileId, serverRevision);
+    if (draft.profileId !== selectedProfileId || draft.profileServerRevision !== serverRevision)
+      applyDelivery(form, 'natural');
     const currentDraft = useGenerationDraftStore.getState();
     if (
       !selectedProfileId ||
@@ -226,14 +269,14 @@ export function FloatingGenerateBox({
       form.setValue('language', selectedProfile.language as LanguageCode);
     }
     // Auto-switch engine to match the profile and restore valid default modelSize.
-    const defaultSizeForEngine = (targetEngine: EngineValue) => {
+    const defaultSizeForEngine = (targetEngine: GenerationFormValues['engine']) => {
       if (targetEngine === 'qwen' || targetEngine === 'qwen_custom_voice') return '1.7B' as const;
       if (targetEngine === 'tada') return '1B' as const;
       return undefined;
     };
     const engine = selectedProfile?.default_engine ?? selectedProfile?.preset_engine;
     if (engine && engineUnchanged) {
-      const target = engine as EngineValue;
+      const target = engine as GenerationFormValues['engine'];
       form.setValue('engine', target);
       const nextSize = defaultSizeForEngine(target);
       if (nextSize !== undefined || form.getValues('modelSize') !== undefined) {
@@ -261,8 +304,24 @@ export function FloatingGenerateBox({
     if (selectedProfile && !selectedProfile.personality?.trim()) {
       form.setValue('personality', false);
     }
+    const defaults = voiceDeliveryDefaults(
+      useVoiceDeliveryStore.getState().defaults,
+      serverUrl,
+      selectedProfileId,
+    );
+    if (defaults) {
+      if (!currentDraft.effectsOverridden)
+        currentDraft.setVoiceoverPolish(defaults.voiceoverPolish);
+      if (
+        defaults.delivery !== 'natural' &&
+        engineUnchanged &&
+        supportsExpressiveDelivery(selectedProfile, form.getValues('language'))
+      ) {
+        applyDelivery(form, defaults.delivery);
+      }
+    }
     useGenerationDraftStore.getState().markProfileApplied();
-  }, [selectedProfileId, selectedProfile, form]);
+  }, [serverUrl, serverRevision, selectedProfileId, selectedProfile, form]);
 
   // Automatic defaults follow saved voice changes; explicit None or a preset
   // remains a take-level choice across refetches and navigation.
@@ -323,27 +382,104 @@ export function FloatingGenerateBox({
     };
   }, [isExpanded, layout]);
 
-  async function onSubmit(data: Parameters<typeof handleSubmit>[0], scope: ServerScope) {
+  async function onSubmit(data: GenerationFormValues, scope: ServerScope, profileRevision: number) {
     await preview.stop();
     if (!isCurrentServer(scope)) {
-      toast({ title: 'Server changed', description: 'Generation was not started. Your draft was kept.', variant: 'destructive' });
+      toast({
+        title: 'Server changed',
+        description: 'Generation was not started. Your draft was kept.',
+        variant: 'destructive',
+      });
       return;
     }
+    if (profileIdentity.current.revision !== profileRevision) return;
     await handleSubmit(data, selectedProfileId);
   }
 
-  const floating = layout === 'floating';
   const expanded = !floating || isExpanded;
   const engine = form.watch('engine');
   const modelSize = form.watch('modelSize');
+  const language = form.watch('language');
+  const guidance = form.watch('chatterboxCfgWeight');
+  const expression = form.watch('chatterboxExaggeration');
   const script = form.watch('text') || '';
+  const voiceReady =
+    profileApplied &&
+    draftProfileId === selectedProfileId &&
+    draftServerRevision === serverRevision &&
+    selectedProfile?.id === selectedProfileId;
+  const delivery = selectedDelivery(engine, guidance, expression);
+  const showDelivery =
+    !floating && voiceReady && supportsExpressiveDelivery(selectedProfile, language);
+  const modelIsMissing = (name: string) =>
+    modelStatus.data?.models?.find((model) => model.model_name === name)?.downloaded === false;
+  const downloadForPreview = modelIsMissing(
+    getTtsModelOption(engine ?? 'qwen', modelSize).modelName,
+  );
+  const canHear = voiceReady && !!script.trim() && !isPending;
+  const polishing = !!voiceoverPreset && polishOn;
+  const isSaved =
+    savedDelivery?.delivery === delivery && savedDelivery?.voiceoverPolish === polishOn;
+  const showSave =
+    !floating &&
+    voiceReady &&
+    delivery !== 'custom' &&
+    (!!savedDelivery || delivery !== 'natural' || polishing);
   const triggerClass = 'h-9 w-full rounded-lg text-sm';
+
+  function changeDelivery(preset: DeliveryPreset) {
+    if (preview.active) void preview.stop();
+    applyDelivery(form, preset);
+  }
+
+  function hear(mode: 'selected' | 'natural') {
+    if (preview.active && previewMode === mode) {
+      void preview.stop();
+      return;
+    }
+    if (!selectedProfileId || !canHear) return;
+    const scope = currentServerScope();
+    const profileRevision = profileIdentity.current.revision;
+    const current = () =>
+      mountedRef.current &&
+      isCurrentServer(scope) &&
+      profileIdentity.current.revision === profileRevision;
+    void form.handleSubmit(async (values) => {
+      if (!current()) return;
+      try {
+        const request = generationRequest(
+          {
+            ...values,
+            text: previewSentence(values.text),
+            personality: false,
+            ...(mode === 'natural' ? DELIVERY_PARAMETERS.natural : {}),
+          },
+          selectedProfileId,
+        );
+        const selectedModel = getTtsModelOption(
+          request.engine ?? 'qwen',
+          request.model_size,
+        ).modelName;
+        const needsDownload = modelIsMissing(selectedModel);
+        setPreviewMode(mode);
+        await preview.start(request, 'buffered', needsDownload ? selectedModel : undefined);
+        if (needsDownload && current()) void modelStatus.refetch();
+      } catch (error) {
+        if (current())
+          toast({
+            title: t('generation.delivery.previewFailed'),
+            description: error instanceof Error ? error.message : String(error),
+            variant: 'destructive',
+          });
+      }
+    })();
+  }
 
   return (
     <div
       ref={containerRef}
       data-composer-layout={layout}
-      className={cn(floating && 'fixed right-8 z-20', !floating && 'min-w-0')}
+      className={floating ? 'fixed right-8 z-20' : '@container min-w-0'}
       style={
         floating
           ? {
@@ -358,16 +494,18 @@ export function FloatingGenerateBox({
       }
     >
       <div
-        className={cn(
-          'rounded-[10px] border border-border/60 bg-card/40 p-4',
-          floating && 'shadow-xl bg-background',
-        )}
+        className={
+          floating
+            ? 'rounded-[10px] border border-border/60 bg-background p-4 shadow-xl'
+            : 'rounded-xl border border-border/70 bg-card p-3 shadow-xs sm:p-4'
+        }
       >
         <Form {...form}>
           <form
             onSubmit={(event) => {
               const scope = currentServerScope();
-              return form.handleSubmit((data) => onSubmit(data, scope))(event);
+              const profileRevision = profileIdentity.current.revision;
+              return form.handleSubmit((data) => onSubmit(data, scope, profileRevision))(event);
             }}
             onKeyDown={(event) => {
               if (
@@ -382,14 +520,13 @@ export function FloatingGenerateBox({
                 event.currentTarget.requestSubmit();
               }
             }}
-            className="space-y-4"
+            className="space-y-3"
           >
-            {!floating && <h2 className="text-[15px] font-semibold">Voice &amp; delivery</h2>}
             {(showVoiceSelector || !floating) && (
-              <div className="space-y-2">
-                <label htmlFor="generate-voice" className="text-xs font-medium">
+              <div className="space-y-1">
+                <Label htmlFor="generate-voice" className="block">
                   Voice
-                </label>
+                </Label>
                 <Select
                   value={selectedProfileId || ''}
                   onValueChange={(value) => setSelectedProfileId(value || null)}
@@ -406,39 +543,149 @@ export function FloatingGenerateBox({
                     ))}
                   </SelectContent>
                 </Select>
-                {!floating && (
-                  <Link
-                    to="/voices"
-                    className="inline-block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              </div>
+            )}
+            {(showDelivery || showSave) && (
+              <div className="space-y-1.5">
+                <div className="flex min-h-6 flex-wrap items-center justify-between gap-x-2">
+                  {showDelivery && (
+                    <div className="flex items-center gap-1.5">
+                      <span id="generate-delivery" className="text-xs font-medium">
+                        {t('generation.delivery.label')}
+                      </span>
+                      {delivery === 'custom' && (
+                        <span className="text-xs text-muted-foreground">
+                          {t('generation.delivery.custom')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {showSave && selectedProfileId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto h-6 px-2 text-muted-foreground"
+                      disabled={isSaved || (polishOn && !voiceoverPreset)}
+                      onClick={() =>
+                        useVoiceDeliveryStore.getState().save(serverUrl, selectedProfileId, {
+                          delivery,
+                          voiceoverPolish: polishing,
+                        })
+                      }
+                    >
+                      {t(isSaved ? 'generation.delivery.saved' : 'generation.delivery.save')}
+                    </Button>
+                  )}
+                </div>
+                {showDelivery && (
+                  <fieldset
+                    aria-labelledby="generate-delivery"
+                    className="grid min-w-0 grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/25 p-0.5"
                   >
-                    Manage voices
-                  </Link>
+                    {DELIVERY_PRESETS.map((preset) => (
+                      <Button
+                        key={preset}
+                        size="sm"
+                        variant={delivery === preset ? 'secondary' : 'ghost'}
+                        aria-pressed={delivery === preset}
+                        className="h-auto min-h-8 whitespace-normal px-1.5 py-1 aria-pressed:bg-accent/15 aria-pressed:text-foreground"
+                        onClick={() => changeDelivery(preset)}
+                      >
+                        {t(`generation.delivery.${preset}`)}
+                      </Button>
+                    ))}
+                  </fieldset>
                 )}
               </div>
             )}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <FormField
+              control={form.control}
+              name="text"
+              render={({ field }) => (
+                <FormItem className="space-y-1">
+                  <FormLabel className="block">Script</FormLabel>
+                  <FormControl>
+                    {engine === 'chatterbox_turbo' ? (
+                      <ParalinguisticInput
+                        ref={(input) => {
+                          // The rich editor exposes its contenteditable through its imperative ref.
+                          input?.element?.setAttribute('aria-label', 'Script');
+                        }}
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder={
+                          isStoriesRoute && currentStory
+                            ? t('generation.placeholder.storyWithEffects', {
+                                name: currentStory.name,
+                              })
+                            : selectedProfile
+                              ? t('generation.placeholder.effectsHint')
+                              : t('generation.placeholder.selectVoice')
+                        }
+                        className={cn(
+                          'w-full rounded-lg border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                          !floating && 'min-h-24 @md:min-h-40',
+                        )}
+                        style={{
+                          minHeight: floating ? (expanded ? '100px' : '36px') : undefined,
+                          maxHeight: floating ? '300px' : undefined,
+                          overflowY: 'auto',
+                        }}
+                        disabled={!selectedProfileId}
+                        onClick={() => setIsExpanded(true)}
+                        onFocus={() => setIsExpanded(true)}
+                      />
+                    ) : (
+                      <Textarea
+                        {...field}
+                        aria-label="Script"
+                        ref={(node: HTMLTextAreaElement | null) => {
+                          textareaRef.current = node;
+                          field.ref(node);
+                        }}
+                        placeholder={
+                          isStoriesRoute && currentStory
+                            ? t('generation.placeholder.story', { name: currentStory.name })
+                            : selectedProfile
+                              ? t('generation.placeholder.profile', { name: selectedProfile.name })
+                              : t('generation.placeholder.selectVoice')
+                        }
+                        className={cn(
+                          'w-full resize-y rounded-lg bg-background text-sm',
+                          !floating && 'min-h-24 @md:min-h-40',
+                        )}
+                        style={{
+                          minHeight: floating ? (expanded ? '100px' : '36px') : undefined,
+                          maxHeight: floating ? '300px' : undefined,
+                        }}
+                        disabled={!selectedProfileId}
+                        onClick={() => setIsExpanded(true)}
+                        onFocus={() => setIsExpanded(true)}
+                      />
+                    )}
+                  </FormControl>
+                  <FormMessage className="text-xs" />
+                </FormItem>
+              )}
+            />
+            <div
+              className={cn(
+                'grid grid-cols-2 gap-x-2 gap-y-2.5',
+                floating
+                  ? 'sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]'
+                  : '@md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)_minmax(0,1.15fr)]',
+              )}
+            >
               <FormField
                 control={form.control}
                 name="engine"
                 render={() => (
-                  <FormItem className="min-w-0 space-y-2">
-                    <FormLabel className="text-xs">Engine</FormLabel>
+                  <FormItem className="space-y-1">
+                    <FormLabel className="block">Engine</FormLabel>
                     <EngineModelSelector
                       form={form}
-                      selectedProfile={
-                        profileApplied &&
-                        draftProfileId === selectedProfileId &&
-                        selectedProfile?.id === selectedProfileId
-                          ? selectedProfile
-                          : null
-                      }
+                      selectedProfile={voiceReady ? selectedProfile : null}
                     />
-                    <Link
-                      to="/models"
-                      className="block w-fit text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-                    >
-                      Manage models
-                    </Link>
                   </FormItem>
                 )}
               />
@@ -446,8 +693,8 @@ export function FloatingGenerateBox({
                 control={form.control}
                 name="language"
                 render={({ field }) => (
-                  <FormItem className="min-w-0 space-y-2">
-                    <FormLabel className="text-xs">Language</FormLabel>
+                  <FormItem className="space-y-1">
+                    <FormLabel className="block">Language</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger className={triggerClass}>
@@ -466,15 +713,22 @@ export function FloatingGenerateBox({
                   </FormItem>
                 )}
               />
-              <div className="min-w-0 space-y-2">
-                <label htmlFor="generate-effects" className="text-xs font-medium">
+              <div
+                className={cn(
+                  'col-span-2 min-w-0 space-y-1',
+                  floating ? 'sm:col-span-1' : '@md:col-span-1',
+                )}
+              >
+                <Label htmlFor="generate-effects" className="block">
                   Effects
-                </label>
+                </Label>
                 <Select
-                  value={selectedPresetId || 'none'}
-                  onValueChange={(value) =>
-                    setSelectedPresetId(value === 'none' ? null : value, value !== '_profile')
-                  }
+                  value={(polishing ? voiceoverPreset.id : selectedPresetId) || 'none'}
+                  onValueChange={(value) => {
+                    if (preview.active) void preview.stop();
+                    setVoiceoverPolish(false);
+                    setSelectedPresetId(value === 'none' ? null : value, value !== '_profile');
+                  }}
                 >
                   <SelectTrigger
                     id="generate-effects"
@@ -499,83 +753,6 @@ export function FloatingGenerateBox({
                 </Select>
               </div>
             </div>
-            {!floating && getEngineDescription(engine || 'qwen') && (
-              <p className="text-xs text-muted-foreground">
-                {getEngineDescription(engine || 'qwen')}
-              </p>
-            )}
-            {selectedPresetId === '_profile' && (
-              <p className="text-xs text-muted-foreground">
-                Using this voice’s default effects. Pick a preset to replace them for this take.
-              </p>
-            )}
-            <FormField
-              control={form.control}
-              name="text"
-              render={({ field }) => (
-                <FormItem className="space-y-2">
-                  <FormLabel className="text-xs">Script</FormLabel>
-                  <FormControl>
-                    {engine === 'chatterbox_turbo' ? (
-                      <ParalinguisticInput
-                        ref={(input) => {
-                          // The rich editor exposes its contenteditable through its imperative ref.
-                          input?.element?.setAttribute('aria-label', 'Script');
-                        }}
-                        value={field.value}
-                        onChange={field.onChange}
-                        placeholder={
-                          isStoriesRoute && currentStory
-                            ? t('generation.placeholder.storyWithEffects', {
-                                name: currentStory.name,
-                              })
-                            : selectedProfile
-                              ? t('generation.placeholder.effectsHint')
-                              : t('generation.placeholder.selectVoice')
-                        }
-                        className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        style={{
-                          minHeight: floating ? (expanded ? '100px' : '36px') : '180px',
-                          maxHeight: floating ? '300px' : undefined,
-                          overflowY: 'auto',
-                        }}
-                        disabled={!selectedProfileId}
-                        onClick={() => setIsExpanded(true)}
-                        onFocus={() => setIsExpanded(true)}
-                      />
-                    ) : (
-                      <Textarea
-                        {...field}
-                        aria-label="Script"
-                        ref={(node: HTMLTextAreaElement | null) => {
-                          textareaRef.current = node;
-                          field.ref(node);
-                        }}
-                        placeholder={
-                          isStoriesRoute && currentStory
-                            ? t('generation.placeholder.story', { name: currentStory.name })
-                            : selectedProfile
-                              ? t('generation.placeholder.profile', { name: selectedProfile.name })
-                              : t('generation.placeholder.selectVoice')
-                        }
-                        className="w-full resize-y rounded-lg bg-background text-sm"
-                        style={{
-                          minHeight: floating ? (expanded ? '100px' : '36px') : '180px',
-                          maxHeight: floating ? '300px' : undefined,
-                        }}
-                        disabled={!selectedProfileId}
-                        onClick={() => setIsExpanded(true)}
-                        onFocus={() => setIsExpanded(true)}
-                      />
-                    )}
-                  </FormControl>
-                  <FormMessage className="text-xs" />
-                  <p className="text-right text-xs text-muted-foreground">
-                    {script.length} characters
-                  </p>
-                </FormItem>
-              )}
-            />
             {isInstructExpanded && engineSupportsInstruct(engine) && (
               <FormField
                 control={form.control}
@@ -600,9 +777,50 @@ export function FloatingGenerateBox({
                 )}
               />
             )}
-            <div className="flex flex-col gap-3">
+            <div
+              className={
+                floating
+                  ? 'flex flex-wrap items-center justify-between gap-3'
+                  : 'grid items-center gap-2.5 border-t border-border/70 pt-2.5 @min-[35rem]:flex @min-[35rem]:flex-wrap @min-[35rem]:justify-between'
+              }
+            >
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <SpeechSettings form={form} />
+                {!floating && voiceReady && (voiceoverPreset || voiceoverPolish) && (
+                  <Button
+                    role="switch"
+                    aria-checked={polishOn}
+                    variant="outline"
+                    size="sm"
+                    className="h-auto min-h-8 gap-1.5 rounded-full bg-card px-2.5 py-1 whitespace-normal"
+                    onClick={() => {
+                      if (preview.active) void preview.stop();
+                      setVoiceoverPolish(!polishOn);
+                      if (polishOn && voiceoverPreset && selectedPresetId === voiceoverPreset.id) {
+                        setSelectedPresetId(
+                          selectedProfile?.effects_chain?.length ? '_profile' : null,
+                          false,
+                        );
+                      }
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'w-5 shrink-0 rounded-full p-0.5 transition-colors',
+                        polishOn ? 'bg-accent/40' : 'bg-muted',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'block h-2 w-2 rounded-full transition-transform',
+                          polishOn ? 'translate-x-2 bg-accent' : 'bg-muted-foreground',
+                        )}
+                      />
+                    </span>
+                    {t('generation.delivery.polish')}
+                  </Button>
+                )}
                 {selectedProfile?.personality?.trim() && (
                   <>
                     <Hint content={t('generation.compose.tooltip')}>
@@ -701,9 +919,49 @@ export function FloatingGenerateBox({
               </div>
               <div
                 data-generation-actions
-                className="flex max-w-full flex-wrap items-center justify-end gap-2 self-end"
+                className={cn(
+                  'ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5',
+                  !floating &&
+                    'w-full [&>.app-hint-anchor]:w-full @md:w-auto @md:[&>.app-hint-anchor]:w-auto',
+                )}
               >
-                {preview.available && (
+                {!floating && preview.bufferedAvailable && voiceReady && (
+                  <>
+                    {((preview.active && previewMode === 'natural') ||
+                      (showDelivery && delivery !== 'natural' && !downloadForPreview)) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto min-h-9 min-w-0 flex-1 whitespace-normal px-2.5 py-1.5 @md:flex-none"
+                        disabled={!canHear && !(preview.active && previewMode === 'natural')}
+                        onClick={() => hear('natural')}
+                      >
+                        {t(
+                          preview.active && previewMode === 'natural'
+                            ? 'generation.delivery.stopNatural'
+                            : 'generation.delivery.hearNatural',
+                        )}
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-auto min-h-9 min-w-0 flex-1 whitespace-normal px-2.5 py-1.5 @md:flex-none"
+                      disabled={!canHear && !(preview.active && previewMode === 'selected')}
+                      onClick={() => hear('selected')}
+                    >
+                      <Headphones aria-hidden="true" />
+                      {t(
+                        preview.active && previewMode === 'selected'
+                          ? 'generation.delivery.stop'
+                          : downloadForPreview
+                            ? 'generation.delivery.downloadHear'
+                            : 'generation.delivery.hear',
+                      )}
+                    </Button>
+                  </>
+                )}
+                {floating && preview.available && (
                   <Hint content="Listen to your script at normal speed without effects or loudness normalization. Preview is not saved; Generate creates the finished audio.">
                     <Button
                       type="button"
@@ -760,7 +1018,10 @@ export function FloatingGenerateBox({
                   <Button
                     type="submit"
                     disabled={isPending || !selectedProfileId}
-                    className="h-9 gap-2 rounded-lg"
+                    className={cn(
+                      'h-9 gap-2 rounded-lg',
+                      !floating && 'h-auto min-h-9 w-full whitespace-normal @md:w-auto',
+                    )}
                     aria-label={
                       isPending
                         ? t('generation.button.generating')

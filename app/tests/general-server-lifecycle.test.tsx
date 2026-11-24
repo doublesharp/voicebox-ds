@@ -8,7 +8,16 @@ const translate = (key: string) => key;
 mock.module('react-i18next', () => ({ useTranslation: () => ({ t: translate }), Trans: () => null }));
 mock.module('../src/components/ui/use-toast', () => ({ useToast: () => ({ toast: notifications }) }));
 mock.module('../src/lib/hooks/useServer', () => ({ useServerHealth: () => ({ data: null, isLoading: false, error: null }) }));
-mock.module('../src/platform/PlatformContext', () => ({ usePlatform: () => ({ metadata: { isTauri: false }, lifecycle: { setKeepServerRunning: setNative } }) }));
+mock.module('../src/platform/PlatformContext', () => ({
+  usePlatform: () => ({
+    metadata: { isTauri: true, getVersion: async () => '0.6.1' },
+    lifecycle: { setKeepServerRunning: setNative },
+    updater: { enabled: false },
+  }),
+}));
+mock.module('../src/hooks/useAutoUpdater', () => ({
+  useAutoUpdater: () => ({ status: { available: false, checking: false } }),
+}));
 mock.module('../src/components/ServerTab/LanguageSelect', () => ({ LanguageSelect: () => null }));
 mock.module('../src/components/ServerTab/ThemeSelect', () => ({ ThemeSelect: () => null }));
 mock.module('../src/components/ui/checkbox', () => ({ Checkbox: ({ id, checked, disabled, onCheckedChange }: any) => <button id={id} role="checkbox" disabled={disabled} onClick={() => { if (!disabled) onCheckedChange(!checked); }} /> }));
@@ -22,6 +31,11 @@ beforeEach(() => { writes.length = 0; notifications.mockClear(); setNative.mockC
 afterEach(() => { if (view) act(() => view.unmount()); });
 afterAll(() => mock.restore());
 async function mount() { await act(async () => { view = create(<GeneralPage />); }); }
+
+test('desktop settings hide the updater when the distribution has no update feed', async () => {
+  await mount();
+  expect(JSON.stringify(view.toJSON())).not.toContain('settings.general.updates.title');
+});
 
 test('success is announced only after the native setting succeeds', async () => {
   await mount();

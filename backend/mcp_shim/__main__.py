@@ -5,7 +5,7 @@ JSON-RPC message to ``http://127.0.0.1:<port>/mcp/``, and stream the
 server's response back. The Voicebox server does all the real work.
 
 Environment variables:
-  VOICEBOX_PORT       Voicebox server port (default 17493).
+  VOICEBOX_PORT       Voicebox DS server port (default 17593).
   VOICEBOX_HOST       Host (default 127.0.0.1).
   VOICEBOX_CLIENT_ID  Forwarded as X-Voicebox-Client-Id on every request.
 
@@ -27,7 +27,7 @@ import httpx
 CLIENT_ID_HEADER = "X-Voicebox-Client-Id"
 SESSION_HEADER = "mcp-session-id"
 HEALTH_TIMEOUT_S = 30.0
-DEFAULT_PORT = 17493
+DEFAULT_PORT = 17593
 
 
 def _err(msg: str) -> None:
@@ -55,12 +55,10 @@ async def _wait_for_backend(client: httpx.AsyncClient, health_url: str) -> bool:
 
 
 async def _read_stdin_line() -> str | None:
-    """Async-read a single line from stdin. Returns None on EOF."""
+    """Read a UTF-8 protocol line independently of the OS pipe encoding."""
     loop = asyncio.get_running_loop()
-    line = await loop.run_in_executor(None, sys.stdin.readline)
-    if not line:
-        return None
-    return line
+    line = await loop.run_in_executor(None, sys.stdin.buffer.readline)
+    return line.decode("utf-8") if line else None
 
 
 def _write_stdout(obj: Any) -> None:

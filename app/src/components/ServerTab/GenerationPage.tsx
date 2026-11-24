@@ -1,4 +1,4 @@
-import { FolderOpen, Languages, Mic, Zap } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -73,8 +73,7 @@ export function GenerationPage() {
   }, [platform, generationsPath]);
 
   return (
-    <div className="flex gap-8 items-start max-w-5xl">
-      <div className="flex-1 min-w-0 max-w-2xl space-y-8">
+    <div className="max-w-3xl">
       <SettingSection
         title={t('settings.generation.title')}
         description={t('settings.generation.description')}
@@ -165,47 +164,6 @@ export function GenerationPage() {
           }
         />
       </SettingSection>
-      </div>
-
-      <aside className="hidden lg:block w-[280px] shrink-0 space-y-6 sticky top-0">
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">{t('settings.generation.sidebar.aboutTitle')}</h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {t('settings.generation.sidebar.aboutBody')}
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold">{t('settings.generation.sidebar.differencesTitle')}</h3>
-          <ul className="space-y-3 text-sm text-muted-foreground">
-            <li className="flex gap-2.5">
-              <Mic className="h-4 w-4 shrink-0 mt-0.5 text-accent" />
-              <span className="leading-relaxed">
-                <span className="text-foreground font-medium">
-                  {t('settings.generation.sidebar.clone.title')}
-                </span>{' '}
-                {t('settings.generation.sidebar.clone.body')}
-              </span>
-            </li>
-            <li className="flex gap-2.5">
-              <Languages className="h-4 w-4 shrink-0 mt-0.5 text-accent" />
-              <span className="leading-relaxed">
-                <span className="text-foreground font-medium">
-                  {t('settings.generation.sidebar.engines.title')}
-                </span>{' '}
-                {t('settings.generation.sidebar.engines.body')}
-              </span>
-            </li>
-            <li className="flex gap-2.5">
-              <Zap className="h-4 w-4 shrink-0 mt-0.5 text-accent" />
-              <span className="leading-relaxed">
-                <span className="text-foreground font-medium">{t('settings.generation.sidebar.agentReady.title')}</span>{' '}
-                {t('settings.generation.sidebar.agentReady.body')}
-              </span>
-            </li>
-          </ul>
-        </div>
-      </aside>
     </div>
   );
 }

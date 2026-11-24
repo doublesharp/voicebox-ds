@@ -530,11 +530,13 @@ test('large history collections mount only a bounded window of transcript cards'
       text: `Take ${index}`,
     })),
   );
-  const transcripts = renderer.root
-    .findAllByProps({ 'data-history-transcript': true })
-    .filter((node) => String(node.props['aria-label']).startsWith('Transcript for sample'));
+  const transcripts = renderer.root.findAllByProps({ 'data-history-transcript': true });
   expect(transcripts.length).toBeGreaterThan(0);
   expect(transcripts.length).toBeLessThan(30);
+  for (const transcript of transcripts) {
+    expect(transcript.props.id).toBeTruthy();
+    expect(renderer.root.findByProps({ 'aria-describedby': transcript.props.id }).props.role).toBe('button');
+  }
 });
 
 test('older history pages use the server cursor without a deep offset or repeated total count', () => {

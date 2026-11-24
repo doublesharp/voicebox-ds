@@ -344,7 +344,11 @@ def test_cache_check_uses_the_pinned_revision_and_required_files(monkeypatch):
                            "speech_tokenizer/configuration.json", "speech_tokenizer/model.safetensors",
                            "speech_tokenizer/preprocessor_config.json"],
     })]
-    assert backend._is_model_cached("0.6B") and calls[1] == ("Qwen/Qwen3-TTS-12Hz-0.6B-Base", {})
+    assert backend._is_model_cached("0.6B")
+    assert calls[1] == (
+        "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        {"required_files": list(pt.QWEN_TTS_REQUIRED_FILES)},
+    )
 
 
 @pytest.mark.asyncio

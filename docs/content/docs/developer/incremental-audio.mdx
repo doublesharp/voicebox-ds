@@ -11,7 +11,7 @@ text chunks are at most 240 characters, so its prosody can differ from a final
 render with a larger chunk setting.
 
 ```sh
-curl --no-buffer -X POST 'http://127.0.0.1:17493/generate/stream?incremental=true' \
+curl --no-buffer -X POST 'http://127.0.0.1:17593/generate/stream?incremental=true' \
   -H 'Content-Type: application/json' \
   -d '{"profile_id":"YOUR_PROFILE_ID","text":"Your long script here.","normalize":false,"effects_chain":[]}' \
   --output speech-preview.wav

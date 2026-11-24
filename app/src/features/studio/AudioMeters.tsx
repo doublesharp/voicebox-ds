@@ -55,7 +55,6 @@ export function AudioMeters({ meter }: { meter: AudioMeter }) {
           </span>
         </div>
       ))}
-      <small>Preview · not LUFS or true peak</small>
     </fieldset>
   );
 }

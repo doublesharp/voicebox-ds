@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -26,7 +25,7 @@ export function Deliver({
   onGoToMix,
   onGoToEdit,
 }: {
-  onCreateCheckpoint?: () => void;
+  onCreateCheckpoint?: (onSaved: () => void) => void;
   onGoToMix?: () => void;
   onGoToEdit?: () => void;
 }) {
@@ -104,6 +103,7 @@ export function Deliver({
       </DialogTrigger>
       <DialogContent
         className="studio studio-modal studio-deliver"
+        aria-describedby={undefined}
         onCloseAutoFocus={(event) => {
           const action = nextAction.current;
           if (!action) return;
@@ -114,9 +114,6 @@ export function Deliver({
       >
         <DialogHeader>
           <DialogTitle>Deliver</DialogTitle>
-          <DialogDescription>
-            Export audio from a checkpoint or save a project archive.
-          </DialogDescription>
         </DialogHeader>
         {hasCheckpoint ? (
           <Field label="Source checkpoint">
@@ -140,19 +137,12 @@ export function Deliver({
           !request && (
             <div className="studio-preflight">
               <h3>{hasClips ? 'Create a checkpoint to export audio' : 'Add audio to export'}</h3>
-              <p className="studio-note">
-                {hasClips
-                  ? 'A checkpoint saves the arrangement you want to export.'
-                  : needsTake
-                    ? 'Choose or generate a take in Edit, or import audio in Mix.'
-                    : 'Add audio to the timeline in Mix, then save a checkpoint.'}
-              </p>
               {hasClips && onCreateCheckpoint && (
                 <StudioButton
                   primary
                   disabled={!studio.canMutate || studio.actionBusy}
                   onClick={() => {
-                    nextAction.current = onCreateCheckpoint;
+                    nextAction.current = () => onCreateCheckpoint(() => setOpen(true));
                     setOpen(false);
                   }}
                 >
@@ -233,23 +223,25 @@ export function Deliver({
           </div>
         )}
         {checkpointLoading && <output className="studio-note">Loading checkpoint…</output>}
-        {revision &&
-          !checkpointLoading &&
-          (flight.errors.length > 0 || flight.warnings.length > 0) && (
-            <div className="studio-preflight" aria-live="polite">
-              <h3>Before rendering</h3>
-              {flight.errors.map((error) => (
-                <p className="studio-error" key={error}>
-                  {error}
-                </p>
-              ))}
-              {flight.warnings.map((warning) => (
-                <p className="studio-note" key={warning}>
-                  {warning}
-                </p>
-              ))}
-            </div>
-          )}
+        {revision && !checkpointLoading && flight.errors.length > 0 && (
+          <div className="studio-preflight" role="alert">
+            {flight.errors.map((error) => (
+              <p className="studio-error" key={error}>
+                {error}
+              </p>
+            ))}
+          </div>
+        )}
+        {revision && !checkpointLoading && flight.warnings.length > 0 && (
+          <details className="studio-advanced">
+            <summary>Render notes</summary>
+            {flight.warnings.map((warning) => (
+              <p className="studio-note" key={warning}>
+                {warning}
+              </p>
+            ))}
+          </details>
+        )}
         {!!stale.length && (
           <div className="studio-stale-recordings">
             <h3>Earlier recordings</h3>
@@ -418,18 +410,16 @@ export function Deliver({
                 <Download size={14} /> Save a copy
               </StudioButton>
             </div>
-            <details>
-              <summary>Reported measurements</summary>
-              {file.measurements ? (
+            {file.measurements && (
+              <details>
+                <summary>Measurements</summary>
                 <pre>{JSON.stringify(file.measurements, null, 2)}</pre>
-              ) : (
-                <p className="studio-note">No qualified measurements reported for this file.</p>
-              )}
-            </details>
+              </details>
+            )}
           </div>
         ))}
         {publication && <output aria-live="polite">{publication}</output>}
-        <details className="studio-advanced">
+        <details className="studio-advanced studio-deliver-archive">
           <summary>Project archive</summary>
           <ArchiveScopeControls
             value={archiveScope}

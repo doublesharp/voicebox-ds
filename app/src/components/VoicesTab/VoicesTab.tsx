@@ -198,17 +198,17 @@ export function VoicesTab() {
   }
 
   return (
-    <div className="h-full flex gap-0 overflow-hidden -mx-8 desktop-page-bleed">
+    <div className="flex h-full min-h-0 overflow-hidden sm:-mx-6 lg:-mx-8 desktop-page-bleed">
       {/* Left: Table */}
       <div className="flex-1 min-h-0 min-w-0 flex flex-col relative overflow-hidden">
         {/* Header stays in the layout so wrapped controls never cover the table. */}
-        <div className="relative z-20 shrink-0 px-6 pb-4">
-          <div className="flex flex-wrap items-center gap-3">
+        <div className="relative z-20 shrink-0 border-b border-border/60 pb-3 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <div className="mr-auto min-w-0">
               <h1 className="text-xl font-semibold tracking-tight">{t('voicesTab.title')}</h1>
             </div>
-            <div className="relative min-w-[160px] w-[220px] max-w-full">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <div className="relative max-sm:order-last max-sm:w-full sm:w-[220px]">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder={t('voicesTab.searchPlaceholder')}
                 aria-label={t('voicesTab.searchPlaceholder')}
@@ -217,8 +217,8 @@ export function VoicesTab() {
                 className="h-9 pl-8 text-sm"
               />
             </div>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
+            <Button className="h-9" onClick={() => setDialogOpen(true)}>
+              <Plus className="h-4 w-4" />
               {t('voicesTab.newVoice')}
             </Button>
           </div>
@@ -232,19 +232,19 @@ export function VoicesTab() {
             isPlayerVisible && BOTTOM_SAFE_AREA_PADDING,
           )}
         >
-          <Table className="table-fixed min-w-[600px] min-[1400px]:min-w-[860px] [&_td:first-child]:pl-6 [&_th:first-child]:pl-6">
+          <Table className="table-fixed min-w-[280px] min-[1100px]:min-w-[480px] min-[1400px]:min-w-[720px] [&_td]:px-2 [&_td]:py-2.5 [&_th]:h-9 [&_th]:px-2 [&_th]:text-xs sm:[&_td]:px-3 sm:[&_td:first-child]:pl-6 sm:[&_th]:px-3 sm:[&_th:first-child]:pl-6">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[65%] min-[1100px]:w-[45%] min-[1400px]:w-[26%]">
+                <TableHead className="w-[55%] sm:w-[65%] min-[1100px]:w-[45%] min-[1400px]:w-[26%]">
                   {t('voicesTab.columns.name')}
                 </TableHead>
-                <TableHead className="w-[20%] min-[1400px]:w-[12%]">
+                <TableHead className="w-[24%] sm:w-[20%] min-[1400px]:w-[12%]">
                   {t('voicesTab.columns.language')}
                 </TableHead>
                 <TableHead className="hidden min-[1400px]:table-cell w-[15%]">
                   {t('voicesTab.columns.generations')}
                 </TableHead>
-                <TableHead className="w-[15%] min-[1100px]:w-[20%] min-[1400px]:w-[12%]">
+                <TableHead className="w-[21%] sm:w-[15%] min-[1100px]:w-[20%] min-[1400px]:w-[12%]">
                   {t('voicesTab.columns.samples')}
                 </TableHead>
                 <TableHead className="hidden min-[1100px]:table-cell w-[15%] min-[1400px]:w-[11%]">
@@ -283,7 +283,7 @@ export function VoicesTab() {
 
       {/* Right: Inspector */}
       {selectedVoiceId && !inspectorCompact && (
-        <div className="min-h-0 w-[360px] shrink-0 border-l border-t rounded-tl-xl bg-muted/20">
+        <div className="min-h-0 w-[360px] shrink-0 overflow-hidden border-l border-border/70 bg-background">
           <VoiceInspector
             key={selectedVoiceId}
             profileId={selectedVoiceId}

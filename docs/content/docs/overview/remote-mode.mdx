@@ -46,7 +46,7 @@ In Remote Mode, the Voicebox desktop app (running on your local machine) communi
   <Step title="Start the Server">
     ```bash
     # Allow external connections
-    uvicorn main:app --host 0.0.0.0 --port 17493
+    uvicorn main:app --host 0.0.0.0 --port 17593
     ```
 
     <Callout type="warn">
@@ -57,7 +57,7 @@ In Remote Mode, the Voicebox desktop app (running on your local machine) communi
   <Step title="Open Firewall">
     ```bash
     # Ubuntu/Debian
-    sudo ufw allow 17493
+    sudo ufw allow 17593
 
     # Or use your cloud provider's firewall settings
     ```
@@ -77,7 +77,7 @@ In Remote Mode, the Voicebox desktop app (running on your local machine) communi
 
   <Step title="Enter Server URL">
     ```
-    http://<server-ip>:17493
+    http://<server-ip>:17593
     ```
 
     Replace `<server-ip>` with your server's IP address
@@ -111,7 +111,7 @@ In Remote Mode, the Voicebox desktop app (running on your local machine) communi
 ```bash
 # Deploy a pod with CUDA support
 # Install Voicebox backend
-# Expose port 17493
+# Expose port 17593
 ```
 
 ## Security Considerations

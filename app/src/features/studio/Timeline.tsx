@@ -85,53 +85,40 @@ export function Timeline({
       <div className="studio-timeline-heading">
         <div>
           <h2>Arrangement</h2>
-          <p>{doc.clips.length} clips · 48 kHz stereo</p>
+          <p>
+            {doc.clips.length} {doc.clips.length === 1 ? 'clip' : 'clips'} · 48 kHz stereo
+          </p>
         </div>
-        <div className="studio-action-row">
-          <select
-            aria-label="Imported audio track type"
-            value={mediaKind}
-            onChange={(event) => setMediaKind(event.target.value as 'music' | 'sfx')}
-          >
-            <option value="music">Music</option>
-            <option value="sfx">Sound effect</option>
-          </select>
-          {importControl}
-          <NumberField label="Gap (ms)" value={gap} step={1} max={60000} onCommit={setGap} />
-          <StudioButton
-            disabled={!canMutate || !selectedIds.length || unresolved}
-            onClick={() => insert(true)}
-          >
-            <Plus size={14} /> At playhead
-          </StudioButton>
-          <StudioButton
-            disabled={!canMutate || !selectedIds.length || unresolved}
-            onClick={() => insert(false)}
-          >
-            Append
-          </StudioButton>
+        <div className="studio-action-row studio-arrangement-actions">
+          <div className="studio-action-row">
+            <select
+              aria-label="Imported audio track type"
+              value={mediaKind}
+              onChange={(event) => setMediaKind(event.target.value as 'music' | 'sfx')}
+            >
+              <option value="music">Music</option>
+              <option value="sfx">Sound effect</option>
+            </select>
+            {importControl}
+          </div>
+          <div className="studio-action-row">
+            <NumberField label="Gap (ms)" value={gap} step={1} max={60000} onCommit={setGap} />
+            <StudioButton
+              disabled={!canMutate || !selectedIds.length || unresolved}
+              onClick={() => insert(true)}
+            >
+              <Plus size={14} /> At playhead
+            </StudioButton>
+            <StudioButton
+              disabled={!canMutate || !selectedIds.length || unresolved}
+              onClick={() => insert(false)}
+            >
+              Append
+            </StudioButton>
+          </div>
         </div>
       </div>
-      {unresolved && (
-        <p className="studio-note">Choose a take for every selected passage before insertion.</p>
-      )}
-      {!doc.clips.length && (
-        <button
-          type="button"
-          disabled={!canMutate || studio.actionBusy}
-          aria-label="Import audio into the empty arrangement"
-          aria-disabled={!canMutate || studio.actionBusy}
-          onClick={() => importInput.current?.click()}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault();
-            const file = event.dataTransfer.files[0];
-            if (file) importAudio(file);
-          }}
-        >
-          <span>Drop audio here, or choose an audio file.</span>
-        </button>
-      )}
+      {unresolved && <p className="studio-note">Choose takes to add them to the arrangement.</p>}
       <div className="studio-timeline-scroll">
         <div className="studio-ruler">
           <span>TRACK / SOURCE</span>
@@ -212,16 +199,28 @@ export function Timeline({
           </div>
         ))}
         {!doc.clips.length && (
-          <div className="studio-timeline-empty">
-            Your composition starts here. Select passages, choose their takes, then Append.
-          </div>
+          <button
+            type="button"
+            className="studio-timeline-empty"
+            disabled={!canMutate || studio.actionBusy}
+            aria-label="Import audio into the empty arrangement"
+            aria-disabled={!canMutate || studio.actionBusy}
+            onClick={() => importInput.current?.click()}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault();
+              const file = event.dataTransfer.files[0];
+              if (file) importAudio(file);
+            }}
+          >
+            <span>Drop audio or browse files</span>
+          </button>
         )}
       </div>
-      {!compact && (
+      {!compact && !!doc.clips.length && (
         <>
           <div className="studio-section-title">
-            <h3>Precise clip placement</h3>
-            <span>Seconds · rounded to project samples</span>
+            <h3>Clips</h3>
           </div>
           <div className="studio-clip-list">
             {doc.clips.map((clip, index) => (
@@ -366,13 +365,12 @@ export function ClipInspector() {
   );
 }
 
-export function Mixer() {
+export function Mixer({ showTitle = true }: { showTitle?: boolean }) {
   const { project, session, canMutate } = useStudio();
   const mix = project.document.mix;
   return (
     <section className="studio-mixer" aria-label="Mixer">
-      <p className="studio-eyebrow">MIX & MASTER</p>
-      <h2>Give every voice its space.</h2>
+      {showTitle && <h2>Mix settings</h2>}
       {project.document.tracks.map((track) => (
         <div className="studio-mixer-track" key={track.id}>
           <Field label="Track name">
@@ -413,129 +411,124 @@ export function Mixer() {
                 }
               />
             </fieldset>
-            <p className="studio-note">Pitch shifting is available in legacy Effects.</p>
           </details>
         </div>
       ))}
-      <div className="studio-divider" />
-      <h3>Delivery mastering</h3>
-      <div className="studio-action-row">
-        <StudioButton
-          disabled={!canMutate}
-          onClick={() =>
-            void session.command('update_mix', {
-              normalize: true,
-              target_lufs: -14,
-              max_true_peak_dbtp: -1,
-              limiter: true,
-            })
-          }
-        >
-          YouTube preset (-14 LUFS / -1 dBTP)
-        </StudioButton>
-      </div>
-      <label className="studio-check">
-        <input
-          type="checkbox"
-          checked={mix.duck_music ?? false}
-          disabled={!canMutate}
-          onChange={(event) =>
-            void session.command('update_mix', { duck_music: event.target.checked })
-          }
-        />{' '}
-        Auto-duck music tracks under narration
-      </label>
-      {mix.duck_music && (
-        <div className="studio-numeric-grid">
-          <NumberField
-            label="Music duck depth (dB)"
-            min={-30}
-            max={0}
-            step={1}
-            value={mix.duck_db ?? -14}
+      <section className="studio-mastering">
+        <h3>Delivery mastering</h3>
+        <div className="studio-action-row">
+          <StudioButton
             disabled={!canMutate}
-            onCommit={(duck_db) => void session.command('update_mix', { duck_db })}
-          />
-          <NumberField
-            label="Duck attack (ms)"
-            min={5}
-            max={1000}
-            step={10}
-            value={mix.duck_attack_ms ?? 80}
-            disabled={!canMutate}
-            onCommit={(duck_attack_ms) => void session.command('update_mix', { duck_attack_ms })}
-          />
-          <NumberField
-            label="Duck release (ms)"
-            min={20}
-            max={3000}
-            step={25}
-            value={mix.duck_release_ms ?? 350}
-            disabled={!canMutate}
-            onCommit={(duck_release_ms) => void session.command('update_mix', { duck_release_ms })}
-          />
+            onClick={() =>
+              void session.command('update_mix', {
+                normalize: true,
+                target_lufs: -14,
+                max_true_peak_dbtp: -1,
+                limiter: true,
+              })
+            }
+          >
+            YouTube preset (-14 LUFS / -1 dBTP)
+          </StudioButton>
         </div>
-      )}
-      <NumberField
-        label="Master gain (linear)"
-        min={0}
-        max={16}
-        value={mix.master_gain ?? 1}
-        disabled={!canMutate}
-        onCommit={(master_gain) => void session.command('update_mix', { master_gain })}
-      />
-      <label className="studio-check">
-        <input
-          type="checkbox"
-          checked={mix.limiter ?? false}
+        <label className="studio-check">
+          <input
+            type="checkbox"
+            checked={mix.duck_music ?? false}
+            disabled={!canMutate}
+            onChange={(event) =>
+              void session.command('update_mix', { duck_music: event.target.checked })
+            }
+          />{' '}
+          Auto-duck music tracks under narration
+        </label>
+        {mix.duck_music && (
+          <div className="studio-duck-settings">
+            <NumberField
+              label="Music duck depth (dB)"
+              min={-30}
+              max={0}
+              step={1}
+              value={mix.duck_db ?? -14}
+              disabled={!canMutate}
+              onCommit={(duck_db) => void session.command('update_mix', { duck_db })}
+            />
+            <NumberField
+              label="Duck attack (ms)"
+              min={5}
+              max={1000}
+              step={10}
+              value={mix.duck_attack_ms ?? 80}
+              disabled={!canMutate}
+              onCommit={(duck_attack_ms) => void session.command('update_mix', { duck_attack_ms })}
+            />
+            <NumberField
+              label="Duck release (ms)"
+              min={20}
+              max={3000}
+              step={25}
+              value={mix.duck_release_ms ?? 350}
+              disabled={!canMutate}
+              onCommit={(duck_release_ms) =>
+                void session.command('update_mix', { duck_release_ms })
+              }
+            />
+          </div>
+        )}
+        <NumberField
+          label="Master gain (linear)"
+          min={0}
+          max={16}
+          value={mix.master_gain ?? 1}
           disabled={!canMutate}
-          onChange={(event) =>
-            void session.command('update_mix', { limiter: event.target.checked })
-          }
-        />{' '}
-        Oversampled peak limiter (final true-peak compliance is not guaranteed)
-      </label>
-      <p className="studio-note">
-        Targets are saved with the checkpoint. Final-file measurements come from the renderer;
-        timeline playback bypasses effects and master processing. Processed renders include up to
-        ten seconds of effect tail, limited by the two-hour output boundary.
-      </p>
-      <label className="studio-check">
-        <input
-          type="checkbox"
-          checked={mix.normalize}
+          onCommit={(master_gain) => void session.command('update_mix', { master_gain })}
+        />
+        <label className="studio-check">
+          <input
+            type="checkbox"
+            checked={mix.limiter ?? false}
+            disabled={!canMutate}
+            onChange={(event) =>
+              void session.command('update_mix', { limiter: event.target.checked })
+            }
+          />{' '}
+          Peak limiter
+        </label>
+        <label className="studio-check">
+          <input
+            type="checkbox"
+            checked={mix.normalize}
+            disabled={!canMutate}
+            onChange={(event) =>
+              void session.command('update_mix', { normalize: event.target.checked })
+            }
+          />{' '}
+          Normalize on delivery
+        </label>
+        <NumberField
+          label="Target loudness (LUFS)"
+          min={-40}
+          max={-5}
+          value={mix.target_lufs}
           disabled={!canMutate}
-          onChange={(event) =>
-            void session.command('update_mix', { normalize: event.target.checked })
-          }
-        />{' '}
-        Normalize on delivery
-      </label>
-      <NumberField
-        label="Target loudness (LUFS)"
-        min={-40}
-        max={-5}
-        value={mix.target_lufs}
-        disabled={!canMutate}
-        onCommit={(target_lufs) => {
-          if (target_lufs !== mix.target_lufs) void session.command('update_mix', { target_lufs });
-        }}
-      />
-      <NumberField
-        label="Maximum true peak (dBTP)"
-        min={-9}
-        max={0}
-        value={mix.max_true_peak_dbtp}
-        disabled={!canMutate}
-        onCommit={(max_true_peak_dbtp) => {
-          if (max_true_peak_dbtp !== mix.max_true_peak_dbtp)
-            void session.command('update_mix', { max_true_peak_dbtp });
-        }}
-      />
-      <p className="studio-note">
-        No live loudness claim. Use Deliver to render a frozen checkpoint and audition the encoded
-        file.
-      </p>
+          onCommit={(target_lufs) => {
+            if (target_lufs !== mix.target_lufs)
+              void session.command('update_mix', { target_lufs });
+          }}
+        />
+        <NumberField
+          label="Maximum true peak (dBTP)"
+          min={-9}
+          max={0}
+          value={mix.max_true_peak_dbtp}
+          disabled={!canMutate}
+          onCommit={(max_true_peak_dbtp) => {
+            if (max_true_peak_dbtp !== mix.max_true_peak_dbtp)
+              void session.command('update_mix', { max_true_peak_dbtp });
+          }}
+        />
+        <p className="studio-note">Applied during Deliver export.</p>
+      </section>
     </section>
   );
 }

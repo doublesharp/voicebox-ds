@@ -1,10 +1,10 @@
-/** The preview endpoint contract is unknown-length PCM16 mono WAV.
- * Parse its header once, retain at most one partial sample, and yield bounded
- * blocks. Reads stop while the native queue applies backpressure.
- */
+import type { SpeechPreviewMode } from '@/lib/api/types';
+
+/** Read bounded PCM16 mono blocks. Incremental WAV uses an unknown data length. */
 export async function* pcmWaveStream(
   body: ReadableStream<Uint8Array>,
   signal: AbortSignal,
+  mode: SpeechPreviewMode = 'incremental',
 ): AsyncGenerator<{ sampleRate: number; pcm: Uint8Array }> {
   const reader = body.getReader();
   const header = new Uint8Array(44);
@@ -12,6 +12,7 @@ export async function* pcmWaveStream(
   let sampleRate = 0;
   let partial: number | null = null;
   let frames = 0;
+  let bytesRemaining: number | null = null;
   const cancel = () => {
     void reader.cancel().catch(() => {});
   };
@@ -32,10 +33,16 @@ export async function* pcmWaveStream(
         const view = new DataView(header.buffer);
         const text = (start: number, end: number) =>
           String.fromCharCode(...header.subarray(start, end));
+        const riffLength = view.getUint32(4, true);
+        const dataLength = view.getUint32(40, true);
+        const validLength =
+          mode === 'incremental'
+            ? riffLength === 0xffffffff && dataLength === 0xffffffff
+            : dataLength > 0 && dataLength % 2 === 0 && riffLength === dataLength + 36;
         sampleRate = view.getUint32(24, true);
         if (
           text(0, 4) !== 'RIFF' ||
-          view.getUint32(4, true) !== 0xffffffff ||
+          !validLength ||
           text(8, 16) !== 'WAVEfmt ' ||
           view.getUint32(16, true) !== 16 ||
           view.getUint16(20, true) !== 1 ||
@@ -45,11 +52,15 @@ export async function* pcmWaveStream(
           view.getUint32(28, true) !== sampleRate * 2 ||
           view.getUint16(32, true) !== 2 ||
           view.getUint16(34, true) !== 16 ||
-          text(36, 40) !== 'data' ||
-          view.getUint32(40, true) !== 0xffffffff
+          text(36, 40) !== 'data'
         ) {
           throw new Error('Unsupported audio preview format');
         }
+        if (mode === 'buffered') bytesRemaining = dataLength;
+      }
+      if (bytesRemaining !== null) {
+        bytesRemaining -= value.length - offset;
+        if (bytesRemaining < 0) throw new Error('Audio preview exceeded its WAV data length');
       }
       while (offset < value.length) {
         // Copy only one bounded block; native IPC never gets the whole response.
@@ -71,7 +82,7 @@ export async function* pcmWaveStream(
         }
       }
     }
-    if (headerBytes !== 44 || partial !== null || frames === 0)
+    if (headerBytes !== 44 || partial !== null || frames === 0 || (bytesRemaining ?? 0) !== 0)
       throw new Error('Audio preview ended with incomplete PCM audio');
   } finally {
     signal.removeEventListener('abort', cancel);

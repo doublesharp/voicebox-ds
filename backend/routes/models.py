@@ -442,9 +442,20 @@ def _scan_model_inventory(configurations):
                     if file.is_file() and not file.name.endswith(".incomplete")
                 ) / (1024 * 1024)
             revision = getattr(configuration, "revision", None)
-            if revision:
-                downloaded = is_model_cached(repo_id, revision=revision, required_files=list(configuration.required_files))
-                size_mb = sum(path.stat().st_size for path in (repo_cache / "snapshots" / revision).rglob("*") if path.is_file()) / (1024 * 1024) if downloaded else None
+            required_files = list(getattr(configuration, "required_files", ()))
+            if revision or required_files:
+                downloaded = is_model_cached(
+                    repo_id, revision=revision, required_files=required_files,
+                    weight_extensions=extensions,
+                )
+                if not downloaded:
+                    size_mb = None
+                elif revision:
+                    size_mb = sum(
+                        path.stat().st_size
+                        for path in (repo_cache / "snapshots" / revision).rglob("*")
+                        if path.is_file()
+                    ) / (1024 * 1024)
             aux_revisions = getattr(configuration, "aux_revisions", {})
             aux_files = getattr(configuration, "aux_required_files", {})
             if downloaded and not all(is_model_cached(repo, revision=aux_revisions.get(repo), required_files=list(aux_files.get(repo, ()))) for repo in configuration.aux_hf_repo_ids):

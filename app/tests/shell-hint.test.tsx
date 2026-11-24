@@ -32,7 +32,7 @@ test('focus exposes a described tooltip, Escape dismisses it and blur cleans up'
   });
   const anchor = renderer.root.findByProps({ className: 'app-hint-anchor' });
   expect(renderer.root.findByType('button').props['aria-describedby']).toBe('existing');
-  act(() => anchor.props.onFocus());
+  act(() => anchor.props.onFocus({ target: { matches: () => true } }));
   const tooltip = renderer.root.findByProps({ role: 'tooltip' });
   expect(renderer.root.findByType('button').props['aria-describedby']).toBe(
     `existing ${tooltip.props.id}`,
@@ -47,4 +47,36 @@ test('focus exposes a described tooltip, Escape dismisses it and blur cleans up'
   act(() => anchor.props.onMouseLeave());
   expect(renderer.root.findAllByProps({ role: 'tooltip' })).toHaveLength(0);
   expect(listeners.size).toBe(0);
+});
+
+test('pointer activation dismisses hover and does not reopen on focus', () => {
+  globalThis.window = {
+    innerWidth: 800,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  } as unknown as Window & typeof globalThis;
+  globalThis.document = { body: {} } as Document;
+  act(() => {
+    renderer = create(
+      <Hint content="Remove favorite">
+        <button type="button">Unfavorite</button>
+      </Hint>,
+    );
+  });
+  const anchor = renderer.root.findByProps({ className: 'app-hint-anchor' });
+  const tooltips = () => renderer.root.findAllByProps({ role: 'tooltip' });
+  act(() => anchor.props.onFocus({ target: { matches: () => false } }));
+  expect(tooltips()).toHaveLength(0);
+  act(() => anchor.props.onMouseEnter());
+  expect(tooltips()).toHaveLength(1);
+  act(() => anchor.props.onPointerDownCapture());
+  expect(tooltips()).toHaveLength(0);
+  // Some controls and test environments report focus-visible even for a pointer click.
+  act(() => anchor.props.onFocus({ target: { matches: () => true } }));
+  expect(tooltips()).toHaveLength(0);
+  act(() => anchor.props.onClickCapture());
+  act(() => anchor.props.onFocus({ target: {} }));
+  expect(tooltips()).toHaveLength(1);
+  act(() => anchor.props.onClickCapture());
+  expect(tooltips()).toHaveLength(0);
 });

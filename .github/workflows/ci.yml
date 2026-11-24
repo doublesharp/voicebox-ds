@@ -36,6 +36,16 @@ jobs:
             bun test "$test"
           done
 
+      - name: Capture, voice editing, and history regressions
+        run: |
+          for test in app/tests/microphone*.test.* \
+            app/tests/capture-readiness-ui.test.tsx app/tests/capture-tab-workflows.test.tsx \
+            app/tests/voice-sample-inputs-batch.test.tsx app/tests/voice-inspector-editing.test.tsx \
+            app/tests/generation-versions.test.tsx
+          do
+            bun test "$test"
+          done
+
       - name: Typecheck app + web
         run: bun run typecheck
 

@@ -12,9 +12,6 @@ mock.module('react-sound-visualizer', () => ({ Visualizer: ({ children }: any) =
 let clean = false;
 const setClean = mock((value: boolean) => { clean = value; });
 mock.module('../src/stores/microphoneStore', () => ({ useMicrophoneStore: (select: any) => select({ cleanReferenceAudio: clean, setCleanReferenceAudio: setClean }) }));
-let preview: any = { stream: null, error: null, usingDefaultMicrophone: false };
-const usePreview = mock((_enabled: boolean, _mode: string) => preview);
-mock.module('../src/lib/hooks/useMicrophonePreview', () => ({ useMicrophonePreview: usePreview }));
 const { AudioSampleUpload } = await import('../src/components/VoiceProfiles/AudioSampleUpload');
 const { AudioSampleRecording } = await import('../src/components/VoiceProfiles/AudioSampleRecording');
 const { AudioSampleSystem } = await import('../src/components/VoiceProfiles/AudioSampleSystem');
@@ -28,7 +25,7 @@ const buttons = () => view!.root.findAllByType('button');
 const button = (name: string) => buttons().find((b) => b.children.some((child) => typeof child === 'string' && child.includes(name)))!;
 const callbacks = () => ({ onStart: mock(() => {}), onStop: mock(() => {}), onCancel: mock(() => {}), onTranscribe: mock(() => {}), onPlayPause: mock(() => {}) });
 const uploadProps = () => ({ file: null, fieldName: 'sample', onFileChange: mock((_file: File | undefined) => {}), onTranscribe: mock(() => {}), onPlayPause: mock(() => {}), isPlaying: false });
-beforeEach(() => { clean = false; preview = { stream: null, error: null, usingDefaultMicrophone: false }; setClean.mockClear(); usePreview.mockClear(); clickInput.mockClear(); inputNode = { click: clickInput, value: 'old' }; });
+beforeEach(() => { clean = false; setClean.mockClear(); clickInput.mockClear(); inputNode = { click: clickInput, value: 'old' }; });
 afterEach(() => { if (view) act(() => view?.unmount()); view = undefined; });
 afterAll(() => mock.restore());
 
@@ -76,13 +73,13 @@ test.each(['recording', 'system'] as const)('%s input transitions through start,
   expect(c.onPlayPause).toHaveBeenCalledTimes(1); expect(c.onTranscribe).toHaveBeenCalledTimes(1); expect(c.onCancel).toHaveBeenCalledTimes(1);
 });
 
-test('recording uses selected processing mode and disables preview and controls during startup', async () => {
+test('recording keeps the processing preference and disables input controls during startup', async () => {
   clean = true; const c = callbacks(); await createView(<AudioSampleRecording {...c} file={null} isRecording={false} isStarting duration={0} isPlaying={false} />);
-  expect(usePreview).toHaveBeenLastCalledWith(false, 'clean'); expect(view!.root.findByType('test-microphone' as never).props.disabled).toBe(true); expect(button('audioSample.startRecording').props.disabled).toBe(true); expect(view!.root.findByType('test-checkbox' as never).props.disabled).toBe(true);
+  expect(view!.root.findByType('test-microphone' as never).props.disabled).toBe(true); expect(button('audioSample.startRecording').props.disabled).toBe(true); expect(view!.root.findByType('test-checkbox' as never).props).toMatchObject({ checked: true, disabled: true });
 });
 
-test('recording displays preview failures and fallback notices', async () => {
-  preview = { stream: null, error: 'Microphone unavailable', usingDefaultMicrophone: true }; const c = callbacks(); await createView(<AudioSampleRecording {...c} file={null} isRecording={false} duration={0} isPlaying={false} />);
+test('recording displays startup failures and fallback notices', async () => {
+  const c = callbacks(); await createView(<AudioSampleRecording {...c} file={null} isRecording={false} duration={0} isPlaying={false} recordingError="Microphone unavailable" usingDefaultMicrophone />);
   expect(view!.root.findByProps({ role: 'alert' }).children.join('')).toBe('Microphone unavailable'); expect(text()).toContain('microphone.fallbackNotice');
 });
 

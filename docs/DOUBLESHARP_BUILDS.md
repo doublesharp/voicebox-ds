@@ -10,13 +10,13 @@ To reduce repeated work, the workflow caches Python downloads, Rust dependencies
 
 ## macOS
 
-The artifact contains a zipped Apple Silicon `Voicebox DS.app`. It is a local test build without Developer ID notarization. If a stdio MCP client points to the older `/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp` or `/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp` path, update it to `/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp` after installing the renamed app. Runtime/model locations come from the target installation's configuration; build and deployment instructions must use explicit portable paths.
+The artifact contains a zipped Apple Silicon `Voicebox DS.app`. It is a local test build without Developer ID notarization. If a stdio MCP client points to the older `/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp` or `/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp` path, update it to `/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp` after installing the renamed app. Runtime/model locations come from the target installation's configuration; build and deployment instructions must use explicit portable paths.
 
 ## Windows and CUDA
 
-Download and extract the Windows artifact, install its `*-setup.exe`, then fully quit Voicebox. Run `Install-CUDA.ps1` from the extracted artifact directory. It verifies the archive checksum when `build-info.json` is present and installs the complete CUDA backend under `%APPDATA%\sh.voicebox.app\backends\cuda`, preserving the prior backend if extraction or replacement fails.
+Download and extract the Windows artifact, install its `*-setup.exe`, then quit Voicebox DS. Run `Install-CUDA.ps1` from the extracted artifact directory. It verifies the archive checksum when `build-info.json` is present and installs the complete CUDA backend under `%APPDATA%\com.doublesharp.voicebox.ds\backends\cuda`, preserving the prior backend if extraction or replacement fails.
 
-Launch Voicebox with a compatible NVIDIA driver. Check `http://127.0.0.1:17493/health` for `backend_variant: cuda`, `gpu_available: true`, and the expected GPU. A successful hosted build proves packaging; an actual Windows/NVIDIA inference test is still required.
+Launch Voicebox with a compatible NVIDIA driver. Check `http://127.0.0.1:17593/health` for `backend_variant: cuda`, `gpu_available: true`, and the expected GPU. A successful hosted build proves packaging; an actual Windows/NVIDIA inference test is still required.
 
 The installer and CUDA archive belong to the same build. Distribute both. The custom desktop build disables the upstream desktop update endpoint so an upstream release cannot replace fork customizations.
 

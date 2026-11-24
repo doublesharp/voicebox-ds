@@ -12,6 +12,7 @@ export type ReadinessGate = 'stt' | 'llm' | 'input_monitoring' | 'accessibility'
 
 export interface DictationReadiness {
   isLoading: boolean;
+  canCapture: boolean;
   canRecord: boolean;
   allReady: boolean;
   /** Subset of gates that are NOT yet satisfied — what the checklist renders. */
@@ -32,9 +33,9 @@ export interface DictationReadiness {
 /**
  * Single source of truth for dictation readiness.
  *
- * ``canRecord`` covers the gates that must be green before the chord can
- * start recording. ``allReady`` also includes Accessibility, which only gates
- * synthetic paste — dictation still records and lands in Captures without it.
+ * ``canCapture`` covers model readiness for manual recording and file import.
+ * ``canRecord`` adds Input Monitoring for the global shortcut.
+ * ``allReady`` adds Accessibility for synthetic paste.
  *
  * Gates:
  *  - stt / llm: backend ``/capture/readiness`` (polled, since downloads
@@ -94,10 +95,12 @@ export function useDictationReadiness(): DictationReadiness {
   if (autoRefine && !llmReady) missing.push('llm');
   if (!inputMonitoring) missing.push('input_monitoring');
   if (!accessibility) missing.push('accessibility');
-  const canRecord = sttReady && (!autoRefine || llmReady) && inputMonitoring;
+  const canCapture = sttReady && (!autoRefine || llmReady);
+  const canRecord = canCapture && inputMonitoring;
 
   return {
     isLoading,
+    canCapture,
     canRecord,
     allReady: missing.length === 0,
     missing,

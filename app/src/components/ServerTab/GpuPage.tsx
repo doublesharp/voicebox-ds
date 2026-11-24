@@ -56,8 +56,8 @@ function GpuInfoCard({ health }: { health: HealthResponse }) {
     health.backend_variant.toLowerCase() !== gpuBackend?.toLowerCase();
 
   return (
-    <div className="rounded-lg border border-border/60 p-4">
-      <div className="flex items-center gap-3">
+    <div className="rounded-xl border border-border/70 bg-card/50 px-3 py-3.5 sm:px-4">
+      <div className="flex flex-wrap items-center gap-3">
         {hasGpu ? (
           isApple ? (
             <AppleLogo className="h-5 w-5 shrink-0 text-muted-foreground" />
@@ -67,8 +67,8 @@ function GpuInfoCard({ health }: { health: HealthResponse }) {
         ) : (
           <Cpu className="h-5 w-5 shrink-0 text-muted-foreground" />
         )}
-        <div className="flex-1 min-w-0 space-y-0.5">
-          <div className="text-sm font-medium">{hasGpu ? gpuName : t('settings.gpu.cpuOnly')}</div>
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="break-words text-sm font-medium">{hasGpu ? gpuName : t('settings.gpu.cpuOnly')}</div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {hasGpu ? (
               <>
@@ -94,7 +94,7 @@ function GpuInfoCard({ health }: { health: HealthResponse }) {
           </div>
         </div>
         {hasGpu && (
-          <div className="flex items-center gap-2 rounded-full border border-accent/30 px-2.5 py-0.5">
+          <div className="flex max-w-full shrink-0 items-center gap-2 rounded-full border border-accent/30 px-2.5 py-0.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/60" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_4px_1px_hsl(var(--accent)/0.4)]" />
@@ -400,7 +400,7 @@ export function GpuPage() {
     !health.gpu_type.includes('CUDA');
 
   return (
-    <div className="space-y-8 max-w-2xl">
+    <div className="max-w-3xl space-y-5 sm:space-y-6">
       <GpuInfoCard health={health} />
 
       {!hasNativeGpu && !isCurrentlyCuda && !isCurrentlyRocm && (
@@ -413,8 +413,8 @@ export function GpuPage() {
               <SettingRow title={t('settings.gpu.cuda.downloading')}>
                 <div className="space-y-1.5">
                   <Progress value={downloadProgress.progress} className="h-2" />
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="min-w-0 break-words">
                       {downloadProgress.filename ||
                         (cudaAvailable
                           ? t('settings.gpu.cuda.updating')
@@ -447,7 +447,7 @@ export function GpuPage() {
               <SettingRow title={t('common.error')}>
                 <div className="flex items-center gap-2 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{error}</span>
+                  <span className="min-w-0 break-words">{error}</span>
                 </div>
               </SettingRow>
             )}
@@ -510,8 +510,8 @@ export function GpuPage() {
               <SettingRow title={t('settings.gpu.rocm.downloading')}>
                 <div className="space-y-1.5">
                   <Progress value={rocmDownloadProgress.progress} className="h-2" />
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="min-w-0 break-words">
                       {rocmDownloadProgress.filename ||
                         (rocmAvailable
                           ? t('settings.gpu.rocm.updating')
@@ -611,14 +611,13 @@ export function GpuPage() {
             <SettingRow title={t('common.error')}>
               <div className="flex items-center gap-2 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 shrink-0" />
-                <span>{error}</span>
+                <span className="min-w-0 break-words">{error}</span>
               </div>
             </SettingRow>
           )}
         </SettingSection>
       )}
 
-      <p className="text-xs text-muted-foreground/60 leading-relaxed">{t('settings.gpu.footer')}</p>
     </div>
   );
 }

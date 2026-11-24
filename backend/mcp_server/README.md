@@ -14,8 +14,8 @@ Preferred — direct HTTP:
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "url": "http://127.0.0.1:17493/mcp",
+    "voicebox-ds": {
+      "url": "http://127.0.0.1:17593/mcp",
       "headers": { "X-Voicebox-Client-Id": "claude-code" }
     }
   }
@@ -23,13 +23,13 @@ Preferred — direct HTTP:
 ```
 
 Fallback — stdio shim (when the client doesn't speak HTTP MCP). The
-`voicebox-mcp` binary ships inside the DoubleSharp `Voicebox DS.app` bundle:
+`voicebox-ds-mcp` binary ships inside the DoubleSharp `Voicebox DS.app` bundle:
 
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp",
+    "voicebox-ds": {
+      "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp",
       "env": { "VOICEBOX_CLIENT_ID": "claude-code" }
     }
   }
@@ -39,9 +39,9 @@ Fallback — stdio shim (when the client doesn't speak HTTP MCP). The
 Claude Code one-liner:
 
 ```
-claude mcp add voicebox \
+claude mcp add voicebox-ds \
   --transport http \
-  --url http://127.0.0.1:17493/mcp \
+  --url http://127.0.0.1:17593/mcp \
   --header "X-Voicebox-Client-Id: claude-code"
 ```
 
@@ -66,7 +66,7 @@ Settings → MCP.
 ## Debug with MCP Inspector
 
 ```
-npx @modelcontextprotocol/inspector http://127.0.0.1:17493/mcp
+npx @modelcontextprotocol/inspector http://127.0.0.1:17593/mcp
 ```
 
 Point it at the URL, hit "List tools," call `voicebox_list_profiles`
@@ -78,7 +78,7 @@ first to confirm wiring, then `voicebox_speak` for end-to-end.
 don't speak MCP (shell scripts, ACP, A2A):
 
 ```
-curl -X POST http://127.0.0.1:17493/speak \
+curl -X POST http://127.0.0.1:17593/speak \
   -H 'Content-Type: application/json' \
   -H 'X-Voicebox-Client-Id: claude-code' \
   -d '{"text":"Build complete.","profile":"Morgan"}'

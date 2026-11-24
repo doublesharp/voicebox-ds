@@ -54,3 +54,57 @@ def test_inventory_requires_all_exact_primary_and_auxiliary_assets(tmp_path, mon
     assert _scan_model_inventory([cfg])[cfg.model_name][0]
     (tts / "model.onnx" if missing == "tts" else codec / "codec.onnx").unlink()
     assert not _scan_model_inventory([cfg])[cfg.model_name][0]
+
+
+def test_required_assets_cannot_be_combined_across_snapshots(tmp_path, monkeypatch):
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path))
+    files = ["model.safetensors", "speech_tokenizer/config.json"]
+    root, _ = write_snapshot(tmp_path, "test/model", REVISION, files[:1])
+    write_snapshot(tmp_path, "test/model", OTHER, files[1:])
+    (root / "refs").mkdir()
+    (root / "refs" / "main").write_text(REVISION)
+
+    assert not is_model_cached("test/model", required_files=files)
+
+
+def test_unpinned_offline_load_requires_a_main_ref(tmp_path, monkeypatch):
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path))
+    files = ["config.json", "model.safetensors"]
+    write_snapshot(tmp_path, "test/model", REVISION, files)
+
+    assert not is_model_cached("test/model", required_files=files)
+    assert is_model_cached("test/model", required_files=files, revision=REVISION)
+
+
+@pytest.mark.parametrize("backend_type", ["pytorch", "mlx"])
+def test_qwen_download_status_and_loader_agree_on_the_active_snapshot(
+    tmp_path, monkeypatch, backend_type
+):
+    from backend.backends.qwen_mlx_styles_backend import QwenMLXVoiceDesignBackend
+    from backend.backends.qwen_voice_design_backend import QwenVoiceDesignBackend
+
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path))
+    monkeypatch.setattr(backends, "get_backend_type", lambda: backend_type)
+    config = backends.get_model_config("qwen-voice-design-1.7B")
+    assert config is not None
+    backend = QwenMLXVoiceDesignBackend() if backend_type == "mlx" else QwenVoiceDesignBackend()
+    files = [
+        "config.json", "model.safetensors", "generation_config.json", "merges.txt", "vocab.json",
+        "tokenizer_config.json", "preprocessor_config.json", "speech_tokenizer/config.json",
+        "speech_tokenizer/configuration.json", "speech_tokenizer/preprocessor_config.json",
+        "speech_tokenizer/model.safetensors",
+    ]
+    if backend_type == "mlx":
+        files.append("model.safetensors.index.json")
+    repo = config.hf_repo_id
+    root, _ = write_snapshot(tmp_path, repo, REVISION, files[:2])
+    write_snapshot(tmp_path, repo, OTHER, files)
+    (root / "refs").mkdir()
+    (root / "refs" / "main").write_text(REVISION)
+
+    assert not _scan_model_inventory([config])[config.model_name][0]
+    assert not backend._is_model_cached("1.7B")
+
+    write_snapshot(tmp_path, repo, REVISION, files[2:])
+    assert _scan_model_inventory([config])[config.model_name][0]
+    assert backend._is_model_cached("1.7B")

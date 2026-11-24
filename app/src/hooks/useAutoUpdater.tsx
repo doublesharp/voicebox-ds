@@ -65,7 +65,12 @@ export function useAutoUpdater(options: boolean | UseAutoUpdaterOptions = false)
 
   // Check for updates on mount
   useEffect(() => {
-    if (checkOnMount && platform.metadata.isTauri && !hasCheckedRef.current) {
+    if (
+      checkOnMount &&
+      platform.metadata.isTauri &&
+      platform.updater.enabled !== false &&
+      !hasCheckedRef.current
+    ) {
       hasCheckedRef.current = true;
       checkForUpdates().catch((error) => {
         console.error('Auto update check failed:', error);
@@ -73,7 +78,7 @@ export function useAutoUpdater(options: boolean | UseAutoUpdaterOptions = false)
     }
     // Empty dependency array - only run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkOnMount, checkForUpdates, platform.metadata.isTauri]);
+  }, [checkOnMount, checkForUpdates, platform.metadata.isTauri, platform.updater.enabled]);
 
   // Show toast when update is available
   useEffect(() => {

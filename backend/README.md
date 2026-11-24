@@ -9,7 +9,7 @@ FastAPI server powering voice cloning, speech generation, and audio processing. 
 just dev:server
 
 # Standalone
-python -m backend.main --host 127.0.0.1 --port 17493
+python -m backend.main --host 127.0.0.1 --port 17593
 
 # With custom data directory
 python -m backend.main --data-dir /path/to/data
@@ -75,7 +75,7 @@ Detection is handled by `utils/platform_detect.py`. Both backends implement the 
 
 ## API
 
-90 endpoints organized by domain. Full interactive documentation available at `http://localhost:17493/docs` when the server is running.
+90 endpoints organized by domain. Full interactive documentation available at `http://localhost:17593/docs` when the server is running.
 
 | Domain | Prefix | Description |
 |--------|--------|-------------|
@@ -96,15 +96,15 @@ Detection is handled by `utils/platform_detect.py`. Both backends implement the 
 
 ```bash
 # Generate speech
-curl -X POST http://localhost:17493/generate \
+curl -X POST http://localhost:17593/generate \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "profile_id": "...", "language": "en"}'
 
 # List profiles
-curl http://localhost:17493/profiles
+curl http://localhost:17593/profiles
 
 # Stream generation status (SSE)
-curl http://localhost:17493/generate/{id}/status
+curl http://localhost:17593/generate/{id}/status
 ```
 
 ## Data directory

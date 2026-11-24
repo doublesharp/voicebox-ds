@@ -28,9 +28,9 @@ coming out of your machine.
 ### Claude Code
 
 ```
-claude mcp add voicebox \
+claude mcp add voicebox-ds \
   --transport http \
-  --url http://127.0.0.1:17493/mcp \
+  --url http://127.0.0.1:17593/mcp \
   --header "X-Voicebox-Client-Id: claude-code"
 ```
 
@@ -41,8 +41,8 @@ Drop this into the client's MCP config (usually `.mcp.json` or a Settings UI):
 ```json
 {
   "mcpServers": {
-    "voicebox": {
-      "url": "http://127.0.0.1:17493/mcp",
+    "voicebox-ds": {
+      "url": "http://127.0.0.1:17593/mcp",
       "headers": { "X-Voicebox-Client-Id": "cursor" }
     }
   }
@@ -55,7 +55,7 @@ per-client voice binding — not a secret, not a credential.
 
 ### Clients that only speak stdio
 
-A stdio shim binary `voicebox-mcp` is bundled with the desktop app. Point
+A stdio shim binary `voicebox-ds-mcp` is bundled with the desktop app. Point
 the client at that binary's absolute path. The macOS example uses the DoubleSharp `Voicebox DS.app` bundle; upstream Voicebox uses `Voicebox.app`:
 
 <Tabs items={["macOS", "Windows", "Linux"]}>
@@ -63,8 +63,8 @@ the client at that binary's absolute path. The macOS example uses the DoubleShar
   ```json
   {
     "mcpServers": {
-      "voicebox": {
-        "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp",
+      "voicebox-ds": {
+        "command": "/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp",
         "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
       }
     }
@@ -75,8 +75,8 @@ the client at that binary's absolute path. The macOS example uses the DoubleShar
   ```json
   {
     "mcpServers": {
-      "voicebox": {
-        "command": "C:\\Program Files\\Voicebox\\voicebox-mcp.exe",
+      "voicebox-ds": {
+        "command": "C:\\Program Files\\Voicebox DS\\voicebox-ds-mcp.exe",
         "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
       }
     }
@@ -87,8 +87,8 @@ the client at that binary's absolute path. The macOS example uses the DoubleShar
   ```json
   {
     "mcpServers": {
-      "voicebox": {
-        "command": "/opt/voicebox/voicebox-mcp",
+      "voicebox-ds": {
+        "command": "voicebox-ds-mcp",
         "env": { "VOICEBOX_CLIENT_ID": "claude-desktop" }
       }
     }
@@ -220,7 +220,7 @@ hear two pills at once.
 don't speak MCP — shell scripts, ACP, A2A, GitHub Actions, whatever.
 
 ```bash
-curl -X POST http://127.0.0.1:17493/speak \
+curl -X POST http://127.0.0.1:17593/speak \
   -H 'Content-Type: application/json' \
   -H 'X-Voicebox-Client-Id: ci' \
   -d '{"text":"Build complete.","profile":"Morgan"}'
@@ -242,7 +242,7 @@ ignored.
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://127.0.0.1:17493/v1", api_key="voicebox")
+client = OpenAI(base_url="http://127.0.0.1:17593/v1", api_key="voicebox")
 
 audio = client.audio.speech.create(
     model="tts-1",          # or a Voicebox engine: "qwen", "chatterbox", "kokoro"...
@@ -254,7 +254,7 @@ audio.write_to_file("build.mp3")
 ```
 
 ```bash
-curl -X POST http://127.0.0.1:17493/v1/audio/speech \
+curl -X POST http://127.0.0.1:17593/v1/audio/speech \
   -H 'Content-Type: application/json' \
   -d '{"model":"tts-1","voice":"Morgan","input":"Build complete."}' \
   --output build.wav
@@ -294,7 +294,7 @@ Use the MCP Inspector to poke tools directly without plumbing through an
 agent:
 
 ```
-npx @modelcontextprotocol/inspector http://127.0.0.1:17493/mcp
+npx @modelcontextprotocol/inspector http://127.0.0.1:17593/mcp
 ```
 
 Start with `voicebox_list_profiles` to confirm wiring, then

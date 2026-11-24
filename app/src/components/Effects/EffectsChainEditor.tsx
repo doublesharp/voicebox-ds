@@ -181,7 +181,7 @@ export function EffectsChainEditor({
   }
 
   return (
-    <div className={cn('space-y-2', compact && 'text-sm')}>
+    <div className={cn('space-y-1.5', compact && 'text-sm')}>
       {/* Preset selector row */}
       {showPresets && (
         <div className="flex items-center gap-2">
@@ -194,7 +194,7 @@ export function EffectsChainEditor({
           >
             <SelectTrigger
               aria-label={t('effects.chain.loadPreset')}
-              className="h-9 flex-1 text-xs"
+              className="h-9 min-w-0 flex-1 text-xs"
             >
               <SelectValue placeholder={t('effects.chain.loadPreset')} />
             </SelectTrigger>
@@ -258,7 +258,7 @@ export function EffectsChainEditor({
 
       {/* Add effect */}
       {availableEffects && (
-        <Select onValueChange={addEffect} disabled={disabled}>
+        <Select value="" onValueChange={addEffect} disabled={disabled}>
           <SelectTrigger
             aria-label={t('effects.chain.addEffect')}
             className="h-9 border-dashed bg-transparent text-xs text-muted-foreground hover:bg-muted/40"
@@ -327,22 +327,34 @@ function SortableEffectItem({
   const label = t(`effects.types.${effect.type}.label`, {
     defaultValue: effectDef?.label ?? effect.type,
   });
+  const controlClass =
+    'grid size-8 shrink-0 place-items-center rounded-md transition-colors enabled:hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:opacity-50';
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        'rounded-lg border overflow-hidden',
+        '@container overflow-hidden rounded-lg border',
         effect.enabled ? 'border-border bg-card' : 'border-border/50 bg-muted/30',
         isDragging && 'opacity-80 shadow-lg',
       )}
     >
       {/* Header */}
-      <div className="flex items-center gap-1 px-2 py-1.5">
+      <div className="flex items-center gap-1 px-1.5 py-1">
+        <button
+          type="button"
+          aria-label={t('effects.chain.reorder', { defaultValue: 'Reorder effect' })}
+          className={cn(controlClass, 'cursor-grab touch-none text-muted-foreground active:cursor-grabbing')}
+          {...attributes}
+          {...listeners}
+          disabled={disabled}
+        >
+          <GripVertical className="size-4" />
+        </button>
         <span
           aria-hidden="true"
-          className="mr-1 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-accent/10 font-mono text-[10px] text-accent"
+          className="grid size-5 shrink-0 place-items-center rounded bg-muted text-[11px] font-medium tabular-nums text-muted-foreground"
         >
           {index + 1}
         </span>
@@ -350,38 +362,25 @@ function SortableEffectItem({
           type="button"
           aria-expanded={isExpanded}
           aria-label={`${isExpanded ? t('effects.chain.collapse', { defaultValue: 'Collapse' }) : t('effects.chain.expand', { defaultValue: 'Expand' })} ${label}`}
-          className="p-0.5 text-muted-foreground hover:text-foreground"
+          className={cn(
+            'flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-medium transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+            !effect.enabled && 'text-muted-foreground',
+          )}
           onClick={onToggleExpand}
         >
           {isExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
           )}
+          <span className="truncate">{label}</span>
         </button>
-
-        <button
-          type="button"
-          aria-label={t('effects.chain.reorder', { defaultValue: 'Reorder effect' })}
-          className="p-0.5 text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none"
-          {...attributes}
-          {...listeners}
-          disabled={disabled}
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
-
-        <span
-          className={cn('flex-1 text-xs font-medium', !effect.enabled && 'text-muted-foreground')}
-        >
-          {label}
-        </span>
 
         <button
           type="button"
           className={cn(
-            'p-0.5 transition-colors',
-            effect.enabled ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+            controlClass,
+            effect.enabled ? 'text-accent' : 'text-muted-foreground hover:text-foreground',
           )}
           onClick={onToggleEnabled}
           disabled={disabled}
@@ -392,7 +391,7 @@ function SortableEffectItem({
 
         <button
           type="button"
-          className="p-0.5 text-muted-foreground "
+          className={cn(controlClass, 'text-muted-foreground enabled:hover:text-destructive')}
           onClick={onRemove}
           disabled={disabled}
           title={t('effects.chain.remove')}
@@ -403,18 +402,18 @@ function SortableEffectItem({
 
       {/* Params */}
       {isExpanded && effectDef && (
-        <div className="space-y-3 border-t px-3 py-2.5">
+        <div className="grid gap-x-6 gap-y-3 border-t border-border/70 bg-muted/15 px-3 py-3 @min-[28rem]:grid-cols-2">
           {Object.entries(effectDef.params).map(([paramName, paramDef]) => {
             const currentValue = effect.params[paramName] ?? paramDef.default;
             return (
-              <div key={paramName} className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <Label className="text-[11px] text-muted-foreground">
+              <div key={paramName} className="space-y-1 only:col-span-full">
+                <div className="flex items-baseline justify-between gap-2">
+                  <Label className="text-xs leading-snug text-muted-foreground">
                     {t(`effects.types.${effect.type}.params.${paramName}`, {
                       defaultValue: paramDef.description,
                     })}
                   </Label>
-                  <span className="text-[11px] font-mono tabular-nums text-foreground">
+                  <span className="shrink-0 rounded bg-background px-1.5 py-0.5 font-mono text-[11px] tabular-nums text-foreground">
                     {currentValue.toFixed(
                       paramDef.step < 1 ? Math.max(1, -Math.floor(Math.log10(paramDef.step))) : 0,
                     )}

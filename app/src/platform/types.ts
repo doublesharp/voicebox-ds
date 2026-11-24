@@ -32,6 +32,7 @@ export interface UpdateStatus {
 }
 
 export interface PlatformUpdater {
+  enabled?: boolean;
   checkForUpdates(): Promise<void>;
   downloadAndInstall(): Promise<void>;
   restartAndInstall(): Promise<void>;
@@ -91,6 +92,7 @@ export interface PlatformLifecycle {
   restartServer(modelsDir?: string | null): Promise<string>;
   setKeepServerRunning(keep: boolean): Promise<void>;
   setBackendOverride(backend?: string | null): Promise<void>;
+  openMicrophoneSettings?: () => Promise<void>;
   setupWindowCloseHandler(): Promise<void>;
   subscribeToServerLogs(callback: (entry: ServerLogEntry) => void): () => void;
   onServerReady?: () => void;

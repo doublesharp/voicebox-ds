@@ -8,6 +8,7 @@ voice prompt combination, and model loading progress tracking.
 import logging
 import os
 import platform
+import re
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -77,8 +78,8 @@ def is_model_cached(
     Args:
         hf_repo: HuggingFace repo ID (e.g. "Qwen/Qwen3-TTS-12Hz-1.7B-Base")
         weight_extensions: File extensions that count as model weights.
-        required_files: If set, check that these specific filenames exist
-                        in snapshots instead of checking by extension.
+        required_files: Exact paths that must coexist in one snapshot. A cached
+                        main ref selects the snapshot for unpinned loads.
 
     Returns:
         True if model is fully cached, False if missing or incomplete.
@@ -95,28 +96,40 @@ def is_model_cached(
         if not snapshots_dir.exists():
             return False
 
-        if revision is not None:
-            import re
-
-            if re.fullmatch(r"[a-fA-F0-9]{40,64}", revision) is None:
+        if revision is not None or required_files:
+            selected_revision = revision
+            main_ref = repo_cache / "refs" / "main"
+            if selected_revision is None:
+                if not main_ref.is_file():
+                    return False
+                selected_revision = main_ref.read_text(encoding="ascii").strip()
+            if re.fullmatch(r"[a-fA-F0-9]{40,64}", selected_revision) is None:
                 return False
-            snapshot = snapshots_dir / revision
-            if not snapshot.is_dir():
+
+            repo_root = repo_cache.resolve()
+
+            def complete_file(path: Path) -> bool:
+                target = path.resolve()
+                return (
+                    target.is_relative_to(repo_root)
+                    and not target.name.endswith(".incomplete")
+                    and target.is_file()
+                )
+
+            snapshot = snapshots_dir / selected_revision
+            if not snapshot.is_dir() or snapshot.resolve() != snapshots_dir.resolve() / selected_revision:
                 return False
             if required_files:
-                return all((snapshot / name).is_file() and (snapshot / name).resolve().is_relative_to(repo_cache.resolve()) for name in required_files)
-            return any(path.is_file() for ext in weight_extensions for path in snapshot.rglob(f"*{ext}"))
+                return all(complete_file(snapshot / name) for name in required_files)
+            return any(
+                complete_file(path)
+                for ext in weight_extensions
+                for path in snapshot.rglob(f"*{ext}")
+            )
 
         if has_in_progress_download(repo_cache / "blobs"):
             logger.debug(f"Found in-progress .incomplete file for {hf_repo}")
             return False
-
-        if required_files:
-            # Check that every required filename exists somewhere in snapshots
-            for fname in required_files:
-                if not any(path.is_file() for path in snapshots_dir.rglob(fname)):
-                    return False
-            return True
 
         # Check that at least one weight file exists
         for ext in weight_extensions:

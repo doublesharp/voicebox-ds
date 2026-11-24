@@ -202,7 +202,7 @@ function AudioPlayerSession() {
           cursorWidth: 3,
           barWidth: 2,
           barRadius: 2,
-          height: 80,
+          height: 'auto',
           normalize: true,
           interact: true,
           dragToSeek: { debounceTime: 0 },
@@ -730,16 +730,16 @@ function AudioPlayerSession() {
   }
 
   return (
-    <div className="app-global-player fixed bottom-0 left-[var(--app-rail-width)] right-0 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 z-50">
-      <div className="container mx-auto px-4 py-3 max-w-7xl">
-        <div className="flex items-center gap-4">
+    <div className="app-global-player fixed bottom-0 left-[var(--app-rail-width)] right-0 z-50 border-t border-border/70 bg-card/95 backdrop-blur">
+      <div className="container mx-auto max-w-7xl px-2 py-1.5 md:px-4 md:py-2">
+        <div className="flex items-center gap-1.5 md:gap-3">
           {/* Play/Pause Button */}
           <Button
             variant="ghost"
             size="icon"
             onClick={handlePlayPause}
             disabled={isLoading || isStarting || !routingReady || duration === 0}
-            className={`shrink-0 -mt-2 ${isPlaying ? 'bg-accent text-accent-foreground' : ''}`}
+            className={`size-8 shrink-0 md:size-9 ${isPlaying ? 'bg-accent/15 text-foreground' : ''}`}
             title={duration === 0 && !isLoading ? 'Audio not loaded' : ''}
             aria-label={
               duration === 0 && !isLoading ? 'Audio not loaded' : isPlaying ? 'Pause' : 'Play'
@@ -753,34 +753,35 @@ function AudioPlayerSession() {
           </Button>
 
           {/* Waveform */}
-          <div className="flex-1 min-w-0 flex flex-col gap-1">
-            <div ref={waveformRef} className="w-full min-h-[80px] select-none" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div ref={waveformRef} className="h-8 w-full select-none md:h-12" />
             <Slider
               value={duration > 0 ? [(currentTime / duration) * 100] : [0]}
               onValueChange={handleSeek}
               max={100}
               step={0.1}
-              className="w-full"
+              className="h-4 w-full"
               aria-label="Playback position"
               aria-valuetext={`${formatAudioDuration(currentTime)} of ${formatAudioDuration(duration)}`}
             />
+            <span className="self-end font-mono text-[10px] leading-none text-muted-foreground md:hidden">
+              {formatAudioDuration(currentTime)} / {formatAudioDuration(duration)}
+            </span>
 
             {error && <div className="text-xs text-destructive text-center py-2">{error}</div>}
           </div>
 
           {/* Time Display */}
-          <div className="flex items-center gap-2 text-sm text-muted-foreground shrink-0 min-w-[100px]">
-            <span className="font-mono">{formatAudioDuration(currentTime)}</span>
-            <span>/</span>
-            <span className="font-mono">{formatAudioDuration(duration)}</span>
-          </div>
+          <span className="hidden shrink-0 whitespace-nowrap font-mono text-xs text-muted-foreground md:block">
+            {formatAudioDuration(currentTime)} / {formatAudioDuration(duration)}
+          </span>
 
           {/* Loop Button */}
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleLoop}
-            className={isLooping ? 'bg-accent text-accent-foreground' : ''}
+            className={`size-8 shrink-0 ${isLooping ? 'bg-accent/15 text-foreground' : ''}`}
             title="Toggle loop"
             aria-label={isLooping ? 'Stop looping' : 'Loop'}
           >
@@ -789,7 +790,7 @@ function AudioPlayerSession() {
 
           {/* Volume Control */}
           <fieldset
-            className="flex items-center gap-2 shrink-0 w-[120px] p-0 border-0"
+            className="flex shrink-0 items-center gap-1 border-0 p-0 md:w-27"
             aria-label="Volume"
           >
             <Button
@@ -809,7 +810,7 @@ function AudioPlayerSession() {
               onValueChange={handleVolumeChange}
               max={100}
               step={1}
-              className="flex-1"
+              className="hidden h-4 flex-1 md:flex"
               aria-labelledby={volumeLabelId}
               aria-valuetext={`${Math.round(volume * 100)}%`}
             />
@@ -820,11 +821,11 @@ function AudioPlayerSession() {
             variant="ghost"
             size="icon"
             onClick={handleClose}
-            className="shrink-0"
+            className="size-8 shrink-0 text-muted-foreground"
             title="Close player"
             aria-label="Close player"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </div>

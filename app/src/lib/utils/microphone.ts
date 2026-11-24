@@ -49,13 +49,20 @@ export async function requestMicrophone(
   }
 }
 
+export function isMicrophonePermissionDenied(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError')
+  );
+}
+
 export function microphoneErrorMessage(error: unknown): string {
+  if (isMicrophonePermissionDenied(error)) {
+    return 'Microphone access was denied. Allow access in your system or browser settings.';
+  }
   if (error instanceof Error) {
     if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') {
       return 'The selected microphone is unavailable. Reconnect it or choose another microphone.';
-    }
-    if (error.name === 'NotAllowedError') {
-      return 'Microphone access was denied. Allow access in your system or browser settings.';
     }
     return error.message;
   }

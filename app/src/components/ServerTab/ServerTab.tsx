@@ -38,37 +38,43 @@ export function SettingsLayout() {
   const matchRoute = useMatchRoute();
 
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <nav className="flex gap-1 overflow-x-auto border-b shrink-0" aria-label={t('nav.settings')}>
-        {tabs.map((tab) => {
-          if (tab.tauriOnly && !platform.metadata.isTauri) return null;
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <header className="w-full max-w-5xl shrink-0">
+        <h1 className="mb-2 text-xl font-semibold tracking-tight">{t('nav.settings')}</h1>
+        <nav
+          className="flex flex-nowrap gap-1 overflow-x-auto border-b"
+          aria-label={t('nav.settings')}
+        >
+          {tabs.map((tab) => {
+            if (tab.tauriOnly && !platform.metadata.isTauri) return null;
 
-          const isActive =
-            tab.path === '/settings'
-              ? matchRoute({ to: tab.path, fuzzy: false })
-              : matchRoute({ to: tab.path });
+            const isActive =
+              tab.path === '/settings'
+                ? matchRoute({ to: tab.path, fuzzy: false })
+                : matchRoute({ to: tab.path });
 
-          return (
-            <Link
-              key={tab.path}
-              to={tab.path}
-              activeOptions={{ exact: tab.path === '/settings' }}
-              className={cn(
-                'shrink-0 whitespace-nowrap px-4 py-3 text-sm font-medium transition-colors border-b-2',
-                isActive
-                  ? 'border-accent text-foreground'
-                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30',
-              )}
-            >
-              {tab.label ?? (tab.labelKey ? t(tab.labelKey) : '')}
-            </Link>
-          );
-        })}
-      </nav>
+            return (
+              <Link
+                key={tab.path}
+                to={tab.path}
+                activeOptions={{ exact: tab.path === '/settings' }}
+                className={cn(
+                  'shrink-0 whitespace-nowrap border-b-2 px-2.5 py-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-4',
+                  isActive
+                    ? 'border-accent text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30',
+                )}
+              >
+                {tab.label ?? (tab.labelKey ? t(tab.labelKey) : '')}
+              </Link>
+            );
+          })}
+        </nav>
+      </header>
 
       <div
         className={cn(
-          'flex-1 overflow-y-auto pt-6 pb-6 px-2 -mx-2',
+          '-mx-2 min-h-0 flex-1 overflow-y-auto px-2 pt-4 pb-6 sm:pt-5',
           isPlayerVisible && BOTTOM_SAFE_AREA_PADDING,
         )}
       >

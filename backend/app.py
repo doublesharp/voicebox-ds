@@ -173,8 +173,8 @@ def _configure_cors(application: FastAPI) -> None:
     default_origins = [
         "http://localhost:5173",  # Vite dev server
         "http://127.0.0.1:5173",
-        "http://localhost:17493",
-        "http://127.0.0.1:17493",
+        f"http://localhost:{config.DEFAULT_PORT}",
+        f"http://127.0.0.1:{config.DEFAULT_PORT}",
         "tauri://localhost",  # Tauri webview (macOS)
         "https://tauri.localhost",  # Tauri webview (Windows/Linux)
         "http://tauri.localhost",  # Tauri webview (Windows, some builds)

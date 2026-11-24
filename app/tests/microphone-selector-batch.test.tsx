@@ -1,8 +1,12 @@
 import { afterAll, afterEach, beforeEach, expect, mock, test } from 'bun:test';
 import { createElement, type ReactNode } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import { PlatformProvider } from '../src/platform/PlatformContext';
+import type { Platform } from '../src/platform/types';
 
 mock.module('react-i18next', () => ({ useTranslation: () => ({ t: (key: string, params?: any) => params?.name ? `${key}:${params.name}` : key }) }));
+const openMicrophoneSettings = mock(async () => {});
+const platform = { metadata: { isTauri: true }, lifecycle: { openMicrophoneSettings } } as Platform;
 mock.module('../src/components/ui/button', () => ({ Button: (props: any) => createElement('button', props) }));
 mock.module('../src/components/ui/label', () => ({ Label: ({ children }: { children?: ReactNode }) => <>{children}</> }));
 const pass = ({ children }: { children?: ReactNode }) => <>{children}</>;
@@ -24,7 +28,15 @@ const device = (id: string, label: string, kind = 'audioinput') => ({ kind, devi
 const track = () => ({ stop: mock(() => {}), getSettings: () => ({ deviceId: 'mic-a' }) });
 let view: ReactTestRenderer | undefined;
 async function flush() { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); }
-async function mount(disabled = false) { await act(async () => { view = create(<MicrophoneSelector disabled={disabled} />); }); }
+async function mount(disabled = false) {
+  await act(async () => {
+    view = create(
+      <PlatformProvider platform={platform}>
+        <MicrophoneSelector disabled={disabled} />
+      </PlatformProvider>,
+    );
+  });
+}
 const select = () => view!.root.findByType('test-select' as never);
 const options = () => view!.root.findAllByType('test-option' as never);
 const button = (label: string) => view!.root.findAllByType('button').find((item) => item.props.children === label)!;
@@ -69,9 +81,11 @@ test('a later enumeration cannot erase a denied-permission message', async () =>
   acquire = async () => { throw new DOMException('denied', 'NotAllowedError'); };
   await mount();
   await act(async () => button('microphone.enable').props.onClick()); await flush();
-  expect(view!.root.findByProps({ role: 'alert' }).children.join('')).toContain('denied');
+  expect(view!.root.findByProps({ role: 'alert' }).children).toContain('microphone.permissionDeniedDesktop');
+  await act(async () => button('microphone.openSettings').props.onClick());
+  expect(openMicrophoneSettings).toHaveBeenCalledTimes(1);
   await act(async () => finish([device('mic-a', '')])); await flush();
-  expect(view!.root.findByProps({ role: 'alert' }).children.join('')).toContain('denied');
+  expect(view!.root.findByProps({ role: 'alert' }).children).toContain('microphone.permissionDeniedDesktop');
 });
 
 test('only the latest enumeration result updates the device list', async () => {

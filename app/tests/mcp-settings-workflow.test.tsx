@@ -78,16 +78,16 @@ test('stdio setup points to the installed bundle for each desktop platform', asy
   const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   try {
     for (const [platform, agent, expected] of [
-      ['MacIntel', 'Macintosh', '/Applications/Voicebox DS.app/Contents/MacOS/voicebox-mcp'],
-      ['Win32', 'Windows', 'C:\\Program Files\\Voicebox DS\\voicebox-mcp.exe'],
-      ['Linux', 'Linux', '/opt/voicebox/voicebox-mcp'],
+      ['MacIntel', 'Macintosh', '/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp'],
+      ['Win32', 'Windows', 'C:\\Program Files\\Voicebox DS\\voicebox-ds-mcp.exe'],
+      ['Linux', 'Linux', 'voicebox-ds-mcp'],
     ]) {
       Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { platform, userAgent: agent } });
       await mount();
       const snippets = view.root.findAllByType('pre').map((node) => node.children.join(''));
       const configuration = snippets.map((text) => { try { return JSON.parse(text); } catch { return null; } })
-        .find((value) => value?.mcpServers?.voicebox?.command);
-      expect(configuration.mcpServers.voicebox.command).toBe(expected);
+        .find((value) => value?.mcpServers?.['voicebox-ds']?.command);
+      expect(configuration.mcpServers['voicebox-ds'].command).toBe(expected);
       act(() => view.unmount());
     }
   } finally {

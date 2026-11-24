@@ -115,7 +115,7 @@ def runtime(monkeypatch):
         monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setattr(styles, "empty_mlx_cache", lambda: state.clears.append(threading.get_ident()))
     monkeypatch.setattr(styles, "model_load_progress", lambda *args: nullcontext())
-    monkeypatch.setattr(styles, "is_model_cached", lambda repo: True)
+    monkeypatch.setattr(styles, "is_model_cached", lambda repo, **_kwargs: True)
     state.styles = styles
     return state
 
@@ -415,9 +415,15 @@ async def test_registry_load_readiness_cache_inventory_and_unload_use_same_varia
     configs = [c for c in backends.get_tts_model_configs() if c.engine in ("qwen_custom_voice", "qwen_voice_design")]
     for cfg in configs:
         backend = backends.get_tts_backend_for_engine(cfg.engine)
-        snapshot = tmp_path / ("models--" + cfg.hf_repo_id.replace("/", "--")) / "snapshots" / "fixture"
-        snapshot.mkdir(parents=True)
-        (snapshot / "model.safetensors").write_bytes(b"fake-weight-inventory-only")
+        root = tmp_path / ("models--" + cfg.hf_repo_id.replace("/", "--"))
+        revision = "a" * 40
+        snapshot = root / "snapshots" / revision
+        (root / "refs").mkdir(parents=True)
+        (root / "refs" / "main").write_text(revision)
+        for asset in cfg.required_files:
+            file = snapshot / asset
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(b"inventory fixture")
         assert backend._get_model_path(cfg.model_size) == cfg.hf_repo_id
         assert backend._is_model_cached(cfg.model_size)
         assert await downloaded(cfg) is True

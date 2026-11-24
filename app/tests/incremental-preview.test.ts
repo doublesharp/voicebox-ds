@@ -44,9 +44,9 @@ function stream(chunks: Uint8Array[]) {
     },
   });
 }
-async function collect(body: ReadableStream<Uint8Array>) {
+async function collect(body: ReadableStream<Uint8Array>, mode: 'incremental' | 'buffered' = 'incremental') {
   const blocks = [];
-  for await (const block of pcmWaveStream(body, new AbortController().signal)) blocks.push(block);
+  for await (const block of pcmWaveStream(body, new AbortController().signal, mode)) blocks.push(block);
   return blocks;
 }
 function native() {
@@ -101,6 +101,64 @@ test('preview posts only the selected voice and explicitly unmastered streaming 
   });
   expect(seen.signal).toBe(signal);
   expect(response.body).toBe(body);
+});
+
+test('buffered preview sends the same processing and delivery options as a generated take', async () => {
+  const options = {
+    ...request,
+    engine: 'chatterbox' as const,
+    normalize: true,
+    speed: 0.95,
+    chatterbox_cfg_weight: 0.3,
+    chatterbox_exaggeration: 0.7,
+    effects_chain: [{ type: 'compressor', enabled: true, params: {} }],
+  };
+  const calls = mock(async () => new Response(wave()));
+  globalThis.fetch = calls as unknown as typeof fetch;
+  const signal = new AbortController().signal;
+  await apiClient.previewSpeech(options, signal, 'buffered');
+  const [url, init] = calls.mock.calls[0] as unknown as [string, RequestInit];
+  expect(url.endsWith('/generate/stream')).toBe(true);
+  expect(JSON.parse(String(init.body))).toEqual(options);
+  expect(init.signal).toBe(signal);
+});
+
+test('stopping during the first model load cancels the preview before synthesis', async () => {
+  const abort = new AbortController();
+  const calls = mock(async (_url: string, _options: RequestInit) => {
+    abort.abort();
+    return Response.json({ message: 'Model loaded' });
+  });
+  globalThis.fetch = calls as unknown as typeof fetch;
+  await expect(
+    apiClient.previewSpeech(request, abort.signal, 'buffered', 'chatterbox-tts'),
+  ).rejects.toThrow('Preview stopped');
+  expect(calls).toHaveBeenCalledTimes(1);
+  const [url, options] = calls.mock.calls[0];
+  expect(url.endsWith('/models/load')).toBe(true);
+  expect(JSON.parse(String(options.body))).toEqual({ model_name: 'chatterbox-tts' });
+  expect(options.signal).toBe(abort.signal);
+});
+
+test('buffered preview plays a complete sized WAV and rejects a truncated recording', async () => {
+  const bytes = wave();
+  const view = new DataView(bytes.buffer);
+  view.setUint32(4, bytes.length - 8, true);
+  view.setUint32(40, bytes.length - 44, true);
+  const blocks = await collect(stream([bytes.slice(0, 27), bytes.slice(27)]), 'buffered');
+  expect([...blocks.flatMap((block) => [...block.pcm])]).toEqual([...bytes.slice(44)]);
+  const output = native();
+  const preview = new IncrementalPlayback(
+    output.audio,
+    () => {},
+    async () => new Response(bytes),
+  );
+  await preview.start(request, ['studio-speaker'], () => true, 'buffered');
+  expect(output.calls.startPcmStream).toHaveBeenCalledWith(24000, ['studio-speaker']);
+  expect(output.calls.appendPcmStream).toHaveBeenCalledWith('session', bytes.slice(44));
+  expect(output.calls.finishPcmStream).toHaveBeenCalledWith('session');
+  output.event({ state: 'ended' });
+  await expect(collect(stream([bytes.slice(0, 46)]), 'buffered')).rejects.toThrow('incomplete');
 });
 
 test('every arbitrary header/sample boundary preserves PCM exactly at supported sample rates', async () => {

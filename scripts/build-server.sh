@@ -38,7 +38,8 @@ mkdir -p ../tauri/src-tauri/binaries
 
 copy_sidecar() {
     local name="$1"
-    local sidecar="../tauri/src-tauri/binaries/${name}-${PLATFORM}"
+    local packaged_name="$2"
+    local sidecar="../tauri/src-tauri/binaries/${packaged_name}-${PLATFORM}"
 
     # Local builds may point this name at a retained artifact. Replace that
     # reference rather than overwriting its shared target through the symlink.
@@ -85,14 +86,14 @@ copy_sidecar() {
         fi
         cp "${DIST_DIR}/${name}/${name}" "$sidecar"
         chmod +x "$sidecar"
-        echo "Built ${name}-${PLATFORM} and its packaged support directory"
+        echo "Built ${packaged_name}-${PLATFORM} and its packaged support directory"
     elif [ -f "${DIST_DIR}/${name}" ]; then
         cp "${DIST_DIR}/${name}" "$sidecar"
         chmod +x "$sidecar"
-        echo "Built ${name}-${PLATFORM}"
+        echo "Built ${packaged_name}-${PLATFORM}"
     elif [ -f "${DIST_DIR}/${name}.exe" ]; then
-        cp "${DIST_DIR}/${name}.exe" "../tauri/src-tauri/binaries/${name}-${PLATFORM}.exe"
-        echo "Built ${name}-${PLATFORM}.exe"
+        cp "${DIST_DIR}/${name}.exe" "$sidecar.exe"
+        echo "Built ${packaged_name}-${PLATFORM}.exe"
     else
         echo "Error: ${name} binary not found in ${DIST_DIR}/"
         exit 1
@@ -100,9 +101,9 @@ copy_sidecar() {
 }
 
 python build_binary.py
-copy_sidecar voicebox-server
+copy_sidecar voicebox-server voicebox-ds-server
 
 python build_binary.py --shim
-copy_sidecar voicebox-mcp
+copy_sidecar voicebox-mcp voicebox-ds-mcp
 
 echo "Build complete!"

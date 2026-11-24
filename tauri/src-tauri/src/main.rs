@@ -171,8 +171,10 @@ fn install_dictate_window_handlers<R: tauri::Runtime>(app: &tauri::AppHandle<R>)
     });
 }
 
-const LEGACY_PORT: u16 = 8000;
-pub(crate) const SERVER_PORT: u16 = 17493;
+const APPLICATION_ID: &str = "com.doublesharp.voicebox.ds";
+// A local UX test bundle can run beside the installed app without adopting its server.
+const ISOLATED_LOCAL_BUILD: bool = option_env!("VOICEBOX_ISOLATED_LOCAL_BUILD").is_some();
+pub(crate) const SERVER_PORT: u16 = if ISOLATED_LOCAL_BUILD { 17494 } else { 17593 };
 
 /// Find a voicebox-server process listening on a given port (Windows only).
 ///
@@ -209,24 +211,27 @@ fn find_voicebox_pid_on_port(port: u16) -> Option<u32> {
     None
 }
 
-/// Check if a Voicebox server is responding on the given port.
+/// Check if a Voicebox DS server is responding on the given port.
 ///
 /// Sends an HTTP GET to `/health` and returns `true` only if the response
-/// is valid JSON matching the Voicebox `HealthResponse` schema — specifically
+/// includes the DS application ID and matches the `HealthResponse` schema.
 /// `status` must be `"healthy"`, and both `model_loaded` and `gpu_available`
-/// must be present as booleans. This prevents misidentifying an unrelated
-/// service that happens to expose a `/health` endpoint.
+/// must be present as booleans.
 #[allow(dead_code)] // Used in platform-specific cfg blocks
 fn check_health(port: u16) -> bool {
     let url = format!("http://127.0.0.1:{}/health", port);
     match reqwest::blocking::Client::builder()
+        .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(3))
         .build()
     {
         Ok(client) => match client.get(&url).send() {
             Ok(resp) => {
-                if resp.status() != reqwest::StatusCode::OK {
+                if resp.status() != reqwest::StatusCode::OK
+                    || resp.headers().get("X-Voicebox-Application")
+                        .and_then(|value| value.to_str().ok()) != Some(APPLICATION_ID)
+                {
                     return false;
                 }
                 // Parse as JSON and validate Voicebox-specific fields
@@ -497,7 +502,6 @@ struct ServerStartupConfig {
     listener_executable: Option<std::path::PathBuf>,
     listener_timeout: std::time::Duration,
     port_release_delay: std::time::Duration,
-    legacy_port: Option<u16>,
     data_dir: Option<std::path::PathBuf>,
     cpu_executable: Option<std::path::PathBuf>,
     startup_timeout: std::time::Duration,
@@ -510,7 +514,6 @@ impl Default for ServerStartupConfig {
             listener_executable: None,
             listener_timeout: std::time::Duration::from_secs(10),
             port_release_delay: std::time::Duration::from_millis(200),
-            legacy_port: Some(LEGACY_PORT),
             data_dir: None,
             cpu_executable: None,
             startup_timeout: std::time::Duration::from_secs(120),
@@ -589,7 +592,7 @@ async fn start_server_with_generation<R: tauri::Runtime>(
                 server_process::ListenerDecision::Conflict(command) => {
                     return Err(format!(
                         "Port {} is already in use by another application ({}). \
-                         Close it or change the Voicebox server port.",
+                         Close it and retry.",
                         config.port, command
                     ));
                 }
@@ -617,57 +620,12 @@ async fn start_server_with_generation<R: tauri::Runtime>(
             }
             return Err(format!(
                 "Port {} is already in use by another application. \
-                 Close the other application or change the Voicebox port.",
+                 Close it and retry.",
                 config.port
             ));
         }
     }
 
-    // Kill any orphaned voicebox-server from previous session on legacy port 8000
-    // This handles upgrades from older versions that used a fixed port
-    #[cfg(unix)]
-    if let Some(legacy_port) = config.legacy_port {
-        use std::process::Command;
-        if let Some(output) = discover_listeners(legacy_port, config.listener_executable.as_deref(), config.listener_timeout, &_start_permit).await? {
-            let output_str = String::from_utf8_lossy(&output.stdout);
-            let healthy = output_str.lines().skip(1).any(|line| !line.trim().is_empty())
-                && startup_health_check(legacy_port, &_start_permit).await?;
-            for pid in server_process::legacy_pids(&output_str, healthy) {
-                #[cfg(target_os = "linux")]
-                if !server_process::linux_server_executable(pid) {
-                    continue;
-                }
-                _start_permit.commit(|| {
-                    println!("Found healthy voicebox-server on legacy port {} (PID: {}), stopping it...", legacy_port, pid);
-                    let _ = Command::new("kill")
-                        .args(["-9", "--", &format!("-{}", pid)])
-                        .output();
-                    let _ = Command::new("kill")
-                        .args(["-9", &pid.to_string()])
-                        .output();
-                }).ok_or("Server startup cancelled")?;
-            }
-        }
-    }
-    
-    #[cfg(windows)]
-    if let Some(legacy_port) = config.legacy_port {
-        use std::net::TcpStream;
-        if TcpStream::connect_timeout(
-            &format!("127.0.0.1:{}", legacy_port).parse().unwrap(),
-            std::time::Duration::from_secs(1),
-        ).is_ok() && startup_health_check(legacy_port, &_start_permit).await? {
-            if let Some(pid) = find_voicebox_pid_on_port(legacy_port) {
-                _start_permit.commit(|| {
-                    println!("Found orphaned voicebox-server on legacy port {} (PID: {}), killing it...", legacy_port, pid);
-                    let _ = std::process::Command::new("taskkill")
-                        .args(["/PID", &pid.to_string(), "/T", "/F"])
-                        .output();
-                }).ok_or("Server startup cancelled")?;
-            }
-        }
-    }
-    
     // Brief wait for port to be released
     _start_permit
         .until_cancelled(tokio::time::sleep(config.port_release_delay))
@@ -730,7 +688,7 @@ async fn start_server_with_generation<R: tauri::Runtime>(
     let custom_cpu = config.cpu_executable.is_some();
     let sidecar_result = match config.cpu_executable {
         Some(path) => Ok(app.shell().command(path)),
-        None => app.shell().sidecar("voicebox-server"),
+        None => app.shell().sidecar("voicebox-ds-server"),
     };
 
     let mut sidecar = match sidecar_result {
@@ -790,11 +748,9 @@ async fn start_server_with_generation<R: tauri::Runtime>(
         .to_string();
     let server_args = server_arguments(&data_dir_str, config.port, std::process::id(), is_remote);
 
-    // Resolve the custom models directory from the parameter or stored state
-    let effective_models_dir = state.models_dir.lock().unwrap().clone();
-    if let Some(ref dir) = effective_models_dir {
-        println!("Custom models directory: {}", dir);
-    }
+    let effective_models_dir = state.models_dir.lock().unwrap().as_ref().map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("VOICEBOX_MODELS_DIR").filter(|dir| !dir.is_empty()).map(Into::into))
+        .unwrap_or_else(|| data_dir.join("models"));
 
     // Honor a pinned GPU variant by ignoring the other one — but only when the
     // pinned variant is actually installed, so a stale pin to a deleted backend
@@ -816,15 +772,12 @@ async fn start_server_with_generation<R: tauri::Runtime>(
             |path| {
                 let dir = path.parent().unwrap();
                 println!("Launching GPU backend: {:?} (cwd: {:?})", path, dir);
-                let mut cmd = app.shell().command(path.to_str().unwrap()).current_dir(dir).args(&server_args);
-                if let Some(ref models) = effective_models_dir { cmd = cmd.env("VOICEBOX_MODELS_DIR", models); }
-                cmd.spawn()
+                app.shell().command(path).current_dir(dir).args(&server_args)
+                    .env("VOICEBOX_MODELS_DIR", &effective_models_dir).spawn()
             },
             || {
-                sidecar = sidecar.args(&server_args);
-                if let Some(ref models) = effective_models_dir { sidecar = sidecar.env("VOICEBOX_MODELS_DIR", models); }
                 println!("Spawning bundled CPU server process...");
-                sidecar.spawn()
+                sidecar.args(&server_args).env("VOICEBOX_MODELS_DIR", &effective_models_dir).spawn()
             },
         );
         result.map(|(rx, child)| {
@@ -1189,11 +1142,11 @@ fn stop_audio_playback(
 /// `FocusSnapshot::bundle_id` on the current platform — reverse-DNS bundle
 /// id on macOS, lowercased exe basename on Windows/Linux.
 #[cfg(target_os = "macos")]
-const VOICEBOX_BUNDLE_ID: &str = "sh.voicebox.app";
+const VOICEBOX_BUNDLE_ID: &str = APPLICATION_ID;
 #[cfg(target_os = "windows")]
-const VOICEBOX_BUNDLE_ID: &str = "voicebox.exe";
+const VOICEBOX_BUNDLE_ID: &str = "voicebox-ds.exe";
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-const VOICEBOX_BUNDLE_ID: &str = "voicebox";
+const VOICEBOX_BUNDLE_ID: &str = "voicebox-ds";
 
 /// Milliseconds to wait between activating the target app and firing the
 /// synthetic ⌘V, giving AppKit time to finish re-ordering windows and
@@ -1415,6 +1368,24 @@ fn open_input_monitoring_settings(app: tauri::AppHandle) -> Result<(), String> {
         let _ = app;
         Err("Input Monitoring settings pane is only implemented on macOS".into())
     }
+}
+
+#[command]
+fn open_microphone_settings(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+    #[cfg(target_os = "windows")]
+    let url = "ms-settings:privacy-microphone";
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let url = "";
+
+    if url.is_empty() {
+        return Err("Microphone settings are unavailable on this platform".into());
+    }
+
+    app.shell()
+        .open(url, None)
+        .map_err(|e| format!("Failed to open microphone settings: {e}"))
 }
 
 /// Deliver `text` into the UI that had focus when the chord fired.
@@ -1856,6 +1827,7 @@ pub fn run() {
             check_input_monitoring_permission,
             open_accessibility_settings,
             open_input_monitoring_settings,
+            open_microphone_settings,
             paste_final_text,
             enable_hotkey,
             disable_hotkey,
@@ -2017,6 +1989,8 @@ mod chord_validation_tests {
 #[cfg(test)]
 mod server_health_tests {
     use super::check_health;
+
+    const DS_HEADERS: &str = "X-Voicebox-Application: com.doublesharp.voicebox.ds\r\n";
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -2045,7 +2019,7 @@ mod server_health_tests {
             ("200 OK", "not json", false),
             ("503 Service Unavailable", r#"{"status":"healthy","model_loaded":true,"gpu_available":true}"#, false),
         ] {
-            let (port, handle) = serve(status, "", body);
+            let (port, handle) = serve(status, DS_HEADERS, body);
             assert_eq!(check_health(port), expected, "{status}: {body}");
             handle.join().unwrap();
         }
@@ -2055,15 +2029,23 @@ mod server_health_tests {
     fn non_ok_success_statuses_do_not_identify_a_voicebox_server() {
         let body = r#"{"status":"healthy","model_loaded":true,"gpu_available":false}"#;
         for status in ["201 Created", "202 Accepted", "206 Partial Content"] {
-            let (port, handle) = serve(status, "", body);
+            let (port, handle) = serve(status, DS_HEADERS, body);
             assert!(!check_health(port), "unexpectedly accepted {status}");
             handle.join().unwrap();
         }
     }
 
     #[test]
+    fn a_healthy_upstream_server_is_not_the_bundled_server() {
+        let body = r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"#;
+        let (port, handle) = serve("200 OK", "", body);
+        assert!(!check_health(port));
+        handle.join().unwrap();
+    }
+
+    #[test]
     fn redirect_must_not_turn_an_unrelated_service_into_a_healthy_backend() {
-        let (target, target_handle) = serve("200 OK", "", r#"{"status":"healthy","model_loaded":true,"gpu_available":false}"#);
+        let (target, target_handle) = serve("200 OK", DS_HEADERS, r#"{"status":"healthy","model_loaded":true,"gpu_available":false}"#);
         let (source, source_handle) = serve("302 Found", &format!("Location: http://127.0.0.1:{target}/health\r\n"), "");
         let healthy = check_health(source);
         source_handle.join().unwrap();
@@ -2131,7 +2113,7 @@ mod manual_server_tests {
     fn serve(status: &str, body: &str) -> (u16, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n{body}", body.len());
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
             stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
@@ -3230,7 +3212,7 @@ mod exit_ownership_regression_tests {
                 assert!(count > 0 && request.len() < 16384);
                 request.extend_from_slice(&buffer[..count]);
             }
-            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n").unwrap();
             request
         });
         let dir = std::env::temp_dir().join(format!("voicebox-exit-owned-{}", std::process::id()));
@@ -3540,7 +3522,6 @@ mod server_start_flow_tests {
                 listener_executable: None,
                 listener_timeout: Duration::from_secs(10),
                 port_release_delay: Duration::from_millis(200),
-                legacy_port: None,
                 data_dir: Some(self.dir.join("data")),
                 cpu_executable: Some(self.exe.clone()),
                 startup_timeout: Duration::from_secs(120),
@@ -3587,14 +3568,24 @@ mod server_start_flow_tests {
     }
 
     #[test]
-    fn production_defaults_keep_fixed_ports_and_packaged_paths() {
+    fn production_defaults_isolate_voicebox_ds() {
         let config = ServerStartupConfig::default();
-        assert_eq!(config.port, SERVER_PORT);
+        let bundle: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(bundle["identifier"], "com.doublesharp.voicebox.ds");
+        assert_eq!(bundle["mainBinaryName"], "voicebox-ds");
+        assert_eq!(bundle["bundle"]["createUpdaterArtifacts"], false);
+        assert_eq!(bundle["plugins"]["updater"]["endpoints"], serde_json::json!([]));
+        assert_eq!(bundle["plugins"]["updater"]["pubkey"], "");
+        assert_eq!(
+            bundle["bundle"]["externalBin"],
+            serde_json::json!(["binaries/voicebox-ds-server", "binaries/voicebox-ds-mcp"])
+        );
+        assert_eq!(config.port, if ISOLATED_LOCAL_BUILD { 17494 } else { 17593 });
         assert!(config.discover_listener);
         assert!(config.listener_executable.is_none());
         assert_eq!(config.listener_timeout, Duration::from_secs(10));
         assert_eq!(config.port_release_delay, Duration::from_millis(200));
-        assert_eq!(config.legacy_port, Some(LEGACY_PORT));
         assert!(config.data_dir.is_none());
         assert!(config.cpu_executable.is_none());
         assert_eq!(config.startup_timeout, Duration::from_secs(120));
@@ -3676,7 +3667,7 @@ mod server_start_flow_tests {
         for (requested, expected) in [
             (None, "previous models"),
             (Some("models/音声 with spaces"), "models/音声 with spaces"),
-            (Some(""), "unset"),
+            (Some(""), ""),
         ] {
             let fixture = Fixture::new("printf '%s\\n' \"${VOICEBOX_MODELS_DIR-unset}\" > \"$2/models\"\nprintf 'INFO: Uvicorn running on http://127.0.0.1:%s\\n' \"$4\" >&2\nexec /bin/sleep 5");
             let app = app();
@@ -3688,6 +3679,8 @@ mod server_start_flow_tests {
             let observed = std::fs::read_to_string(fixture.dir.join("data/models"));
             stop_server_if_owned(app.state(), None).await.unwrap();
             assert!(result.is_ok(), "startup failed: {result:?}");
+            let default_models = fixture.dir.join("data/models");
+            let expected = if expected.is_empty() { default_models.to_str().unwrap() } else { expected };
             assert_eq!(observed.unwrap().trim_end(), expected, "requested {requested:?}");
         }
     }
@@ -3713,7 +3706,7 @@ mod server_start_flow_tests {
 
     #[tokio::test]
     async fn restart_replaces_the_sidecar_and_preserves_or_updates_settings() {
-        for (requested, expected) in [(None, "original models"), (Some("new models"), "new models"), (Some(""), "unset")] {
+        for (requested, expected) in [(None, Some("original models")), (Some("new models"), Some("new models")), (Some(""), None)] {
             let fixture = Fixture::new("printf '%s\\n' \"${VOICEBOX_MODELS_DIR-unset}\" >> \"$2/models\"\nprintf '%s\\n' \"$@\" > \"$2/args\"\nprintf 'INFO: Uvicorn running on http://0.0.0.0:%s\\n' \"$4\" >&2\nexec /bin/sleep 5");
             let app = app();
             start_server_with(app.handle().clone(), app.state(), Some(true), Some("original models".into()), fixture.config()).await.unwrap();
@@ -3725,11 +3718,15 @@ mod server_start_flow_tests {
             let new_pid = app.state::<ServerState>().server_pid.lock().unwrap().unwrap();
             assert_ne!(original_pid, new_pid);
             let models = std::fs::read_to_string(fixture.dir.join("data/models")).unwrap();
-            assert_eq!(models.lines().collect::<Vec<_>>(), ["original models", expected]);
+            let default_models = fixture.dir.join("data/models");
+            assert_eq!(
+                models.lines().collect::<Vec<_>>(),
+                ["original models", expected.unwrap_or(default_models.to_str().unwrap())]
+            );
             let args = std::fs::read_to_string(fixture.dir.join("data/args")).unwrap();
             assert!(args.lines().collect::<Vec<_>>().windows(2).any(|args| args == ["--host", "0.0.0.0"]));
             assert!(*app.state::<ServerState>().remote.lock().unwrap());
-            assert_eq!(app.state::<ServerState>().models_dir.lock().unwrap().as_deref(), if expected == "unset" { None } else { Some(expected) });
+            assert_eq!(app.state::<ServerState>().models_dir.lock().unwrap().as_deref(), expected);
             stop_server_if_owned(app.state(), None).await.unwrap();
         }
     }
@@ -3885,7 +3882,7 @@ mod server_start_flow_tests {
             }
             assert!(request.starts_with(b"GET /health "));
             let body = r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"#;
-            write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n{}", body.len(), body).unwrap();
         });
         let fixture = Fixture::new("echo started >> \"$2/starts\"\nprintf 'INFO: Uvicorn running on http://127.0.0.1:%s\\n' \"$4\" >&2\nexec /bin/sleep 5");
         let mut config = fixture.config();
@@ -3931,7 +3928,7 @@ mod server_start_flow_tests {
                                 }
                                 assert!(request.starts_with(b"GET /health "));
                                 let body = if healthy { r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"# } else { "{}" };
-                                write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+                                write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n{}", body.len(), body).unwrap();
                                 return;
                             }
                             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock && std::time::Instant::now() < deadline => std::thread::sleep(Duration::from_millis(5)),
@@ -4040,7 +4037,7 @@ mod server_start_flow_tests {
     #[tokio::test]
     async fn isolated_listener_reuses_healthy_server_and_rejects_conflicts() {
         use std::io::{Read, Write};
-        for healthy in [true, false] {
+        for (healthy, ds) in [(true, true), (true, false), (false, true)] {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             listener.set_nonblocking(true).unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -4070,7 +4067,8 @@ mod server_start_flow_tests {
                             } else {
                                 "{}"
                             };
-                            write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+                            let identity = if ds { super::APPLICATION_ID } else { "sh.voicebox.app" };
+                            write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: {identity}\r\n\r\n{}", body.len(), body).unwrap();
                             break;
                         }
                         Err(error)
@@ -4094,7 +4092,7 @@ mod server_start_flow_tests {
             )
             .await
             .unwrap();
-            if healthy {
+            if healthy && ds {
                 assert_eq!(result.unwrap(), format!("http://127.0.0.1:{port}"));
             } else {
                 assert!(result.unwrap_err().contains("already in use"));
@@ -4128,7 +4126,7 @@ mod server_start_flow_tests {
             }
             assert!(request.starts_with(b"GET /health "));
             let body = r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"#;
-            write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n{}", body.len(), body).unwrap();
         });
         let fixture = Fixture::new("exit 42");
         let probe = fixture.dir.join("listener-probe");
@@ -4339,86 +4337,80 @@ mod server_start_flow_tests {
 
     #[cfg(target_os = "macos")]
     #[tokio::test]
-    async fn stop_interrupts_stalled_current_and_legacy_health_probes() {
+    async fn stop_interrupts_stalled_health_probes() {
         use std::io::{Read, Write};
-        for legacy in [false, true] {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            listener.set_nonblocking(true).unwrap();
-            let port = listener.local_addr().unwrap().port();
-            let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
-            let (release_tx, release_rx) = std::sync::mpsc::channel();
-            let server = std::thread::spawn(move || {
-                let deadline = std::time::Instant::now() + Duration::from_secs(5);
-                let mut socket = loop {
-                    match listener.accept() {
-                        Ok((socket, _)) => break socket,
-                        Err(e)
-                            if e.kind() == std::io::ErrorKind::WouldBlock
-                                && std::time::Instant::now() < deadline =>
-                        {
-                            std::thread::sleep(Duration::from_millis(5))
-                        }
-                        Err(e) => panic!("health probe did not connect: {e}"),
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut socket = loop {
+                match listener.accept() {
+                    Ok((socket, _)) => break socket,
+                    Err(e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(Duration::from_millis(5))
                     }
-                };
-                socket.set_nonblocking(false).unwrap();
-                socket
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut headers = Vec::new();
-                let mut chunk = [0; 1024];
-                while !headers.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                    let n = socket.read(&mut chunk).unwrap();
-                    assert!(n > 0);
-                    headers.extend_from_slice(&chunk[..n]);
-                }
-                let _ = accepted_tx.send(());
-                let _ = release_rx.recv_timeout(Duration::from_secs(5));
-                let body = r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"#;
-                let _ = write!(
-                    socket,
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-            });
-            let fixture = Fixture::new("touch \"$2/sidecar-started\"\nexec /bin/sleep 5");
-            let mut config = fixture.config();
-            if legacy {
-                config.legacy_port = Some(port);
-            } else {
-                config.port = port;
-                config.discover_listener = true;
-            }
-            let app = app();
-            let handle = app.handle().clone();
-            let mut startup = tokio::spawn(async move {
-                start_server_with(handle.clone(), handle.state(), None, None, config).await
-            });
-            tokio::time::timeout(Duration::from_secs(5), accepted_rx)
-                .await
-                .unwrap()
-                .unwrap();
-            stop_server_if_owned(app.state(), None).await.unwrap();
-            let timely = tokio::time::timeout(Duration::from_millis(500), &mut startup).await;
-            let _ = release_tx.send(());
-            server.join().unwrap();
-            let result = match timely {
-                Ok(joined) => joined.unwrap(),
-                Err(_) => {
-                    let _ = startup.await;
-                    panic!("stop waited for stalled health probe, legacy={legacy}");
+                    Err(e) => panic!("health probe did not connect: {e}"),
                 }
             };
-            assert!(result.unwrap_err().contains("cancelled"), "legacy={legacy}");
-            assert!(!fixture.dir.join("data/sidecar-started").exists());
-            assert!(app
-                .state::<ServerState>()
-                .server_pid
-                .lock()
-                .unwrap()
-                .is_none());
-        }
+            socket.set_nonblocking(false).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut headers = Vec::new();
+            let mut chunk = [0; 1024];
+            while !headers.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let n = socket.read(&mut chunk).unwrap();
+                assert!(n > 0);
+                headers.extend_from_slice(&chunk[..n]);
+            }
+            let _ = accepted_tx.send(());
+            let _ = release_rx.recv_timeout(Duration::from_secs(5));
+            let body = r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"#;
+            let _ = write!(
+                socket,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n{}",
+                body.len(),
+                body
+            );
+        });
+        let fixture = Fixture::new("touch \"$2/sidecar-started\"\nexec /bin/sleep 5");
+        let mut config = fixture.config();
+        config.port = port;
+        config.discover_listener = true;
+        let app = app();
+        let handle = app.handle().clone();
+        let mut startup = tokio::spawn(async move {
+            start_server_with(handle.clone(), handle.state(), None, None, config).await
+        });
+        tokio::time::timeout(Duration::from_secs(5), accepted_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        stop_server_if_owned(app.state(), None).await.unwrap();
+        let timely = tokio::time::timeout(Duration::from_millis(500), &mut startup).await;
+        let _ = release_tx.send(());
+        server.join().unwrap();
+        let result = match timely {
+            Ok(joined) => joined.unwrap(),
+            Err(_) => {
+                let _ = startup.await;
+                panic!("stop waited for stalled health probe");
+            }
+        };
+        assert!(result.unwrap_err().contains("cancelled"));
+        assert!(!fixture.dir.join("data/sidecar-started").exists());
+        assert!(app
+            .state::<ServerState>()
+            .server_pid
+            .lock()
+            .unwrap()
+            .is_none());
     }
 
     #[cfg(debug_assertions)]
@@ -4500,7 +4492,7 @@ mod server_start_flow_tests {
                 }
                 assert!(request.starts_with(b"GET /health "));
                 let body = if healthy { r#"{"status":"healthy","model_loaded":false,"gpu_available":false}"# } else { "{}" };
-                write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+                write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\nX-Voicebox-Application: com.doublesharp.voicebox.ds\r\n\r\n{}", body.len(), body).unwrap();
             });
             let fixture = Fixture::new("printf 'ERROR: still starting\\n' >&2\nexec /bin/sleep 5");
             let mut config = fixture.config();
@@ -4634,166 +4626,147 @@ mod server_start_flow_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cancel_during_listener_discovery_terminates_probe_and_never_launches_sidecar() {
-        for legacy in [false, true] {
-            let fixture = Fixture::new("touch \"$2/sidecar-started\"\nexec /bin/sleep 5");
-            let marker = fixture.dir.join("listener-pid");
-            let probe = fixture.dir.join("slow-lsof");
-            std::fs::write(
-                &probe,
-                format!(
-                    "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nexec /bin/sleep 3\n",
-                    marker.display()
-                ),
-            )
-            .unwrap();
-            std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o700)).unwrap();
-            let mut config = fixture.config();
-            config.listener_executable = Some(probe);
-            if legacy {
-                config.legacy_port = Some(12345);
-            } else {
-                config.discover_listener = true;
+        let fixture = Fixture::new("touch \"$2/sidecar-started\"\nexec /bin/sleep 5");
+        let marker = fixture.dir.join("listener-pid");
+        let probe = fixture.dir.join("slow-lsof");
+        std::fs::write(
+            &probe,
+            format!(
+                "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nexec /bin/sleep 3\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut config = fixture.config();
+        config.listener_executable = Some(probe);
+        config.discover_listener = true;
+        let app = app();
+        let handle = app.handle().clone();
+        let mut startup = tokio::spawn(async move {
+            start_server_with(handle.clone(), handle.state(), None, None, config).await
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !marker.exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
-            let app = app();
-            let handle = app.handle().clone();
-            let mut startup = tokio::spawn(async move {
-                start_server_with(handle.clone(), handle.state(), None, None, config).await
-            });
-            tokio::time::timeout(Duration::from_secs(3), async {
-                while !marker.exists() {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            })
-            .await
-            .expect("listener probe did not start");
-            let pid = std::fs::read_to_string(&marker).unwrap();
-            stop_server_if_owned(app.state(), None).await.unwrap();
-            let timely = tokio::time::timeout(Duration::from_millis(800), &mut startup).await;
-            let result = match timely {
-                Ok(result) => result.unwrap(),
-                Err(_) => {
-                    let _ = startup.await;
-                    panic!("startup waited for stalled listener probe, legacy={legacy}");
-                }
-            };
-            assert!(result.unwrap_err().contains("cancelled"));
-            tokio::time::timeout(Duration::from_secs(2), async {
-                while std::process::Command::new("/bin/kill")
-                    .args(["-0", pid.as_str()])
-                    .status()
-                    .unwrap()
-                    .success()
-                {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            })
-            .await
-            .expect("cancelled listener probe survived");
-            assert!(!fixture.dir.join("data/sidecar-started").exists());
-        }
+        })
+        .await
+        .expect("listener probe did not start");
+        let pid = std::fs::read_to_string(&marker).unwrap();
+        stop_server_if_owned(app.state(), None).await.unwrap();
+        let timely = tokio::time::timeout(Duration::from_millis(800), &mut startup).await;
+        let result = match timely {
+            Ok(result) => result.unwrap(),
+            Err(_) => {
+                let _ = startup.await;
+                panic!("startup waited for stalled listener probe");
+            }
+        };
+        assert!(result.unwrap_err().contains("cancelled"));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while std::process::Command::new("/bin/kill")
+                .args(["-0", pid.as_str()])
+                .status()
+                .unwrap()
+                .success()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("cancelled listener probe survived");
+        assert!(!fixture.dir.join("data/sidecar-started").exists());
     }
 
     #[tokio::test]
     async fn missing_or_failing_listener_probe_preserves_sidecar_fallback() {
-        for legacy in [false, true] {
-            for missing in [false, true] {
-                let fixture = Fixture::new("printf 'INFO: Uvicorn running on http://127.0.0.1:%s\\n' \"$4\" >&2\nexec /bin/sleep 5");
-                let probe = fixture.dir.join("lsof-fixture");
-                if !missing {
-                    std::fs::write(&probe, "#!/bin/sh\nexit 1\n").unwrap();
-                    std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o700))
-                        .unwrap();
-                }
-                let mut config = fixture.config();
-                config.listener_executable = Some(probe);
-                if legacy {
-                    config.legacy_port = Some(12345);
-                } else {
-                    config.discover_listener = true;
-                }
-                let app = app();
-                let result = tokio::time::timeout(
-                    Duration::from_secs(5),
-                    start_server_with(app.handle().clone(), app.state(), None, None, config),
-                )
-                .await
-                .unwrap()
-                .unwrap();
-                assert_eq!(result, format!("http://127.0.0.1:{}", fixture.port));
-                stop_server_if_owned(app.state(), None).await.unwrap();
+        for missing in [false, true] {
+            let fixture = Fixture::new("printf 'INFO: Uvicorn running on http://127.0.0.1:%s\\n' \"$4\" >&2\nexec /bin/sleep 5");
+            let probe = fixture.dir.join("lsof-fixture");
+            if !missing {
+                std::fs::write(&probe, "#!/bin/sh\nexit 1\n").unwrap();
+                std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o700))
+                    .unwrap();
             }
+            let mut config = fixture.config();
+            config.listener_executable = Some(probe);
+            config.discover_listener = true;
+            let app = app();
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                start_server_with(app.handle().clone(), app.state(), None, None, config),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(result, format!("http://127.0.0.1:{}", fixture.port));
+            stop_server_if_owned(app.state(), None).await.unwrap();
         }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn stalled_listener_discovery_times_out_and_terminates_probe() {
-        for legacy in [false, true] {
-            let fixture = Fixture::new("touch \"$2/sidecar-started\"\nexec /bin/sleep 5");
-            let marker = fixture.dir.join("listener-pid");
-            let probe = fixture.dir.join("slow-lsof");
-            std::fs::write(
-                &probe,
-                format!(
-                    "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nexec /bin/sleep 5\n",
-                    marker.display()
-                ),
-            )
-            .unwrap();
-            std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o700)).unwrap();
-            let mut config = fixture.config();
-            config.listener_executable = Some(probe);
-            config.listener_timeout = Duration::from_millis(1500);
-            if legacy {
-                config.legacy_port = Some(12345);
-            } else {
-                config.discover_listener = true;
+        let fixture = Fixture::new("touch \"$2/sidecar-started\"\nexec /bin/sleep 5");
+        let marker = fixture.dir.join("listener-pid");
+        let probe = fixture.dir.join("slow-lsof");
+        std::fs::write(
+            &probe,
+            format!(
+                "#!/bin/sh\nprintf '%s' \"$$\" > '{}'\nexec /bin/sleep 5\n",
+                marker.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut config = fixture.config();
+        config.listener_executable = Some(probe);
+        config.listener_timeout = Duration::from_millis(1500);
+        config.discover_listener = true;
+        let app = app();
+        let handle = app.handle().clone();
+        let mut startup = tokio::spawn(async move {
+            start_server_with(handle.clone(), handle.state(), None, None, config).await
+        });
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !marker.exists() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
-            let app = app();
-            let handle = app.handle().clone();
-            let mut startup = tokio::spawn(async move {
-                start_server_with(handle.clone(), handle.state(), None, None, config).await
-            });
-            tokio::time::timeout(Duration::from_secs(3), async {
-                while !marker.exists() {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                }
-            })
-            .await
-            .expect("listener probe did not start");
-            let pid = std::fs::read_to_string(&marker).unwrap();
-            let timely = tokio::time::timeout(Duration::from_secs(3), &mut startup).await;
-            let result = match timely {
-                Ok(result) => result.unwrap(),
-                Err(_) => {
-                    stop_server_if_owned(app.state(), None).await.unwrap();
-                    let _ = startup.await;
-                    panic!("stalled listener probe did not time out, legacy={legacy}");
-                }
-            };
-            assert!(
-                result.unwrap_err().contains("listener discovery timed out"),
-                "legacy={legacy}"
-            );
-            tokio::time::timeout(Duration::from_secs(2), async {
-                while std::process::Command::new("/bin/kill")
-                    .args(["-0", pid.as_str()])
-                    .status()
-                    .unwrap()
-                    .success()
-                {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
-            })
-            .await
-            .expect("timed-out listener probe survived");
-            assert!(!fixture.dir.join("data/sidecar-started").exists());
-            assert!(app
-                .state::<ServerState>()
-                .server_pid
-                .lock()
+        })
+        .await
+        .expect("listener probe did not start");
+        let pid = std::fs::read_to_string(&marker).unwrap();
+        let timely = tokio::time::timeout(Duration::from_secs(3), &mut startup).await;
+        let result = match timely {
+            Ok(result) => result.unwrap(),
+            Err(_) => {
+                stop_server_if_owned(app.state(), None).await.unwrap();
+                let _ = startup.await;
+                panic!("stalled listener probe did not time out");
+            }
+        };
+        assert!(
+            result.unwrap_err().contains("listener discovery timed out")
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while std::process::Command::new("/bin/kill")
+                .args(["-0", pid.as_str()])
+                .status()
                 .unwrap()
-                .is_none());
-        }
+                .success()
+            {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("timed-out listener probe survived");
+        assert!(!fixture.dir.join("data/sidecar-started").exists());
+        assert!(app
+            .state::<ServerState>()
+            .server_pid
+            .lock()
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]

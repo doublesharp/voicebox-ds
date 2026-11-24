@@ -1,5 +1,10 @@
 import { useProfiles } from '@/lib/hooks/useProfiles';
-import { currentServerScope, isCurrentServer, requireCurrentServer, type ServerScope } from '@/lib/serverScope';
+import {
+  currentServerScope,
+  isCurrentServer,
+  requireCurrentServer,
+  type ServerScope,
+} from '@/lib/serverScope';
 import { useServerStore } from '@/stores/serverStore';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -7,6 +12,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import {
+  ArrowLeft,
   Captions,
   Check,
   ChevronDown,
@@ -17,6 +23,7 @@ import {
   FileText,
   Loader2,
   Mic,
+  Search,
   Settings2,
   Sparkles,
   Square,
@@ -27,17 +34,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AudioBars } from '@/components/AudioBars';
+import { MicrophonePermissionHelp } from '@/components/MicrophoneSelector/MicrophonePermissionHelp';
 import { CapturePill } from '@/components/CapturePill/CapturePill';
 import { CaptureInlinePlayer } from '@/components/CapturesTab/CaptureInlinePlayer';
 import { DictationReadinessChecklist } from '@/components/CapturesTab/DictationReadinessChecklist';
-import {
-  ListPane,
-  ListPaneHeader,
-  ListPaneScroll,
-  ListPaneSearch,
-  ListPaneTitle,
-  ListPaneTitleRow,
-} from '@/components/ListPane';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,6 +58,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
@@ -139,6 +140,8 @@ export function CapturesTab() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const backButtonRef = useRef<HTMLButtonElement>(null);
 
   const snippetOf = (capture: CaptureResponse): string => {
     const source = capture.transcript_refined || capture.transcript_raw || '';
@@ -147,6 +150,7 @@ export function CapturesTab() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [showDetail, setShowDetail] = useState(false);
   const [showRefined, setShowRefined] = useState(true);
   const [launchedPlayAsId, setLaunchedPlayAsId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -156,6 +160,7 @@ export function CapturesTab() {
   useEffect(() => {
     setDeleteDialogOpen(false);
     setDeleteTarget(null);
+    setShowDetail(false);
   }, [serverUrl, serverRevision]);
 
   const audioUrl = usePlayerStore((s) => s.audioUrl);
@@ -169,15 +174,17 @@ export function CapturesTab() {
   const pendingGenerationIds = useGenerationStore((s) => s.pendingGenerationIds);
 
   const { settings: captureSettings, update: updateCaptureSettings } = useCaptureSettings();
-  const sttModel = captureSettings?.stt_model ?? 'turbo';
-  const llmModel = captureSettings?.llm_model ?? '0.6B';
   const hotkeyEnabled = captureSettings?.hotkey_enabled ?? false;
   const pushToTalkKeys = captureSettings?.chord_push_to_talk_keys ?? [];
   const toggleToTalkKeys = captureSettings?.chord_toggle_to_talk_keys ?? [];
   const readiness = useDictationReadiness();
 
   const session = useCaptureRecordingSession({
-    onCaptureCreated: (capture) => setSelectedId(capture.id),
+    showMicrophonePermissionHelp: true,
+    onCaptureCreated: (capture) => {
+      setSelectedId(capture.id);
+      setShowDetail(true);
+    },
   });
 
   const { data: capturesData, isLoading: capturesLoading } = useQuery({
@@ -234,6 +241,7 @@ export function CapturesTab() {
             return { ...prev, items: [capture, ...prev.items], total: prev.total + 1 };
           });
           setSelectedId(capture.id);
+          setShowDetail(true);
         }
         queryClient.invalidateQueries({ queryKey: ['captures'] });
       }),
@@ -264,6 +272,13 @@ export function CapturesTab() {
   }, [search, captures]);
 
   const selected = captures.find((c) => c.id === selectedId) ?? null;
+  const transcript =
+    (showRefined ? selected?.transcript_refined : null) || selected?.transcript_raw || '';
+  const detailOpen = showDetail && !!selected;
+  useEffect(() => {
+    const back = backButtonRef.current;
+    if (detailOpen && back?.getClientRects().length) back.focus();
+  }, [detailOpen]);
   // Source of truth is capture_settings.default_playback_voice_id, shared
   // with Settings → Captures and the MCP global default. Stale ids (e.g.
   // referenced profile was deleted) fall through to the first profile.
@@ -281,6 +296,7 @@ export function CapturesTab() {
       if (!isCurrentServer(scope)) return;
       setDeleteDialogOpen(false);
       setDeleteTarget(null);
+      setShowDetail(false);
       queryClient.invalidateQueries({ queryKey: ['captures'] });
     },
     onError: (err: Error, { scope }) => {
@@ -296,15 +312,16 @@ export function CapturesTab() {
   const playAsMutation = useMutation({
     mutationFn: async ({
       capture,
+      text,
       voice,
       scope,
     }: {
       capture: CaptureResponse;
+      text: string;
       voice: VoiceProfileResponse;
       scope: ServerScope;
     }) => {
       requireCurrentServer(scope);
-      const text = capture.transcript_refined || capture.transcript_raw;
       if (!text.trim()) throw new Error(t('captures.noTranscriptError'));
       // Honor preset_engine for preset voices, qwen_voice_design for designed
       // voices, and default_engine when configured.
@@ -369,11 +386,8 @@ export function CapturesTab() {
 
   const handleCopy = async () => {
     if (!selected) return;
-    const text = showRefined
-      ? selected.transcript_refined || selected.transcript_raw
-      : selected.transcript_raw;
     try {
-      await navigator.clipboard.writeText(text || '');
+      await navigator.clipboard.writeText(transcript);
       toast({ title: t('captures.toast.transcriptCopied') });
     } catch {
       toast({ title: t('captures.toast.copyFailed'), variant: 'destructive' });
@@ -438,7 +452,7 @@ export function CapturesTab() {
 
   const handleExportTranscript = async () => {
     if (!selected) return;
-    const text = (selected.transcript_refined || selected.transcript_raw || '').trim();
+    const text = transcript.trim();
     if (!text) {
       toast({ title: t('captures.toast.exportEmpty'), variant: 'destructive' });
       return;
@@ -544,11 +558,11 @@ export function CapturesTab() {
     if (voice && voice.id !== playAsVoiceId) {
       updateCaptureSettings({ default_playback_voice_id: voice.id });
     }
-    playAsMutation.mutate({ capture: selected, voice: target, scope: currentServerScope() });
+    playAsMutation.mutate({ capture: selected, text: transcript, voice: target, scope: currentServerScope() });
   };
 
   return (
-    <div className="h-full flex gap-0 overflow-hidden -mx-8 desktop-page-bleed">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <input
         ref={uploadInputRef}
         type="file"
@@ -557,28 +571,123 @@ export function CapturesTab() {
         className="hidden"
       />
 
-      {/* Left: capture list */}
-      <div className="w-[280px] min-[1100px]:w-[340px] shrink-0">
-        <ListPane>
-          <ListPaneHeader>
-            <ListPaneTitleRow>
-              <ListPaneTitle>{t('captures.title')}</ListPaneTitle>
-              <Badge
-                variant="secondary"
-                className="desktop-list-badge h-5 px-1.5 -ml-2 text-[10px] font-medium text-accent bg-accent/10 border border-accent/20"
-              >
-                {t('captures.beta')}
-              </Badge>
-            </ListPaneTitleRow>
-            <ListPaneSearch
-              value={search}
-              onChange={setSearch}
-              placeholder={t('captures.searchPlaceholder')}
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b pb-3">
+        <div className="flex min-w-0 items-center gap-1">
+          {detailOpen && (
+            <Button
+              ref={backButtonRef}
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="shrink-0 md:hidden"
+              aria-label={t('captures.actions.back', { defaultValue: 'Back to captures' })}
+              onClick={() => {
+                setShowDetail(false);
+                requestAnimationFrame(() => searchInputRef.current?.focus());
+              }}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <h1 className="text-xl font-semibold tracking-tight">{t('captures.title')}</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {session.pillState !== 'hidden' && (
+            <CapturePill
+              state={session.pillState}
+              elapsedMs={session.pillElapsedMs}
+              errorMessage={session.errorMessage}
+              usingDefaultMicrophone={session.usingDefaultMicrophone}
+              onDismiss={session.dismissError}
+              onStop={session.isRecording ? session.stopRecording : undefined}
             />
-          </ListPaneHeader>
-
-          <ListPaneScroll className={cn(isPlayerVisible && BOTTOM_SAFE_AREA_PADDING)}>
-            <div className="px-4 pb-6 space-y-1">
+          )}
+          {session.pillState === 'hidden' && (
+            <>
+              <Button variant="ghost" size="icon" asChild>
+                <Link
+                  to="/settings/captures"
+                  aria-label={t('captures.actions.configure')}
+                  title={t('captures.actions.configure')}
+                >
+                  <Settings2 className="h-4 w-4" />
+                </Link>
+              </Button>
+              {readiness.canCapture && (
+                <Button
+                  variant="outline"
+                  onClick={handleUploadClick}
+                  disabled={session.isUploading}
+                >
+                  {session.isUploading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  {session.isUploading
+                    ? t('captures.actions.importing')
+                    : t('captures.actions.import')}
+                </Button>
+              )}
+            </>
+          )}
+          {/* Keep Stop available if model readiness changes mid-recording. */}
+          {(readiness.canCapture || session.isRecording) && (
+            <Button
+              onClick={session.toggleRecording}
+              disabled={session.isUploading && !session.isRecording}
+              className="relative overflow-hidden transition-all bg-accent text-accent-foreground hover:bg-accent/90"
+            >
+              {session.isRecording ? (
+                <>
+                  <Square className="h-4 w-4 mr-2 fill-current" />
+                  {t('captures.actions.stop')}
+                </>
+              ) : (
+                <>
+                  <Mic className="h-4 w-4 mr-2" />
+                  {t('captures.actions.dictate')}
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </header>
+      {session.microphonePermissionDenied && (
+        <div className="shrink-0 border-b py-2">
+          <MicrophonePermissionHelp />
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <aside
+          aria-label={t('captures.title')}
+          className={cn(
+            'flex min-h-0 flex-1 flex-col gap-3 pt-3 md:w-[260px] md:flex-none md:border-r md:pr-4 lg:w-[300px]',
+            detailOpen && 'max-md:hidden',
+            !captures.length && !capturesLoading && 'max-md:flex-none',
+          )}
+        >
+          <div className="relative shrink-0">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              ref={searchInputRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t('captures.searchPlaceholder')}
+              aria-label={t('captures.searchPlaceholder')}
+              className="h-9 pl-8"
+            />
+          </div>
+          <div
+            className={cn(
+              'min-h-0 flex-1 overflow-y-auto',
+              isPlayerVisible && BOTTOM_SAFE_AREA_PADDING,
+            )}
+          >
+            <div className="space-y-1 pb-4">
               {capturesLoading ? (
                 <div className="px-4 py-12 flex items-center justify-center text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -599,7 +708,11 @@ export function CapturesTab() {
                     <button
                       type="button"
                       key={capture.id}
-                      onClick={() => setSelectedId(capture.id)}
+                      onClick={() => {
+                        setSelectedId(capture.id);
+                        setShowDetail(true);
+                      }}
+                      aria-pressed={isActive}
                       className={cn(
                         'w-full text-left p-3 rounded-lg transition-colors block',
                         isActive
@@ -636,359 +749,283 @@ export function CapturesTab() {
                 })
               )}
             </div>
-          </ListPaneScroll>
-        </ListPane>
-      </div>
-
-      {/* Right: capture detail */}
-      <div className="flex-1 flex flex-col relative overflow-hidden min-w-0">
-        <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
-
-        {/* Top action bar */}
-        <div className="absolute top-0 left-0 right-0 z-20 px-8">
-          <div className="flex flex-wrap items-center gap-2 py-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-              <span>
-                {t('captures.header.modelSummary', {
-                  stt: sttModel.charAt(0).toUpperCase() + sttModel.slice(1),
-                  llm: llmModel,
-                })}
-              </span>
-            </div>
-            <div className="flex-1" />
-            {session.pillState !== 'hidden' && (
-              <CapturePill
-                state={session.pillState}
-                elapsedMs={session.pillElapsedMs}
-                errorMessage={session.errorMessage}
-                usingDefaultMicrophone={session.usingDefaultMicrophone}
-                onDismiss={session.dismissError}
-                onStop={session.isRecording ? session.stopRecording : undefined}
-              />
-            )}
-            {session.pillState === 'hidden' && (
-              <>
-                <Button variant="outline" asChild>
-                  <Link to="/settings/captures">
-                    <Settings2 className="mr-2 h-4 w-4" />
-                    {t('captures.actions.configure')}
-                  </Link>
-                </Button>
-                {readiness.canRecord && (
-                  <Button
-                    variant="outline"
-                    onClick={handleUploadClick}
-                    disabled={session.isUploading}
-                  >
-                    {session.isUploading ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Upload className="h-4 w-4 mr-2" />
-                    )}
-                    {session.isUploading
-                      ? t('captures.actions.importing')
-                      : t('captures.actions.import')}
-                  </Button>
-                )}
-              </>
-            )}
-            {/* Hide Dictate when recording readiness fails so the user can't kick off
-                a capture that has nowhere to land. Stop stays visible if a
-                recording is somehow already in flight (e.g. a model was
-                uninstalled mid-record) so the user can always cancel. */}
-            {(readiness.canRecord || session.isRecording) && (
-              <Button
-                onClick={session.toggleRecording}
-                disabled={session.isUploading && !session.isRecording}
-                className="relative overflow-hidden transition-all bg-accent text-accent-foreground hover:bg-accent/90"
-              >
-                {session.isRecording ? (
-                  <>
-                    <Square className="h-4 w-4 mr-2 fill-current" />
-                    {t('captures.actions.stop')}
-                  </>
-                ) : (
-                  <>
-                    <Mic className="h-4 w-4 mr-2" />
-                    {t('captures.actions.dictate')}
-                  </>
-                )}
-              </Button>
-            )}
           </div>
-        </div>
+        </aside>
 
-        {selected ? (
-          <div
-            className={cn(
-              'flex-1 overflow-y-auto pt-20 px-8 pb-8',
-              isPlayerVisible && BOTTOM_SAFE_AREA_PADDING,
-            )}
-          >
-            {/* Meta row */}
-            <div className="flex items-center gap-3 mb-4 text-xs text-muted-foreground">
-              <span>{formatAbsoluteDate(selected.created_at)}</span>
-              {selected.language && (
-                <>
-                  <span className="text-muted-foreground/40">·</span>
-                  <span>{selected.language.toUpperCase()}</span>
-                </>
+        <div
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col md:pl-5',
+            !detailOpen && (selected || readiness.canCapture || capturesLoading) && 'max-md:hidden',
+          )}
+        >
+          {selected ? (
+            <div
+              className={cn(
+                'flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pb-4 pt-3',
+                isPlayerVisible && BOTTOM_SAFE_AREA_PADDING,
               )}
-              <span className="text-muted-foreground/40">·</span>
-              <SourceBadge source={selected.source} />
-            </div>
-
-            {/* Audio player card */}
-            <div className="rounded-xl border border-border bg-muted/20 p-4 mb-6">
-              <CaptureInlinePlayer
-                audioUrl={apiClient.getCaptureAudioUrl(selected.id)}
-                fallbackDurationMs={selected.duration_ms}
-              />
-            </div>
-
-            {/* Transcript header */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="inline-flex rounded-md bg-muted/40 p-0.5 border border-border">
-                <button
-                  type="button"
-                  onClick={() => setShowRefined(true)}
-                  disabled={!selected.transcript_refined}
-                  className={cn(
-                    'px-3 py-1 text-xs font-medium rounded transition-colors',
-                    showRefined && selected.transcript_refined
-                      ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground disabled:opacity-40',
-                  )}
-                >
-                  <Sparkles className="h-3 w-3 inline-block mr-1 -translate-y-px" />
-                  {t('captures.transcript.refined')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowRefined(false)}
-                  className={cn(
-                    'px-3 py-1 text-xs font-medium rounded transition-colors',
-                    !showRefined || !selected.transcript_refined
-                      ? 'bg-background shadow-sm text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  <Captions className="h-3 w-3 inline-block mr-1 -translate-y-px" />
-                  {t('captures.transcript.raw')}
-                </button>
+            >
+              {/* Meta row */}
+              <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{formatAbsoluteDate(selected.created_at)}</span>
+                {selected.language && (
+                  <>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span>{selected.language.toUpperCase()}</span>
+                  </>
+                )}
+                <span className="text-muted-foreground/40">·</span>
+                <SourceBadge source={selected.source} />
               </div>
-              <div className="flex-1" />
-              <span className="text-xs text-muted-foreground">
-                {showRefined && selected.transcript_refined
-                  ? t('captures.transcript.refinedHint', { model: selected.llm_model ?? llmModel })
-                  : selected.stt_model
-                    ? t('captures.transcript.rawHint', { model: selected.stt_model })
-                    : null}
-              </span>
-            </div>
 
-            {/* Transcript body */}
-            <div className="rounded-xl border border-border bg-muted/10">
+              {/* Audio player card */}
+              <div className="shrink-0 rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+                <CaptureInlinePlayer
+                  audioUrl={apiClient.getCaptureAudioUrl(selected.id)}
+                  fallbackDurationMs={selected.duration_ms}
+                />
+              </div>
+
+              {/* Transcript header */}
+              <div className="flex shrink-0 items-center">
+                <div className="inline-flex rounded-md bg-muted/40 p-0.5 border border-border">
+                  <button
+                    type="button"
+                    onClick={() => setShowRefined(true)}
+                    aria-pressed={showRefined && !!selected.transcript_refined}
+                    disabled={!selected.transcript_refined}
+                    className={cn(
+                      'px-3 py-1 text-xs font-medium rounded transition-colors',
+                      showRefined && selected.transcript_refined
+                        ? 'bg-background shadow-sm text-foreground'
+                        : 'text-muted-foreground hover:text-foreground disabled:opacity-40',
+                    )}
+                  >
+                    <Sparkles className="h-3 w-3 inline-block mr-1 -translate-y-px" />
+                    {t('captures.transcript.refined')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowRefined(false)}
+                    aria-pressed={!showRefined || !selected.transcript_refined}
+                    className={cn(
+                      'px-3 py-1 text-xs font-medium rounded transition-colors',
+                      !showRefined || !selected.transcript_refined
+                        ? 'bg-background shadow-sm text-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    <Captions className="h-3 w-3 inline-block mr-1 -translate-y-px" />
+                    {t('captures.transcript.raw')}
+                  </button>
+                </div>
+              </div>
+
+              {/* Transcript body */}
               <Textarea
                 key={`${selected.id}-${showRefined}`}
-                defaultValue={
-                  showRefined && selected.transcript_refined
-                    ? selected.transcript_refined
-                    : selected.transcript_raw
-                }
+                aria-label={t('captures.transcript.label', { defaultValue: 'Transcript' })}
+                value={transcript}
                 readOnly
-                className="text-[15px] leading-relaxed min-h-[260px] border-0 bg-transparent resize-none focus-visible:ring-0 focus-visible:ring-offset-0 p-6"
+                className="min-h-[180px] max-h-[280px] flex-1 resize-none rounded-xl border-border bg-muted/10 p-3 text-[15px] leading-relaxed shadow-none md:max-h-[520px] md:p-4"
               />
-            </div>
 
-            {/* Bottom actions */}
-            <div className="flex items-center gap-2 mt-4 flex-wrap">
-              <div className="inline-flex">
+              {/* Bottom actions */}
+              <div className="grid shrink-0 grid-cols-3 items-center gap-1.5 border-t border-border/60 pt-3 max-md:[&>button]:block max-md:[&>button]:truncate max-md:[&>button>svg]:mr-1 max-md:[&>button>svg]:inline-block md:flex md:flex-wrap md:gap-2">
+                <div className="col-span-2 inline-flex min-w-0 max-w-full md:max-w-[min(16rem,100%)]">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePlayAs()}
+                    disabled={!playAsVoice || playAsMutation.isPending}
+                    className={cn(
+                      'block min-w-0 flex-1 truncate rounded-r-none border-r-0 px-2.5 text-left transition-colors [&>svg]:mr-1.5 [&>svg]:inline-block',
+                      playbackState !== 'idle' &&
+                        'border-accent/50 text-foreground bg-accent/10 hover:bg-accent/15 hover:text-foreground hover:border-accent/50',
+                    )}
+                  >
+                    {playbackState === 'generating' ? (
+                      <>
+                        <AudioBars mode="generating" className="mr-1.5 inline-flex h-3.5 align-middle" />
+                        {t('captures.actions.playAsGenerating')}
+                      </>
+                    ) : playbackState === 'playing' ? (
+                      <>
+                        <Square className="h-3 w-3 fill-current" />
+                        {playAsVoice
+                          ? t('captures.actions.playAsStop', { name: playAsVoice.name })
+                          : t('captures.actions.playAsStopFallback')}
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 className="h-3.5 w-3.5" />
+                        {playAsVoice
+                          ? t('captures.actions.playAs', { name: playAsVoice.name })
+                          : t('captures.actions.playAsFallback')}
+                      </>
+                    )}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className={cn(
+                          'shrink-0 rounded-l-none px-2 transition-colors',
+                          playbackState !== 'idle' &&
+                            'border-accent/50 bg-accent/10 hover:bg-accent/15 hover:text-foreground hover:border-accent/50',
+                        )}
+                        disabled={!profiles || !profiles.length}
+                        aria-label={t('captures.actions.playAsDropdownLabel')}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5 opacity-70" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-64">
+                      <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                        {t('captures.actions.playAsDropdownLabel')}
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {profiles?.map((v) => (
+                        <DropdownMenuItem
+                          key={v.id}
+                          onClick={() => handlePlayAs(v)}
+                          className="py-2"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{v.name}</div>
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              {v.description || v.language.toUpperCase()}
+                            </div>
+                          </div>
+                          {v.id === playAsVoiceId && (
+                            <Check className="h-3.5 w-3.5 text-accent shrink-0" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <Button variant="outline" size="sm" onClick={handleCopy} className="min-w-0 gap-1.5 px-2">
+                  <Copy className="h-3.5 w-3.5" />
+                  {t('captures.actions.copy')}
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handlePlayAs()}
-                  disabled={!playAsVoice || playAsMutation.isPending}
-                  className={cn(
-                    'gap-2 rounded-r-none border-r-0 pr-3 pl-2 transition-colors',
-                    playbackState !== 'idle' &&
-                      'border-accent/50 text-foreground bg-accent/10 hover:bg-accent/15 hover:text-foreground hover:border-accent/50',
-                  )}
+                  onClick={() => session.refine(selected.id)}
+                  disabled={session.isRefining}
+                  className="min-w-0 gap-1.5 px-2"
                 >
-                  {playbackState === 'generating' ? (
-                    <>
-                      <AudioBars mode="generating" className="h-3.5" />
-                      {t('captures.actions.playAsGenerating')}
-                    </>
-                  ) : playbackState === 'playing' ? (
-                    <>
-                      <Square className="h-3 w-3 fill-current" />
-                      {playAsVoice
-                        ? t('captures.actions.playAsStop', { name: playAsVoice.name })
-                        : t('captures.actions.playAsStopFallback')}
-                    </>
+                  {session.isRefining ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <>
-                      <Volume2 className="h-3.5 w-3.5" />
-                      {playAsVoice
-                        ? t('captures.actions.playAs', { name: playAsVoice.name })
-                        : t('captures.actions.playAsFallback')}
-                    </>
+                    <Sparkles className="h-3.5 w-3.5" />
                   )}
+                  {selected.transcript_refined
+                    ? t('captures.actions.reRefine')
+                    : t('captures.actions.refine')}
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        'rounded-l-none px-2 transition-colors',
-                        playbackState !== 'idle' &&
-                          'border-accent/50 bg-accent/10 hover:bg-accent/15 hover:text-foreground hover:border-accent/50',
-                      )}
-                      disabled={!profiles || !profiles.length}
-                    >
+                    <Button variant="outline" size="sm" className="min-w-0 gap-1 px-2">
+                      <Download className="h-3.5 w-3.5" />
+                      {t('captures.actions.export')}
                       <ChevronDown className="h-3.5 w-3.5 opacity-70" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-64">
+                  <DropdownMenuContent align="start" className="w-56">
                     <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                      {t('captures.actions.playAsDropdownLabel')}
+                      {t('captures.actions.exportDropdownLabel')}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    {profiles?.map((v) => (
-                      <DropdownMenuItem key={v.id} onClick={() => handlePlayAs(v)} className="py-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{v.name}</div>
-                          <div className="text-[11px] text-muted-foreground truncate">
-                            {v.description || v.language.toUpperCase()}
-                          </div>
-                        </div>
-                        {v.id === playAsVoiceId && (
-                          <Check className="h-3.5 w-3.5 text-accent shrink-0" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
+                    <DropdownMenuItem onClick={handleExportAudio}>
+                      <FileAudio className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                      {t('captures.actions.exportAudio')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportTranscript}>
+                      <Captions className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                      {t('captures.actions.exportTranscript')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportMarkdown}>
+                      <FileText className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                      {t('captures.actions.exportMarkdown')}
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleCopy}>
-                <Copy className="h-3.5 w-3.5 mr-1.5" />
-                {t('captures.actions.copy')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => session.refine(selected.id)}
-                disabled={session.isRefining}
-              >
-                {session.isRefining ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                )}
-                {selected.transcript_refined
-                  ? t('captures.actions.reRefine')
-                  : t('captures.actions.refine')}
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Download className="h-3.5 w-3.5 mr-1.5" />
-                    {t('captures.actions.export')}
-                    <ChevronDown className="h-3.5 w-3.5 ml-1 opacity-70" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
-                  <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                    {t('captures.actions.exportDropdownLabel')}
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleExportAudio}>
-                    <FileAudio className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-                    {t('captures.actions.exportAudio')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExportTranscript}>
-                    <Captions className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-                    {t('captures.actions.exportTranscript')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExportMarkdown}>
-                    <FileText className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
-                    {t('captures.actions.exportMarkdown')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <div className="flex-1" />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => { setDeleteTarget({ id: selected.id, scope: currentServerScope() }); setDeleteDialogOpen(true); }}
-                disabled={deleteMutation.isPending}
-                className="text-muted-foreground "
-              >
-                {deleteMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                )}
-                {t('captures.actions.delete')}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground pt-20">
-            {capturesLoading ? (
-              <div className="text-center space-y-3">
-                <Captions className="h-10 w-10 mx-auto opacity-40" />
-                <p className="text-sm">{t('captures.empty.loading')}</p>
-              </div>
-            ) : captures.length ? (
-              <div className="text-center space-y-3">
-                <Captions className="h-10 w-10 mx-auto opacity-40" />
-                <p className="text-sm">{t('captures.empty.pickOne')}</p>
-              </div>
-            ) : !readiness.canRecord ? (
-              <DictationReadinessChecklist readiness={readiness} />
-            ) : hotkeyEnabled && (pushToTalkKeys.length || toggleToTalkKeys.length) ? (
-              <div className="max-w-sm mx-auto text-center space-y-5">
-                <div className="space-y-2">
-                  {pushToTalkKeys.length ? (
-                    <div className="flex items-center justify-center gap-3">
-                      <ChordKeys keys={pushToTalkKeys} />
-                      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        {t('captures.empty.holdToRecord')}
-                      </span>
-                    </div>
-                  ) : null}
-                  {toggleToTalkKeys.length ? (
-                    <div className="flex items-center justify-center gap-3">
-                      <ChordKeys keys={toggleToTalkKeys} />
-                      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                        {t('captures.empty.toggleHandsFree')}
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-                <p className="text-sm">{t('captures.empty.pressShortcut')}</p>
-              </div>
-            ) : (
-              <div className="max-w-sm mx-auto text-center space-y-3">
-                <Captions className="h-10 w-10 mx-auto opacity-40" />
-                <p className="text-sm">{t('captures.empty.none')}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {t('captures.empty.turnOnShortcut')}
-                </p>
-                <Button asChild variant="outline" size="sm">
-                  <Link to="/settings/captures">{t('captures.empty.openSettings')}</Link>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDeleteTarget({ id: selected.id, scope: currentServerScope() });
+                    setDeleteDialogOpen(true);
+                  }}
+                  disabled={deleteMutation.isPending}
+                  className="min-w-0 gap-1.5 px-2 text-muted-foreground md:ml-auto"
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  {t('captures.actions.delete')}
                 </Button>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-center overflow-y-auto py-4 text-muted-foreground">
+              {capturesLoading ? (
+                <div className="text-center space-y-3">
+                  <Captions className="h-10 w-10 mx-auto opacity-40" />
+                  <p className="text-sm">{t('captures.empty.loading')}</p>
+                </div>
+              ) : captures.length ? (
+                <div className="text-center space-y-3">
+                  <Captions className="h-10 w-10 mx-auto opacity-40" />
+                  <p className="text-sm">{t('captures.empty.pickOne')}</p>
+                </div>
+              ) : !readiness.canCapture ? (
+                <DictationReadinessChecklist readiness={readiness} />
+              ) : hotkeyEnabled && (pushToTalkKeys.length || toggleToTalkKeys.length) ? (
+                <div className="max-w-sm mx-auto text-center space-y-5">
+                  <div className="space-y-2">
+                    {pushToTalkKeys.length ? (
+                      <div className="flex items-center justify-center gap-3">
+                        <ChordKeys keys={pushToTalkKeys} />
+                        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                          {t('captures.empty.holdToRecord')}
+                        </span>
+                      </div>
+                    ) : null}
+                    {toggleToTalkKeys.length ? (
+                      <div className="flex items-center justify-center gap-3">
+                        <ChordKeys keys={toggleToTalkKeys} />
+                        <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                          {t('captures.empty.toggleHandsFree')}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="text-sm">{t('captures.empty.pressShortcut')}</p>
+                </div>
+              ) : (
+                <div className="max-w-sm mx-auto text-center space-y-3">
+                  <Captions className="h-10 w-10 mx-auto opacity-40" />
+                  <p className="text-sm">{t('captures.empty.none')}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      <AlertDialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setDeleteTarget(null); }}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open);
+          if (!open) setDeleteTarget(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('captures.deleteDialog.title')}</AlertDialogTitle>

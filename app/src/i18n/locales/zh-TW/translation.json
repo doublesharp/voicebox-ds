@@ -294,6 +294,7 @@
     },
     "validation": {
       "nameRequired": "請輸入名稱",
+      "designPromptRequired": "請描述聲音。",
       "referenceRequired": "新增樣本時需要參考文字",
       "sampleRequired": "需要音訊樣本",
       "referenceTextRequired": "需要參考文字",
@@ -619,6 +620,7 @@
     }
   },
   "stories": {
+    "back": "返回故事列表",
     "title": "故事",
     "newStory": "新增故事",
     "loading": "載入故事中…",
@@ -667,6 +669,8 @@
     }
   },
   "storyContent": {
+    "generate": "產生",
+    "export": "匯出",
     "selectStory": {
       "title": "選擇一個故事",
       "hint": "從清單中選擇故事以檢視其內容"
@@ -781,6 +785,23 @@
       "placeholder": "傳達指示——例如:溫柔緩慢地說、威嚴清晰…",
       "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
+    "delivery": {
+      "label": "語氣",
+      "natural": "自然",
+      "upbeat": "輕快",
+      "excited": "熱情",
+      "custom": "自訂",
+      "polish": "旁白潤色",
+      "save": "儲存此聲音的設定",
+      "saved": "已為此聲音儲存",
+      "hear": "試聽",
+      "hearNatural": "試聽自然語氣",
+      "stop": "停止試聽",
+      "stopNatural": "停止比較",
+      "downloadHear": "下載並試聽",
+      "previewFailed": "試聽失敗",
+      "polishUnavailable": "旁白潤色無法使用。請選擇其他效果。"
+    },
     "voiceSelector": {
       "placeholder": "選擇聲音…"
     },
@@ -804,6 +825,23 @@
   "main": {
     "importVoice": "匯入聲音",
     "createVoice": "建立聲音",
+    "starter": {
+      "stepsLabel": "首次使用步驟",
+      "chooseStep": "選擇語音",
+      "sampleStep": "首段音訊",
+      "chooseHeading": "製作第一段音訊",
+      "chooseDescription": "使用內建語音產生一段簡短的試聽音訊。",
+      "sampleHeading": "試聽第一段音訊",
+      "voiceDescription": "內建 · 英語",
+      "createDescription": "錄製或上傳語音樣本",
+      "importDescription": "開啟 .voicebox.zip 備份",
+      "action": "試用語音",
+      "preparing": "正在準備試聽音訊…",
+      "ready": "試聽音訊已準備好。",
+      "failed": "無法準備試聽音訊",
+      "play": "播放試聽",
+      "finish": "開啟生成頁面"
+    },
     "import": {
       "invalidTitle": "檔案類型無效",
       "invalidDescription": "請選擇有效的 .voicebox.zip 檔案",
@@ -1392,6 +1430,9 @@
     "enable": "Enable microphones",
     "enabling": "Enabling…",
     "refresh": "Refresh microphones",
+    "permissionDeniedBrowser": "麥克風存取權限遭拒。請在網站設定中允許存取後再試一次。",
+    "permissionDeniedDesktop": "麥克風存取權限遭拒。請在系統設定中允許 Voicebox 存取麥克風後再試一次。",
+    "openSettings": "開啟麥克風設定",
     "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
     "input": "Microphone {{number}}",
     "unavailable": "{{name}} (unavailable)",

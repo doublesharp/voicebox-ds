@@ -15,8 +15,8 @@ import {
 } from '@dnd-kit/sortable';
 import { Link } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BookAudio, ChevronDown, Download, FileAudio, Music, Plus, Upload } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { BookAudio, ChevronDown, Download, FileAudio, Music, Plus, Upload, Waves } from 'lucide-react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Loader from 'react-loaders';
 import { Button } from '@/components/ui/button';
@@ -43,13 +43,15 @@ import {
 } from '@/lib/hooks/useStories';
 import { useStoryPlayback } from '@/lib/hooks/useStoryPlayback';
 import { isCurrentServer } from '@/lib/serverScope';
+import { cn } from '@/lib/utils/cn';
 import { useServerStore } from '@/stores/serverStore';
 import { useGenerationStore } from '@/stores/generationStore';
 import { useStoryStore } from '@/stores/storyStore';
 import { SortableStoryChatItem } from './StoryChatItem';
 
-export function StoryContent() {
+export function StoryContent({ composer }: { composer?: ReactNode }) {
   const { t } = useTranslation();
+  const compact = !!composer;
   const selectedStoryId = useStoryStore((state) => state.selectedStoryId);
   const { data: story, isLoading, error: storyError, refetch } = useStory(selectedStoryId);
   const removeItem = useRemoveStoryItem();
@@ -59,6 +61,7 @@ export function StoryContent() {
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
   const pendingCount = useGenerationStore((s) => s.pendingGenerationIds.size);
   const addPendingGeneration = useGenerationStore((s) => s.addPendingGeneration);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -105,10 +108,7 @@ export function StoryContent() {
 
   // Clear the floating generate box, including its wrapped controls, and the
   // track editor bar when it's showing.
-  const FLOATING_BOX_CLEARANCE = 180;
-  const bottomPadding = hasBottomBar
-    ? trackEditorHeight + FLOATING_BOX_CLEARANCE
-    : FLOATING_BOX_CLEARANCE;
+  const bottomPadding = (hasBottomBar ? trackEditorHeight : 0) + (compact ? 0 : 180);
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -366,6 +366,7 @@ export function StoryContent() {
   }
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: There is also a keyboard-accessible import button.
     <div
       className="flex flex-col h-full min-h-0 relative overflow-hidden"
       onDragEnter={(e) => {
@@ -409,13 +410,9 @@ export function StoryContent() {
           </div>
         </div>
       )}
-      {/* Scroll Mask */}
-      <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
-
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-3 px-1">
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-2xl font-bold" title={story.name}>
+      <div className="z-20 mb-3 flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border/60 pb-3">
+        <div className={cn('min-w-0 flex-1', compact && 'basis-full')}>
+          <h2 className="truncate text-xl font-semibold tracking-tight" title={story.name}>
             {story.name}
           </h2>
           {story.description && (
@@ -424,7 +421,7 @@ export function StoryContent() {
             </p>
           )}
         </div>
-        <div className="flex shrink-0 gap-2 items-center">
+        <div className="flex max-w-full flex-wrap items-center gap-2">
           <AnimatePresence>
             {pendingCount > 0 && (
               <motion.div
@@ -449,14 +446,26 @@ export function StoryContent() {
               </motion.div>
             )}
           </AnimatePresence>
+          {compact && (
+            <Button
+              type="button"
+              size="sm"
+              aria-expanded={composerOpen}
+              aria-controls="story-composer"
+              onClick={() => setComposerOpen(!composerOpen)}
+            >
+              <Waves className="h-4 w-4" />
+              {t('storyContent.generate')}
+            </Button>
+          )}
           <Popover open={isAddOpen} onOpenChange={setIsAddOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm">
-                <Plus className="mr-2 h-4 w-4" />
+                <Plus className="h-4 w-4" />
                 {t('storyContent.add')}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80 p-0" align="end">
+            <PopoverContent className="w-80 max-w-[90vw] p-0" align="end">
               <div className="p-2 border-b space-y-2">
                 <Input
                   placeholder={t('storyContent.searchPlaceholder')}
@@ -503,10 +512,15 @@ export function StoryContent() {
           {story.items.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" disabled={exportAudio.isPending}>
-                  <Download className="mr-2 h-4 w-4" />
-                  {t('storyContent.exportAudio')}
-                  <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={exportAudio.isPending}
+                  aria-label={t('storyContent.exportAudio')}
+                >
+                  <Download className="h-4 w-4" />
+                  {compact ? t('storyContent.export') : t('storyContent.exportAudio')}
+                  <ChevronDown className={cn('h-3.5 w-3.5 opacity-70', compact && 'hidden')} />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">
@@ -535,13 +549,27 @@ export function StoryContent() {
       {/* Content */}
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto space-y-3 pt-16 scroll-pt-16 relative z-0"
+        className="relative z-0 flex-1 min-h-0 overflow-y-auto space-y-3"
         style={{ paddingBottom: bottomPadding > 0 ? `${bottomPadding}px` : undefined }}
       >
+        {compact && (
+          <div id="story-composer" hidden={!composerOpen}>
+            {composerOpen && composer}
+          </div>
+        )}
         {sortedItems.length === 0 ? (
-          <div className="text-center py-12 px-5 border-2 border-dashed border-muted rounded-md text-muted-foreground">
-            <p className="text-sm">{t('storyContent.empty.title')}</p>
-            <p className="text-xs mt-2">{t('storyContent.empty.hint')}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed px-4 py-3">
+            <p className="text-sm text-muted-foreground">{t('storyContent.empty.title')}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isImporting}
+              onClick={() => importInputRef.current?.click()}
+            >
+              <Upload className="mr-1 h-4 w-4" />
+              {isImporting ? t('storyContent.importing') : t('storyContent.importAudio')}
+            </Button>
           </div>
         ) : (
           <DndContext

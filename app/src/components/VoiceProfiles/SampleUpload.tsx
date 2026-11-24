@@ -86,6 +86,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     usingDefaultMicrophone,
     duration,
     error: recordingError,
+    permissionDenied,
     startRecording,
     stopRecording,
     cancelRecording,
@@ -150,17 +151,6 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
       cleanupAudio();
     };
   }, [open, profileId, serverUrl, serverRevision, cancelRecording, cancelSystemRecording, cleanupAudio]);
-
-  // Show recording errors
-  useEffect(() => {
-    if (recordingError) {
-      toast({
-        title: 'Recording error',
-        description: recordingError,
-        variant: 'destructive',
-      });
-    }
-  }, [recordingError, toast]);
 
   // Show system audio recording errors
   useEffect(() => {
@@ -352,6 +342,8 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                       isStarting={isStarting}
                       recordingStream={recordingStream}
                       usingDefaultMicrophone={usingDefaultMicrophone}
+                      recordingError={recordingError}
+                      permissionDenied={permissionDenied}
                       duration={duration}
                       onStart={startRecording}
                       onStop={stopRecording}

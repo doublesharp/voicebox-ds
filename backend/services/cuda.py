@@ -31,7 +31,7 @@ from ..utils.binary_version import parse_server_version
 
 logger = logging.getLogger(__name__)
 
-GITHUB_RELEASES_URL = "https://github.com/jamiepine/voicebox/releases/download"
+GITHUB_RELEASES_URL = "https://github.com/doublesharp/voicebox-ds/releases/download"
 
 PROGRESS_KEY = "cuda-backend"
 

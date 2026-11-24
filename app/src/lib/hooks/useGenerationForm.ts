@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
-import type { EffectConfig } from '@/lib/api/types';
+import type { EffectConfig, GenerationRequest } from '@/lib/api/types';
 import { engineSupportsInstruct } from '@/lib/constants/engines';
 import { LANGUAGE_CODES, type LanguageCode } from '@/lib/constants/languages';
 import { getTtsModelOption } from '@/lib/constants/ttsModels';
@@ -116,6 +116,29 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
     };
   }, [form]);
 
+  function generationRequest(data: GenerationFormValues, profileId: string): GenerationRequest {
+    const engine = data.engine || 'qwen';
+    const { modelSize } = getTtsModelOption(engine, data.modelSize);
+    return {
+      profile_id: profileId,
+      text: data.text,
+      language: data.language,
+      seed: data.seed,
+      model_size: modelSize,
+      engine,
+      instruct: engineSupportsInstruct(engine) ? data.instruct || undefined : undefined,
+      personality: data.personality || undefined,
+      max_chunk_chars: maxChunkChars,
+      crossfade_ms: crossfadeMs,
+      normalize: normalizeAudio,
+      effects_chain: options.getEffectsChain?.(),
+      speed: data.speed ?? 1,
+      chatterbox_temperature: engine === 'chatterbox' ? data.chatterboxTemperature : undefined,
+      chatterbox_cfg_weight: engine === 'chatterbox' ? data.chatterboxCfgWeight : undefined,
+      chatterbox_exaggeration: engine === 'chatterbox' ? data.chatterboxExaggeration : undefined,
+    };
+  }
+
   async function handleSubmit(
     data: GenerationFormValues,
     selectedProfileId: string | null,
@@ -150,9 +173,8 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
     let generationDispatched = false;
     try {
       // Capture all request inputs at submission, before the model status request.
-      const effectsChain = options.getEffectsChain?.();
-      const engine = data.engine || 'qwen';
-      const { modelName, label, modelSize } = getTtsModelOption(engine, data.modelSize);
+      const request = generationRequest(data, selectedProfileId);
+      const { modelName, label } = getTtsModelOption(request.engine ?? 'qwen', request.model_size);
 
       // Check if model needs downloading
       try {
@@ -176,27 +198,9 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         return;
       }
 
-      const supportsInstruct = engineSupportsInstruct(engine);
       // This now returns immediately with status="generating"
       generationDispatched = true;
-      const result = await generation.mutateAsync({
-        profile_id: selectedProfileId,
-        text: data.text,
-        language: data.language,
-        seed: data.seed,
-        model_size: modelSize,
-        engine,
-        instruct: supportsInstruct ? data.instruct || undefined : undefined,
-        personality: data.personality || undefined,
-        max_chunk_chars: maxChunkChars,
-        crossfade_ms: crossfadeMs,
-        normalize: normalizeAudio,
-        effects_chain: effectsChain,
-        speed: data.speed ?? 1,
-        chatterbox_temperature: engine === 'chatterbox' ? data.chatterboxTemperature : undefined,
-        chatterbox_cfg_weight: engine === 'chatterbox' ? data.chatterboxCfgWeight : undefined,
-        chatterbox_exaggeration: engine === 'chatterbox' ? data.chatterboxExaggeration : undefined,
-      });
+      const result = await generation.mutateAsync(request);
 
       if (serverChanged()) {
         reportServerChange(true);
@@ -228,6 +232,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
   return {
     form,
     handleSubmit,
+    generationRequest,
     isPending: generation.isPending || isSubmitting,
   };
 }

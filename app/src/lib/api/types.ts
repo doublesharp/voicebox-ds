@@ -97,6 +97,8 @@ export interface GenerationRequest {
   chatterbox_exaggeration?: number;
 }
 
+export type SpeechPreviewMode = 'incremental' | 'buffered';
+
 export interface GenerationVersionResponse {
   id: string;
   generation_id: string;

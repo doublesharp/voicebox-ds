@@ -14,6 +14,7 @@ from ..utils.audio_leveling import match_chunk_loudness
 from . import LANGUAGE_CODE_TO_NAME
 from .base import combine_voice_prompts as _combine_voice_prompts, empty_mlx_cache, is_model_cached, model_load_progress
 from .mlx_backend import _run_on_mlx_thread
+from .qwen_assets import QWEN_MLX_REQUIRED_FILES
 
 
 class _QwenMLXStylesBackend:
@@ -32,7 +33,10 @@ class _QwenMLXStylesBackend:
         return f"mlx-community/Qwen3-TTS-12Hz-{model_size}-{self.variant}-bf16"
 
     def _is_model_cached(self, model_size: str | None = None) -> bool:
-        return is_model_cached(self._get_model_path(model_size or self.model_size))
+        return is_model_cached(
+            self._get_model_path(model_size or self.model_size),
+            required_files=list(QWEN_MLX_REQUIRED_FILES),
+        )
 
     def is_loaded(self) -> bool:
         return self.model is not None

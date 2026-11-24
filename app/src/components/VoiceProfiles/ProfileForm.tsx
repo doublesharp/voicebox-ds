@@ -269,6 +269,7 @@ export function ProfileForm() {
     usingDefaultMicrophone,
     duration,
     error: recordingError,
+    permissionDenied,
     startRecording,
     stopRecording,
     cancelRecording,
@@ -336,17 +337,6 @@ export function ProfileForm() {
   const availableDefaultEngines = DEFAULT_ENGINE_OPTIONS.filter(
     (option) => !isSampleBasedProfile || !PRESET_ONLY_ENGINES.has(option.value),
   );
-
-  // Show recording errors
-  useEffect(() => {
-    if (recordingError) {
-      toast({
-        title: t('profileForm.toast.recordingError'),
-        description: recordingError,
-        variant: 'destructive',
-      });
-    }
-  }, [recordingError, toast, t]);
 
   useEffect(() => {
     if (systemRecordingError) {
@@ -1014,13 +1004,13 @@ export function ProfileForm() {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex w-[calc(100vw-3rem)] max-w-6xl h-[calc(100dvh-3rem)] max-h-[920px] flex-col gap-0 overflow-hidden p-0">
-        <div className="h-full min-h-0 w-full flex flex-col overflow-hidden">
-          <DialogHeader className="shrink-0 border-b border-border/60 px-6 py-5">
+      <DialogContent className="flex h-[calc(100dvh-1.5rem)] max-h-[680px] w-[calc(100vw-1.5rem)] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:h-[calc(100dvh-3rem)] sm:w-[calc(100vw-3rem)]">
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+          <DialogHeader className="shrink-0 border-b border-border/60 px-4 py-3 sm:px-5">
             <DialogTitle className="text-xl">
               {editingProfileId ? t('profileForm.editTitle') : t('profileForm.createTitle')}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="sr-only">
               {editingProfileId
                 ? t('profileForm.editDescription')
                 : t('profileForm.createDescription')}
@@ -1062,11 +1052,11 @@ export function ProfileForm() {
               const scope = currentServerScope();
               return form.handleSubmit((data) => onSubmit(data, scope))(event);
             }} className="flex-1 min-h-0 flex flex-col">
-              <div className="visible-scrollbar flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6 scroll-py-6 min-[1100px]:grid min-[1100px]:grid-cols-2 min-[1100px]:overflow-hidden">
+              <div className="visible-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-4 scroll-py-4 min-[960px]:grid min-[960px]:grid-cols-2 min-[960px]:grid-rows-[minmax(0,1fr)] min-[960px]:gap-5 min-[960px]:overflow-hidden">
                 {/* Left column: Sample management */}
-                <div className="visible-scrollbar shrink-0 space-y-4 min-[1100px]:min-h-0 min-[1100px]:overflow-y-auto min-[1100px]:border-r min-[1100px]:border-border/60 min-[1100px]:pr-6 min-[1100px]:pb-4 min-[1100px]:scroll-py-4">
+                <div className="visible-scrollbar min-w-0 shrink-0 space-y-3 min-[960px]:min-h-0 min-[960px]:overflow-y-auto min-[960px]:overscroll-contain min-[960px]:border-r min-[960px]:border-border/60 min-[960px]:pr-5 min-[960px]:pb-3 min-[960px]:scroll-py-3">
                   <h3 className="text-[13px] font-semibold">
-                    {t('profileForm.sections.reference', { defaultValue: '1 · Reference audio' })}
+                    {t('profileForm.sections.reference', { defaultValue: 'Voice source' })}
                   </h3>
                   {isCreating ? (
                     <>
@@ -1075,6 +1065,7 @@ export function ProfileForm() {
                         <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border/70 p-1 bg-muted/30">
                           <button
                             type="button"
+                            aria-pressed={voiceSource === 'clone'}
                             onClick={() => setVoiceSource('clone')}
                             className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors ${
                               voiceSource === 'clone'
@@ -1087,6 +1078,7 @@ export function ProfileForm() {
                           </button>
                           <button
                             type="button"
+                            aria-pressed={voiceSource === 'builtin'}
                             onClick={() => setVoiceSource('builtin')}
                             className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors ${
                               voiceSource === 'builtin'
@@ -1099,6 +1091,7 @@ export function ProfileForm() {
                           </button>
                           <button
                             type="button"
+                            aria-pressed={voiceSource === 'design'}
                             onClick={() => setVoiceSource('design')}
                             className={`inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md transition-colors ${
                               voiceSource === 'design'
@@ -1140,8 +1133,6 @@ export function ProfileForm() {
                         </div>
                       ) : voiceSource === 'builtin' ? (
                         <div className="space-y-4">
-                          <FormDescription>{t('profileForm.builtin.hint')}</FormDescription>
-
                           <FormItem>
                             <FormLabel>{t('profileForm.fields.engine')}</FormLabel>
                             <Select
@@ -1163,11 +1154,12 @@ export function ProfileForm() {
                           {/* Voice picker */}
                           <FormItem>
                             <FormLabel>{t('profileForm.fields.voice')}</FormLabel>
-                            <div className="grid grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-1">
+                            <div className="visible-scrollbar grid max-h-[min(19rem,38dvh)] grid-cols-2 gap-1.5 overflow-y-auto p-0.5">
                               {presetVoices.map((voice: PresetVoice) => (
                                 <button
                                   key={voice.voice_id}
                                   type="button"
+                                  aria-pressed={selectedPresetVoiceId === voice.voice_id}
                                   onClick={() => {
                                     setSelectedPresetVoiceId(voice.voice_id);
                                     // Auto-set language from voice
@@ -1177,7 +1169,7 @@ export function ProfileForm() {
                                   }}
                                   className={`text-left px-3 py-2 rounded-md border text-sm transition-colors ${
                                     selectedPresetVoiceId === voice.voice_id
-                                      ? 'border-accent bg-accent/10 text-accent-foreground'
+                                      ? 'border-accent bg-accent/10 text-foreground'
                                       : 'border-border hover:bg-muted'
                                   }`}
                                 >
@@ -1265,6 +1257,8 @@ export function ProfileForm() {
                                     isStarting={isStarting}
                                     recordingStream={recordingStream}
                                     usingDefaultMicrophone={usingDefaultMicrophone}
+                                    recordingError={recordingError}
+                                    permissionDenied={permissionDenied}
                                     duration={duration}
                                     onStart={startRecording}
                                     onStop={stopRecording}
@@ -1393,12 +1387,30 @@ export function ProfileForm() {
                 </div>
 
                 {/* Right column: Profile info */}
-                <div className="visible-scrollbar shrink-0 space-y-6 rounded-xl border border-border/60 bg-card/50 p-5 min-[1100px]:min-h-0 min-[1100px]:overflow-y-auto min-[1100px]:scroll-py-5">
+                <div className="visible-scrollbar min-w-0 shrink-0 space-y-3 max-[959px]:border-t max-[959px]:border-border/60 max-[959px]:pt-4 min-[960px]:min-h-0 min-[960px]:overflow-y-auto min-[960px]:overscroll-contain min-[960px]:px-1 min-[960px]:pb-2 min-[960px]:scroll-py-3">
                   <FormSection
                     title={t('profileForm.sections.voiceDetails', {
-                      defaultValue: '2 · Voice details',
+                      defaultValue: 'Voice details',
                     })}
+                    className="space-y-3"
                   >
+                    <FormField
+                      control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('profileForm.fields.name')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder={t('profileForm.fields.namePlaceholder')}
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
                     {/* Avatar Upload */}
                     <FormField
                       control={form.control}
@@ -1406,9 +1418,9 @@ export function ProfileForm() {
                       render={() => (
                         <FormItem>
                           <FormControl>
-                            <div className="flex items-center gap-3 pb-1">
+                            <div className="flex items-center gap-2.5">
                               <div className="relative group">
-                                <div className="h-14 w-14 rounded-xl bg-accent/10 flex items-center justify-center shrink-0 overflow-hidden border border-accent/20">
+                                <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-accent/20 bg-accent/10">
                                   {avatarPreview ? (
                                     <img
                                       src={avatarPreview}
@@ -1416,7 +1428,7 @@ export function ProfileForm() {
                                       className="h-full w-full object-cover"
                                     />
                                   ) : (
-                                    <Mic className="h-6 w-6 text-accent" />
+                                    <Mic className="size-4 text-accent" />
                                   )}
                                 </div>
                                 <button
@@ -1425,9 +1437,9 @@ export function ProfileForm() {
                                     defaultValue: 'Change voice image',
                                   })}
                                   onClick={() => avatarInputRef.current?.click()}
-                                  className="absolute inset-0 rounded-xl bg-accent/60 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-opacity flex items-center justify-center cursor-pointer"
+                                  className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                 >
-                                  <Edit2 className="h-6 w-6 text-accent-foreground" />
+                                  <Edit2 className="absolute -bottom-0.5 -right-0.5 size-4 rounded border border-border/70 bg-background p-0.5 text-muted-foreground group-hover:text-foreground" />
                                 </button>
                                 {(avatarPreview || editingProfile?.avatar_path) && (
                                   <button
@@ -1437,7 +1449,7 @@ export function ProfileForm() {
                                     })}
                                     onClick={handleRemoveAvatar}
                                     disabled={deleteAvatar.isPending}
-                                    className="absolute bottom-0 right-0 h-6 w-6 rounded-full bg-background/60 backdrop-blur-sm text-muted-foreground flex items-center justify-center hover:bg-background/80 hover:text-foreground transition-colors shadow-sm border border-border/50"
+                                    className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
                                   >
                                     <X className="h-3.5 w-3.5" />
                                   </button>
@@ -1469,23 +1481,6 @@ export function ProfileForm() {
 
                     <FormField
                       control={form.control}
-                      name="name"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t('profileForm.fields.name')}</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder={t('profileForm.fields.namePlaceholder')}
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <FormField
-                      control={form.control}
                       name="description"
                       render={({ field }) => (
                         <FormItem>
@@ -1494,6 +1489,7 @@ export function ProfileForm() {
                             <Textarea
                               placeholder={t('profileForm.fields.descriptionPlaceholder')}
                               rows={2}
+                              className="min-h-14 resize-y py-1.5 leading-5"
                               {...field}
                             />
                           </FormControl>
@@ -1504,7 +1500,7 @@ export function ProfileForm() {
                   </FormSection>
                   <FormSection
                     title={t('profileForm.sections.delivery', { defaultValue: 'Voice & delivery' })}
-                    className="border-t border-border/60 pt-5"
+                    className="space-y-3 border-t border-border/60 pt-3"
                   >
                     <FormField
                       control={form.control}
@@ -1515,19 +1511,17 @@ export function ProfileForm() {
                           <FormControl>
                             <Textarea
                               placeholder={t('profileForm.fields.personalityPlaceholder')}
-                              className="min-h-[96px]"
+                              rows={2}
+                              className="min-h-14 resize-y py-1.5 leading-5"
                               {...field}
                             />
                           </FormControl>
-                          <FormDescription>
-                            {t('profileForm.fields.personalityHint')}
-                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <FormField
                         control={form.control}
                         name="language"
@@ -1583,9 +1577,6 @@ export function ProfileForm() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {t('profileForm.fields.defaultEngineHint')}
-                        </p>
                       </FormItem>
                     </div>
                   </FormSection>
@@ -1594,7 +1585,7 @@ export function ProfileForm() {
                     <FormSection
                       title={t('profileForm.fields.defaultEffects')}
                       description={t('profileForm.fields.defaultEffectsHint')}
-                      className="border-t border-border/60 pt-5"
+                      className="space-y-3 border-t border-border/60 pt-3"
                     >
                       <EffectsChainEditor
                         value={profileEffectsChain}
@@ -1609,7 +1600,7 @@ export function ProfileForm() {
                 </div>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2 justify-end border-t border-border/60 bg-card/50 px-6 py-4">
+              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-border/60 bg-card/50 px-4 py-3 sm:px-5">
                 <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                   {t('common.cancel')}
                 </Button>

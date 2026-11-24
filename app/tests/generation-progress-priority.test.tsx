@@ -136,6 +136,38 @@ test('unmount closes outstanding connections', async () => {
   view = undefined;
   expect(source.closed).toBe(true);
 });
+
+test('a backlog shares status connections and observes later jobs without waiting for the first job', async () => {
+  await start('gen-1');
+  const store = useGenerationStore.getState();
+  act(() => {
+    for (let number = 2; number <= 7; number++) {
+      store.addPendingGeneration(`gen-${number}`);
+    }
+    store.addPendingStoryAdd('gen-7', 'harbor-story');
+  });
+
+  const openSources = () => FakeEventSource.instances.filter((source) => !source.closed);
+  expect(openSources()).toHaveLength(3);
+  const first = openSources()[0];
+  await act(async () => first.emit({ id: 'gen-1', status: 'completed', source: 'rest' }));
+  expect(first.closed).toBe(true);
+  expect(openSources()).toHaveLength(3);
+  expect(openSources().map((source) => source.url)).toContain('/status/gen-4');
+
+  // A later job may finish first, including a cancellation or a restored job.
+  const deadline = Date.now() + 4_500;
+  while (!openSources().some((source) => source.url === '/status/gen-7') && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(openSources()).toHaveLength(3);
+  }
+  const late = openSources().find((source) => source.url === '/status/gen-7');
+  expect(late).toBeDefined();
+  await act(async () => late?.emit({ id: 'gen-7', status: 'completed' }));
+  expect(addStory).toHaveBeenCalledWith('harbor-story', { generation_id: 'gen-7' });
+  expect(useGenerationStore.getState().pendingGenerationIds.has('gen-7')).toBe(false);
+  expect(openSources()).toHaveLength(3);
+}, 6_000);
 test('a permanently closed status connection clears its queued story association', async () => {
   const source = await start('gen', 'story');
   source.readyState = 2;

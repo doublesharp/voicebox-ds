@@ -11,7 +11,7 @@ Voicebox uses a client-server architecture with a React frontend and Python back
 
 **Backend Layer:** A Python FastAPI server that hosts the REST API, runs a pluggable registry of TTS and STT engines, manages the SQLite database, and handles audio processing.
 
-These two layers communicate via HTTP on `localhost:17493`, with the frontend making API requests to the backend. In production the backend is compiled with PyInstaller and launched as a Tauri sidecar; in development it's run manually via `uvicorn`.
+These two layers communicate via HTTP on `localhost:17593`, with the frontend making API requests to the backend. In production the backend is compiled with PyInstaller and launched as a Tauri sidecar; in development it's run manually via `uvicorn`.
 
 ## Frontend Architecture
 
@@ -246,7 +246,7 @@ See [Building](/developer/building) for what PyInstaller does and how the CUDA b
 
 ### Current
 
-- Local-only by default (bound to `127.0.0.1:17493`)
+- Local-only by default (bound to `127.0.0.1:17593`)
 - No authentication (localhost trust)
 - File system sandboxing via Tauri
 

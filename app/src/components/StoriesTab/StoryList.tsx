@@ -51,7 +51,15 @@ import { cn } from '@/lib/utils/cn';
 import { formatDate } from '@/lib/utils/format';
 import { useStoryStore } from '@/stores/storyStore';
 
-export function StoryList() {
+export function StoryList({
+  selectFirst = true,
+  showEmptyDetail = false,
+  className,
+}: {
+  selectFirst?: boolean;
+  showEmptyDetail?: boolean;
+  className?: string;
+}) {
   const { t } = useTranslation();
   const { data: stories, isLoading } = useStories();
   const selectedStoryId = useStoryStore((state) => state.selectedStoryId);
@@ -77,10 +85,10 @@ export function StoryList() {
 
   // Auto-select the first story when the list loads with no selection
   useEffect(() => {
-    if (!selectedStoryId && stories && stories.length > 0) {
+    if (selectFirst && !selectedStoryId && stories && stories.length > 0) {
       setSelectedStoryId(stories[0].id);
     }
-  }, [selectedStoryId, stories, setSelectedStoryId]);
+  }, [selectFirst, selectedStoryId, stories, setSelectedStoryId]);
 
   const handleCreateStory = () => {
     if (!newStoryName.trim()) {
@@ -200,23 +208,26 @@ export function StoryList() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className={cn('flex h-full items-center justify-center', className)}>
         <div className="text-muted-foreground">{t('stories.loading')}</div>
       </div>
     );
   }
 
-  return (
-    <ListPane>
-      <ListPaneHeader>
+  const showCreateInDetail = showEmptyDetail && stories?.length === 0;
+  const newStoryButton = (
+    <Button onClick={() => setCreateDialogOpen(true)} size="sm">
+      <Plus className="h-4 w-4" />
+      {t('stories.newStory')}
+    </Button>
+  );
+
+  const list = (
+    <ListPane className={className}>
+      <ListPaneHeader className="relative shrink-0 border-b border-border/60 pb-3">
         <ListPaneTitleRow>
-          <ListPaneTitle>{t('stories.title')}</ListPaneTitle>
-          <ListPaneActions>
-            <Button onClick={() => setCreateDialogOpen(true)} size="sm">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('stories.newStory')}
-            </Button>
-          </ListPaneActions>
+          <ListPaneTitle className="px-0 leading-8">{t('stories.title')}</ListPaneTitle>
+          {!showCreateInDetail && <ListPaneActions>{newStoryButton}</ListPaneActions>}
         </ListPaneTitleRow>
         <ListPaneSearch
           value={search}
@@ -226,20 +237,21 @@ export function StoryList() {
       </ListPaneHeader>
 
       <ListPaneScroll
-        style={{ paddingBottom: hasTrackEditor ? `${trackEditorHeight + 140}px` : '170px' }}
+        className="pt-2"
+        style={hasTrackEditor ? { paddingBottom: `${trackEditorHeight}px` } : undefined}
       >
         {storyList.length === 0 ? (
-          <div className="mx-4 text-center py-12 px-5 border-2 border-dashed border-muted rounded-2xl text-muted-foreground">
-            <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p className="text-sm">{t('stories.empty.title')}</p>
-            <p className="text-xs mt-2">{t('stories.empty.hint')}</p>
-          </div>
+          showCreateInDetail ? null : (
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+              {t('stories.empty.title')}
+            </p>
+          )
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground">
             <p>{t('stories.empty.noMatches', { query: search })}</p>
           </div>
         ) : (
-          <div className="px-4 pb-6 space-y-1">
+          <div className="space-y-1 px-4 pb-6 [.app-shell[data-desktop=true]_&]:px-6">
             {filtered.map((story) => {
               const isActive = selectedStoryId === story.id;
               return (
@@ -289,7 +301,7 @@ export function StoryList() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="absolute top-2 right-2 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute right-2 top-2 h-7 w-7 transition-opacity pointer-fine:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
                         onClick={(e) => e.stopPropagation()}
                         aria-label={t('stories.row.actionsLabel', { name: story.name })}
                       >
@@ -427,5 +439,24 @@ export function StoryList() {
         </AlertDialogContent>
       </AlertDialog>
     </ListPane>
+  );
+
+  return (
+    <>
+      {list}
+      {showEmptyDetail && (
+        <div className="grid min-w-0 flex-1 place-items-center bg-muted/10 px-6">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span className="grid size-10 place-items-center rounded-xl border border-border/60 bg-background text-muted-foreground">
+              <BookOpen aria-hidden="true" className="size-5" />
+            </span>
+            <h2 className="text-sm font-medium">
+              {showCreateInDetail ? t('stories.empty.title') : t('storyContent.selectStory.title')}
+            </h2>
+            {showCreateInDetail && newStoryButton}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

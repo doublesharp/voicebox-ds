@@ -15,6 +15,7 @@ WHISPER_SAMPLE_RATE = 16000
 WHISPER_WINDOW_SAMPLES = 30 * WHISPER_SAMPLE_RATE
 
 from . import TTSBackend, STTBackend, LANGUAGE_CODE_TO_NAME, WHISPER_HF_REPOS
+from .qwen_assets import QWEN_TTS_REQUIRED_FILES
 from .base import (
     is_model_cached,
     get_torch_device,
@@ -145,7 +146,9 @@ class PyTorchTTSBackend:
             return is_model_cached(
                 variant.hf_repo_id, revision=variant.revision, required_files=list(QWEN_CUDA_GRAPH_REQUIRED_FILES)
             )
-        return is_model_cached(self._get_model_path(model_size))
+        return is_model_cached(
+            self._get_model_path(model_size), required_files=list(QWEN_TTS_REQUIRED_FILES)
+        )
 
     async def load_model_async(self, model_size: Optional[str] = None):
         """

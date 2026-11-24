@@ -15,19 +15,6 @@ import { getModelAcceleration, TTS_MODEL_OPTIONS } from '@/lib/constants/ttsMode
 import { useAvailableTtsModels } from '@/lib/hooks/useAvailableTtsModels';
 import type { GenerationFormValues } from '@/lib/hooks/useGenerationForm';
 
-const ENGINE_DESCRIPTIONS: Record<string, string> = {
-  qwen: 'Multi-language, two sizes',
-  qwen_custom_voice: '9 preset voices, instruct control',
-  qwen_voice_design: 'Voices described in plain language',
-  moss_tts: 'CPU voice cloning, multiple languages',
-  luxtts: 'Fast, English-focused',
-  chatterbox: '23 languages, incl. Hebrew',
-  chatterbox_turbo: 'English, [laugh] [cough] tags',
-  tada: 'HumeAI, 700s+ coherent audio',
-  kokoro: '82M params, CPU realtime, 8 langs',
-  omnivoice: '23 languages, voice design. CC-BY-NC weights: non-commercial use only',
-};
-
 /** Engines that only support English and should force language to 'en' on select. */
 const ENGLISH_ONLY_ENGINES = new Set(['luxtts', 'chatterbox_turbo']);
 
@@ -210,11 +197,6 @@ export function EngineModelSelector({ form, compact, selectedProfile }: EngineMo
         ))}
     </>
   );
-}
-
-/** Returns a human-readable description for the currently selected engine. */
-export function getEngineDescription(engine: string): string {
-  return ENGINE_DESCRIPTIONS[engine] ?? '';
 }
 
 /**

@@ -8,6 +8,9 @@ const isWindows = () => {
 };
 
 class TauriUpdater implements PlatformUpdater {
+  // Enable when Voicebox DS has its own signed update feed.
+  readonly enabled = false;
+
   private status: UpdateStatus = {
     checking: false,
     available: false,
@@ -39,6 +42,7 @@ class TauriUpdater implements PlatformUpdater {
   }
 
   async checkForUpdates(): Promise<void> {
+    if (!this.enabled) return;
     try {
       this.status = { ...this.status, checking: true, error: undefined };
       this.notifySubscribers();

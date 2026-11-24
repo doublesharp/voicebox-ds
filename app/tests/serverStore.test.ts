@@ -21,7 +21,8 @@ afterAll(() => {
 
 const { useServerStore } = await import('../src/stores/serverStore');
 const { queryClient } = await import('../src/lib/queryClient');
-const defaultUrl = 'http://127.0.0.1:17493';
+const defaultUrl = 'http://127.0.0.1:17593';
+const upstreamUrl = 'http://127.0.0.1:17493';
 const remoteUrl = 'https://voicebox.example.com';
 
 beforeEach(() => {
@@ -48,16 +49,17 @@ describe('server URL selection', () => {
   });
 });
 
-async function loadLegacyUrl(serverUrl: string) {
+async function loadLegacyUrl(serverUrl: string, mode: 'local' | 'remote' = 'remote') {
   storage.setItem(
     'voicebox-server',
-    JSON.stringify({ state: { serverUrl, mode: 'remote' }, version: 0 }),
+    JSON.stringify({ state: { serverUrl, mode }, version: 0 }),
   );
   await useServerStore.persist.rehydrate();
 }
 
 test.each([
   remoteUrl,
+  upstreamUrl,
   'http://192.168.1.50:17493',
   'http://localhost:17493',
   'http://127.0.0.1:8000',
@@ -72,13 +74,29 @@ test.each([
 });
 
 test('legacy bundled defaults remain automatic, including after reload', async () => {
-  await loadLegacyUrl(defaultUrl);
+  await loadLegacyUrl(upstreamUrl, 'local');
+  expect(useServerStore.getState().serverUrl).toBe(defaultUrl);
   useServerStore.getState().setDiscoveredServerUrl('http://127.0.0.1:19000');
   await useServerStore.persist.rehydrate();
   useServerStore.getState().setDiscoveredServerUrl('http://127.0.0.1:19001');
   expect(useServerStore.getState().serverUrl).toBe('http://127.0.0.1:19001');
   expect(useServerStore.getState().serverUrlSource).toBe('auto');
 });
+
+test.each(['auto', 'custom'] as const)(
+  'upgrades the recorded %s address without adopting upstream by default',
+  async (serverUrlSource) => {
+    storage.setItem(
+      'voicebox-server',
+      JSON.stringify({ state: { serverUrl: upstreamUrl, serverUrlSource }, version: 1 }),
+    );
+    await useServerStore.persist.rehydrate();
+    expect(useServerStore.getState().serverUrl).toBe(
+      serverUrlSource === 'auto' ? defaultUrl : upstreamUrl,
+    );
+    expect(useServerStore.getState().serverUrlSource).toBe(serverUrlSource);
+  },
+);
 
 test('saving the default URL explicitly prevents future automatic changes', () => {
   useServerStore.getState().setServerUrl(defaultUrl);

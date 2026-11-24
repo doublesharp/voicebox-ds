@@ -34,6 +34,7 @@ patch_huggingface_hub_offline()
 ensure_original_qwen_config_cached()
 
 from . import LANGUAGE_CODE_TO_NAME, WHISPER_HF_REPOS  # noqa: E402
+from .qwen_assets import QWEN_MLX_REQUIRED_FILES
 from .base import (  # noqa: E402
     is_model_cached,
     combine_voice_prompts as _combine_voice_prompts,
@@ -100,13 +101,13 @@ class MLXTTSBackend:
         return hf_model_id
 
     def _is_model_cached(self, model_size: str) -> bool:
-        from .qwen_mlx_variants import QWEN_MLX_QUANTIZED_REVISIONS, QWEN_MLX_REQUIRED_FILES
+        from .qwen_mlx_variants import QWEN_MLX_QUANTIZED_REVISIONS
 
         if model_size in QWEN_MLX_QUANTIZED_REVISIONS:
             return is_model_cached(self._get_model_path(model_size), revision=QWEN_MLX_QUANTIZED_REVISIONS[model_size], required_files=list(QWEN_MLX_REQUIRED_FILES))
         return is_model_cached(
             self._get_model_path(model_size),
-            weight_extensions=(".safetensors", ".bin", ".npz"),
+            required_files=list(QWEN_MLX_REQUIRED_FILES),
         )
 
     async def load_model_async(self, model_size: Optional[str] = None):
@@ -151,7 +152,7 @@ class MLXTTSBackend:
             from mlx_audio.tts import load
 
             logger.info("Loading MLX TTS model %s...", model_size)
-            from .qwen_mlx_variants import QWEN_MLX_QUANTIZED_REVISIONS, QWEN_MLX_REQUIRED_FILES
+            from .qwen_mlx_variants import QWEN_MLX_QUANTIZED_REVISIONS
             if model_size in QWEN_MLX_QUANTIZED_REVISIONS:
                 from huggingface_hub import snapshot_download
 

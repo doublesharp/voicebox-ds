@@ -1,10 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, ArrowUpRight, Book, Download, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, Download, Loader2, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Trans, useTranslation } from 'react-i18next';
 import * as z from 'zod';
-import { DoubleSharpMark, EditionBadge } from '@/components/Branding';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
@@ -12,11 +11,10 @@ import { Progress } from '@/components/ui/progress';
 import { Toggle } from '@/components/ui/toggle';
 import { useToast } from '@/components/ui/use-toast';
 import { useAutoUpdater } from '@/hooks/useAutoUpdater';
-import { APP_BRANDING } from '@/lib/constants/branding';
 import { useServerHealth } from '@/lib/hooks/useServer';
 import { syncKeepServerRunning } from '@/lib/keepServerRunning';
 import { usePlatform } from '@/platform/PlatformContext';
-import { useServerStore } from '@/stores/serverStore';
+import { LOCAL_SERVER_URL, useServerStore } from '@/stores/serverStore';
 import { CloudSection } from './CloudSection';
 import { LanguageSelect } from './LanguageSelect';
 import { SettingRow, SettingSection } from './SettingRow';
@@ -73,57 +71,7 @@ export function GeneralPage() {
   }
 
   return (
-    <div className="space-y-8 max-w-2xl">
-      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-accent/20 bg-gradient-to-r from-accent/10 to-transparent p-4">
-        <DoubleSharpMark className="h-10 w-10 rounded-xl text-sm" />
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold">{APP_BRANDING.name}</span>
-            <EditionBadge />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {t('settings.about.modifiedEdition', { defaultValue: APP_BRANDING.description })}
-          </p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <a
-          href="https://docs.voicebox.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group flex items-center gap-3 rounded-lg border border-border/60 p-4 transition-colors hover:bg-muted/50"
-        >
-          <Book className="h-5 w-5 shrink-0 text-accent" strokeWidth={2.5} />
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">{t('settings.general.docs.title')}</div>
-            <div className="text-xs text-muted-foreground">docs.voicebox.sh</div>
-          </div>
-          <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
-        </a>
-        <a
-          href="https://discord.gg/StkzQasqPS"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group flex items-center gap-3 rounded-lg border border-border/60 p-4 transition-colors hover:bg-muted/50"
-        >
-          <svg
-            className="h-5 w-5 shrink-0 text-accent"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.095 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
-          </svg>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">{t('settings.general.discord.title')}</div>
-            <div className="text-xs text-muted-foreground">
-              {t('settings.general.discord.subtitle')}
-            </div>
-          </div>
-          <ArrowUpRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
-        </a>
-      </div>
-
+    <div className="max-w-3xl space-y-5 sm:space-y-6">
       <SettingSection>
         <SettingRow
           title={t('settings.general.serverUrl.title')}
@@ -138,11 +86,11 @@ export function GeneralPage() {
                 control={form.control}
                 name="serverUrl"
                 render={({ field }) => (
-                  <FormItem className="flex-1">
+                  <FormItem className="min-w-0 flex-1">
                     <FormControl>
                       <Input
                         aria-label={t('settings.general.serverUrl.title')}
-                        placeholder="http://127.0.0.1:17493"
+                        placeholder={LOCAL_SERVER_URL}
                         {...field}
                       />
                     </FormControl>
@@ -157,38 +105,42 @@ export function GeneralPage() {
           </Form>
         </SettingRow>
 
-        <SettingRow
-          title={t('settings.general.keepServerRunning.title')}
-          description={t('settings.general.keepServerRunning.description')}
-          htmlFor="keepServerRunning"
-          action={
-            <Toggle
-              id="keepServerRunning"
-              checked={keepServerRunningOnClose}
-              disabled={keepServerRunningSyncing}
-              onCheckedChange={(checked: boolean) => {
-                void syncKeepServerRunning(checked, (value) =>
-                  platform.lifecycle.setKeepServerRunning(value),
-                ).then((saved) => {
-                  if (!saved) return;
-                  toast({
-                    title: t('settings.general.keepServerRunning.updatedTitle'),
-                    description: checked
-                      ? t('settings.general.keepServerRunning.runningDescription')
-                      : t('settings.general.keepServerRunning.stoppedDescription'),
-                  });
-                }).catch((error) => {
-                  console.error('Failed to sync setting to Rust:', error);
-                  toast({
-                    title: t('settings.general.keepServerRunning.failedTitle'),
-                    description: t('settings.general.keepServerRunning.failedDescription'),
-                    variant: 'destructive',
-                  });
-                });
-              }}
-            />
-          }
-        />
+        {platform.metadata.isTauri && (
+          <SettingRow
+            title={t('settings.general.keepServerRunning.title')}
+            description={t('settings.general.keepServerRunning.description')}
+            htmlFor="keepServerRunning"
+            action={
+              <Toggle
+                id="keepServerRunning"
+                checked={keepServerRunningOnClose}
+                disabled={keepServerRunningSyncing}
+                onCheckedChange={(checked: boolean) => {
+                  void syncKeepServerRunning(checked, (value) =>
+                    platform.lifecycle.setKeepServerRunning(value),
+                  )
+                    .then((saved) => {
+                      if (!saved) return;
+                      toast({
+                        title: t('settings.general.keepServerRunning.updatedTitle'),
+                        description: checked
+                          ? t('settings.general.keepServerRunning.runningDescription')
+                          : t('settings.general.keepServerRunning.stoppedDescription'),
+                      });
+                    })
+                    .catch((error) => {
+                      console.error('Failed to sync setting to Rust:', error);
+                      toast({
+                        title: t('settings.general.keepServerRunning.failedTitle'),
+                        description: t('settings.general.keepServerRunning.failedDescription'),
+                        variant: 'destructive',
+                      });
+                    });
+                }}
+              />
+            }
+          />
+        )}
 
         {platform.metadata.isTauri && (
           <SettingRow
@@ -213,22 +165,34 @@ export function GeneralPage() {
           />
         )}
 
-        <SettingRow
-          title={t('settings.language.label')}
-          action={<LanguageSelect />}
-        />
+        <SettingRow title={t('settings.language.label')} action={<LanguageSelect />} />
 
-        <SettingRow
-          title={t('settings.theme.label')}
-          action={<ThemeSelect />}
-        />
+        <SettingRow title={t('settings.theme.label')} action={<ThemeSelect />} />
       </SettingSection>
 
       {health?.cloud_enabled && <CloudSection />}
 
       <ApiReferenceCard serverUrl={serverUrl} />
 
-      {platform.metadata.isTauri && <UpdatesSection />}
+      {platform.metadata.isTauri && platform.updater.enabled !== false && <UpdatesSection />}
+      <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
+        <a
+          href="https://docs.voicebox.sh"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:underline"
+        >
+          {t('settings.general.docs.title')}
+        </a>
+        <a
+          href="https://discord.gg/StkzQasqPS"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:underline"
+        >
+          {t('settings.general.discord.title')}
+        </a>
+      </div>
     </div>
   );
 }
@@ -255,16 +219,13 @@ function ConnectionStatus({
   }
   if (healthError) {
     return (
-      <div
-        role="status"
-        className="flex items-center gap-2 rounded-full border border-destructive/30 px-3 py-1"
-      >
+      <output className="flex items-center gap-2 rounded-full border border-destructive/30 px-3 py-1">
         <span className="relative flex h-2 w-2">
           <span className="absolute inline-flex h-full w-full rounded-full bg-destructive/40" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
         </span>
         <span className="text-xs text-destructive">{t('settings.general.connection.offline')}</span>
-      </div>
+      </output>
     );
   }
   if (health) {
@@ -408,10 +369,12 @@ function ApiReferenceCard({ serverUrl }: { serverUrl: string }) {
   ];
 
   return (
-    <div className="rounded-lg border border-border/60 p-4 space-y-3">
-      <div>
-        <h3 className="text-sm font-medium">{t('settings.general.api.title')}</h3>
-        <p className="text-sm text-muted-foreground">
+    <details className="rounded-xl border border-border/70 bg-card/50 px-3 py-3.5 sm:px-4">
+      <summary className="cursor-pointer text-sm font-medium">
+        {t('settings.general.api.title')}
+      </summary>
+      <div className="mt-3 space-y-3">
+        <p className="break-words text-sm text-muted-foreground">
           <Trans
             i18nKey="settings.general.api.description"
             values={{ url: serverUrl }}
@@ -420,32 +383,34 @@ function ApiReferenceCard({ serverUrl }: { serverUrl: string }) {
             }}
           />
         </p>
+        <div className="space-y-1">
+          {endpoints.map((ep) => (
+            <div key={ep.path} className="flex flex-wrap items-center gap-x-2.5 gap-y-1 py-1">
+              <span
+                className={`text-[10px] font-mono font-semibold w-9 text-center rounded px-1 py-px ${
+                  ep.method === 'POST'
+                    ? 'bg-accent/10 text-accent'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {ep.method}
+              </span>
+              <code className="text-xs font-mono text-muted-foreground">{ep.path}</code>
+              <span className="ml-auto text-xs text-muted-foreground">{ep.label}</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <a
+            href={`${serverUrl}/docs`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent hover:underline"
+          >
+            {t('settings.general.api.viewReference')}
+          </a>
+        </p>
       </div>
-      <div className="space-y-1">
-        {endpoints.map((ep) => (
-          <div key={ep.path} className="flex items-center gap-2.5 py-1">
-            <span
-              className={`text-[10px] font-mono font-semibold w-9 text-center rounded px-1 py-px ${
-                ep.method === 'POST' ? 'bg-accent/10 text-accent' : 'bg-muted text-muted-foreground'
-              }`}
-            >
-              {ep.method}
-            </span>
-            <code className="text-xs font-mono text-muted-foreground">{ep.path}</code>
-            <span className="text-xs text-muted-foreground/50 ml-auto">{ep.label}</span>
-          </div>
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        <a
-          href={`${serverUrl}/docs`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent hover:underline"
-        >
-          {t('settings.general.api.viewReference')}
-        </a>
-      </p>
-    </div>
+    </details>
   );
 }

@@ -14,6 +14,7 @@ import {
   Loader2,
   RotateCcw,
   Scale,
+  Search,
   Trash2,
   Unplug,
   X,
@@ -39,6 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
@@ -175,6 +177,7 @@ export function ModelManagement() {
   const [downloadingModel, setDownloadingModel] = useState<string | null>(null);
   const [downloadingDisplayName, setDownloadingDisplayName] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
   const [localErrors, setLocalErrors] = useState<Map<string, string>>(new Map());
   const modelRevisions = useRef(new Map<string, number>());
@@ -529,12 +532,19 @@ export function ModelManagement() {
   const whisperModels = modelStatus?.models.filter((m) => m.model_name.startsWith('whisper')) ?? [];
   const llmModels = modelStatus?.models.filter((m) => m.model_name.startsWith('qwen3-')) ?? [];
 
-  // Build sections
-  const sections: { label: string; models: ModelStatus[] }[] = [
+  const query = search.trim().toLowerCase();
+  const modelSections: { label: string; models: ModelStatus[] }[] = [
     { label: t('models.sections.voiceGeneration'), models: voiceModels },
     { label: t('models.sections.transcription'), models: whisperModels },
     { label: t('models.sections.languageModels'), models: llmModels },
   ];
+
+  const sections = modelSections.map(({ label, models }) => ({
+    label,
+    models: models.filter((model) =>
+      `${model.display_name} ${model.model_name}`.toLowerCase().includes(query),
+    ),
+  })).filter(({ models }) => models.length);
 
   // Keep selectedModel data fresh from query results
   const freshSelectedModel =
@@ -557,15 +567,26 @@ export function ModelManagement() {
   return (
     <div className={`flex h-full min-h-0 flex-col ${BOTTOM_SAFE_AREA_PADDING}`}>
       {/* Header */}
-      <div className="shrink-0 pb-4">
+      <header className="flex shrink-0 flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between sm:pb-5">
         <h1 className="text-xl font-semibold tracking-tight">{t('models.title')}</h1>
-      </div>
+        <div className="relative w-full sm:max-w-64">
+          <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="search"
+            className="pl-9"
+            placeholder={t('models.search', { defaultValue: 'Search models…' })}
+            aria-label={t('models.search', { defaultValue: 'Search models…' })}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+      </header>
 
       {/* Model storage location */}
       {platform.metadata.isTauri && cacheDir && (
-        <div className="shrink-0 pb-4 border-b mb-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
+        <div className="mb-4 shrink-0 border-b pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <div className="min-w-0 flex-1 basis-44">
               <span className="text-xs text-muted-foreground">{t('models.storage.location')}</span>
               <p
                 className="text-xs font-mono text-muted-foreground/70 truncate"
@@ -574,7 +595,7 @@ export function ModelManagement() {
                 {cacheDir.path}
               </p>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex flex-wrap items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
@@ -654,14 +675,24 @@ export function ModelManagement() {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : modelStatus ? (
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pb-6">
-          <ModelResidencyControls models={voiceModels} />
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pb-6">
+          <details className="overflow-hidden rounded-lg border border-border/70 bg-card/50">
+            <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
+              {t('models.readiness', { defaultValue: 'Model readiness' })}
+            </summary>
+            <ModelResidencyControls models={voiceModels} />
+          </details>
+          {!sections.length && query && (
+            <output className="block text-sm text-muted-foreground">
+              {t('models.noMatches', { defaultValue: 'No matching models' })}
+            </output>
+          )}
           {sections.map((section) => (
             <div key={section.label}>
-              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1 px-1">
+              <h2 className="mb-2 px-1 text-sm font-semibold tracking-tight">
                 {section.label}
               </h2>
-              <div className="border rounded-lg divide-y overflow-hidden">
+              <div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/70 bg-card/50">
                 {section.models.map((model) => {
                   const { isDownloading, hasError } = getModelState(model);
                   return (
@@ -669,7 +700,7 @@ export function ModelManagement() {
                       key={model.model_name}
                       type="button"
                       onClick={() => openModelDetail(model)}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-muted/50 transition-colors group"
+                      className="group flex min-h-10 w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:min-h-9 sm:gap-3 sm:py-1.5"
                     >
                       {/* Status indicator */}
                       <div className="shrink-0">
@@ -680,62 +711,68 @@ export function ModelManagement() {
                         ) : model.loaded ? (
                           <CircleCheck className="h-4 w-4 text-accent" />
                         ) : model.downloaded ? (
-                          <CircleCheck className="h-4 w-4 text-emerald-500" />
+                          <CircleCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
                         ) : (
                           <Download className="h-4 w-4 text-muted-foreground/50" />
                         )}
                       </div>
 
-                      {/* Name + inline progress */}
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium">{model.display_name}</span>
-                        {isDownloading &&
-                          (() => {
-                            const dl = downloadProgressMap.get(model.model_name);
-                            const pct = dl?.progress ?? 0;
-                            const hasProgress = dl && dl.total && dl.total > 0;
-                            return (
-                              <div className="mt-1 space-y-0.5">
-                                <Progress value={hasProgress ? pct : undefined} className="h-1" />
-                                <div className="text-[10px] text-muted-foreground truncate">
-                                  {hasProgress
-                                    ? `${formatBytes(dl.current ?? 0)} / ${formatBytes(dl.total!)} (${pct.toFixed(0)}%)`
-                                    : dl?.filename || t('models.progress.connecting')}
+                      <div className="flex min-w-0 flex-1 flex-col gap-x-3 gap-y-0.5 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <span className="block break-words text-sm font-medium">{model.display_name}</span>
+                          {isDownloading &&
+                            (() => {
+                              const dl = downloadProgressMap.get(model.model_name);
+                              const pct = dl?.progress ?? 0;
+                              const hasProgress = dl && dl.total && dl.total > 0;
+                              return (
+                                <div className="mt-1 space-y-0.5">
+                                  <Progress value={hasProgress ? pct : undefined} className="h-1" />
+                                  <div className="truncate text-[10px] text-muted-foreground">
+                                    {hasProgress
+                                      ? `${formatBytes(dl.current ?? 0)} / ${formatBytes(dl.total!)} (${pct.toFixed(0)}%)`
+                                      : dl?.filename || t('models.progress.connecting')}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })()}
-                      </div>
+                              );
+                            })()}
+                        </div>
 
-                      {/* Right side info */}
-                      <div className="shrink-0 flex items-center gap-2">
-                        {!hasError && !model.loaded && (
-                          <span className="text-xs text-muted-foreground">
-                            {isDownloading
-                              ? t('models.status.downloading', { defaultValue: 'Downloading' })
-                              : model.downloaded
-                                ? t('models.status.ready', { defaultValue: 'Ready' })
-                                : t('models.status.missing', { defaultValue: 'Not downloaded' })}
-                          </span>
-                        )}
-                        {hasError && (
-                          <Badge variant="destructive" className="text-[10px] h-5">
-                            {t('common.error')}
-                          </Badge>
-                        )}
-                        {model.loaded && (
-                          <Badge className="text-[10px] h-5 bg-accent/15 text-accent border-accent/30 hover:bg-accent/15">
-                            {t('models.status.loaded')}
-                          </Badge>
-                        )}
-                        {model.downloaded && !isDownloading && !hasError && (
-                          <span className="text-xs text-muted-foreground">
-                            {formatSize(model.size_mb)}
-                          </span>
-                        )}
-
-                        <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 sm:max-w-[45%] sm:justify-end">
+                          {!hasError && !model.loaded && (
+                            model.downloaded && !isDownloading ? (
+                              <Badge
+                                variant="outline"
+                                className="border-emerald-500/20 bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400"
+                              >
+                                {t('models.status.ready', { defaultValue: 'Ready' })}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {isDownloading
+                                  ? t('models.status.downloading', { defaultValue: 'Downloading' })
+                                  : t('models.status.missing', { defaultValue: 'Not downloaded' })}
+                              </span>
+                            )
+                          )}
+                          {hasError && (
+                            <Badge variant="destructive" className="h-5 text-[10px]">
+                              {t('common.error')}
+                            </Badge>
+                          )}
+                          {model.loaded && (
+                            <Badge className="h-5 border-accent/30 bg-accent/15 text-[10px] text-accent hover:bg-accent/15">
+                              {t('models.status.loaded')}
+                            </Badge>
+                          )}
+                          {model.downloaded && !isDownloading && !hasError && (
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              {formatSize(model.size_mb)}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground group-focus-visible:text-foreground" />
                     </button>
                   );
                 })}
@@ -746,7 +783,7 @@ export function ModelManagement() {
           {/* Error console */}
           {errorCount > 0 && (
             <div className="border rounded-lg overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 text-xs font-medium text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <button
                   type="button"
                   onClick={() => setConsoleOpen((v) => !v)}

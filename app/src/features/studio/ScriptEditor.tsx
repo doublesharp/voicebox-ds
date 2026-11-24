@@ -62,33 +62,35 @@ export function ScriptEditor({
                 {passages.length} {passages.length === 1 ? 'passage' : 'passages'}
               </span>
             </div>
-            {onOpenPronunciation && (
-              <button
-                type="button"
-                className="studio-quiet"
-                onClick={(event) => onOpenPronunciation(event.currentTarget)}
-              >
-                <BookOpen size={15} /> Pronunciation
-              </button>
-            )}
-            {missingOrStaleIds.length > 0 && (
-              <button
-                className="studio-quiet"
-                type="button"
-                disabled={!canMutate}
-                onClick={() => {
-                  studio.setCheckedPassages(missingOrStaleIds);
-                  studio.selectPassage(missingOrStaleIds[0]);
-                }}
-              >
-                Select unfinished ({missingOrStaleIds.length})
-              </button>
-            )}
-            <DialogTrigger asChild>
-              <button className="studio-quiet" type="button" disabled={!canMutate}>
-                <Plus size={15} /> Add passages
-              </button>
-            </DialogTrigger>
+            <div className="studio-action-row">
+              {onOpenPronunciation && (
+                <button
+                  type="button"
+                  className="studio-quiet"
+                  onClick={(event) => onOpenPronunciation(event.currentTarget)}
+                >
+                  <BookOpen size={15} /> Pronunciation
+                </button>
+              )}
+              {missingOrStaleIds.length > 0 && (
+                <button
+                  className="studio-quiet"
+                  type="button"
+                  disabled={!canMutate}
+                  onClick={() => {
+                    studio.setCheckedPassages(missingOrStaleIds);
+                    studio.selectPassage(missingOrStaleIds[0]);
+                  }}
+                >
+                  Select unfinished ({missingOrStaleIds.length})
+                </button>
+              )}
+              <DialogTrigger asChild>
+                <button className="studio-quiet" type="button" disabled={!canMutate}>
+                  <Plus size={15} /> Add passages
+                </button>
+              </DialogTrigger>
+            </div>
           </header>
         ) : (
           <EmptyState

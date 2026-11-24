@@ -344,7 +344,7 @@ export function EffectsDetail() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 pb-4 mb-5">
+      <div className="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-3">
         <h2 className="text-base font-semibold tracking-tight">
           {isCreatingNew
             ? t('effects.detail.newTitle')
@@ -402,11 +402,11 @@ export function EffectsDetail() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-5 pr-1 pb-8">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-0.5 pb-5">
         {(isCreatingNew || !isBuiltIn) && (
           <FormSection
             title={t('effects.detail.detailsTitle', { defaultValue: 'Preset details' })}
-            className="rounded-xl border border-border/70 bg-card/50 p-5"
+            className="grid grid-cols-1 gap-2.5 space-y-0 rounded-lg border border-border/70 bg-card/50 p-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] [&>header]:col-span-full"
           >
             <div className="space-y-1.5">
               <Label htmlFor={`${fieldId}-name`}>{t('effects.fields.name')}</Label>
@@ -431,7 +431,8 @@ export function EffectsDetail() {
                   setDescription(e.target.value);
                 }}
                 placeholder={t('effects.fields.descriptionPlaceholder')}
-                className="min-h-[60px] resize-none"
+                rows={2}
+                className="min-h-14 resize-y py-1.5 leading-5"
               />
             </div>
           </FormSection>
@@ -443,10 +444,7 @@ export function EffectsDetail() {
 
         <FormSection
           title={t('effects.detail.chainTitle', { defaultValue: 'Effect chain' })}
-          description={t('effects.detail.chainHint', {
-            defaultValue: 'Effects run in order, from top to bottom.',
-          })}
-          className="rounded-xl border border-border/70 bg-card/50 p-5"
+          className="space-y-3 rounded-lg border border-border/70 bg-card/50 p-3"
         >
           <EffectsChainEditor
             value={workingChain}
@@ -460,14 +458,13 @@ export function EffectsDetail() {
 
         <FormSection
           title={t('effects.preview.label')}
-          description={t('effects.preview.hint')}
-          className="rounded-xl border border-border/70 bg-muted/20 p-5"
+          className="space-y-2.5 rounded-lg border border-border/70 bg-muted/20 p-3"
         >
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <GenerationPicker
               selectedId={previewGenId}
               onSelect={handleSelectGeneration}
-              className="flex-1"
+              className="min-w-0 flex-1 [&>span]:truncate"
             />
             <Button
               variant="outline"

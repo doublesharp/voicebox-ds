@@ -30,7 +30,7 @@ The updater is configured in `tauri/src-tauri/tauri.conf.json`:
       "active": true,
       "dialog": false,
       "endpoints": [
-        "https://github.com/jamiepine/voicebox/releases/latest/download/latest.json"
+        "https://github.com/doublesharp/voicebox-ds/releases/latest/download/latest.json"
       ],
       "pubkey": "PASTE_PUBLIC_KEY_CONTENT_HERE"
     }
@@ -79,11 +79,11 @@ Updates must be cryptographically signed to be accepted. The signing process:
 
 1. **Generate keys** (one-time setup):
    ```bash
-   bun tauri signer generate -w ~/.tauri/voicebox.key
+   bun tauri signer generate -w ~/.tauri/voicebox-ds.key
    ```
    This creates:
-   - Private key: `~/.tauri/voicebox.key` (stored in GitHub Secrets, never committed)
-   - Public key: `~/.tauri/voicebox.key.pub` (pasted into `tauri.conf.json`)
+   - Private key: `~/.tauri/voicebox-ds.key` (stored in GitHub Secrets, never committed)
+   - Public key: `~/.tauri/voicebox-ds.key.pub` (pasted into `tauri.conf.json`)
 
 2. **Build with signing** (GitHub Actions handles this):
    - Set `TAURI_SIGNING_PRIVATE_KEY` environment variable
@@ -110,7 +110,7 @@ git tag v0.2.0 && git push --tags
 
 GitHub Actions needs these secrets set:
 
-- `TAURI_SIGNING_PRIVATE_KEY` - Content of `~/.tauri/voicebox.key`
+- `TAURI_SIGNING_PRIVATE_KEY` - Content of `~/.tauri/voicebox-ds.key`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` - Password for the key (if set)
 
 ## Security

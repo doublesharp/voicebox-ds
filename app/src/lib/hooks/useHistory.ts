@@ -11,10 +11,17 @@ export function useHistory(query?: HistoryQuery) {
   });
 }
 
-export function useGenerationDetail(generationId: string) {
+export function generationDetailKey(generationId: string, scope?: ServerScope) {
+  return scope ? (['history', generationId, scope] as const) : (['history', generationId] as const);
+}
+
+export function useGenerationDetail(generationId: string, scope?: ServerScope) {
   return useQuery({
-    queryKey: ['history', generationId],
-    queryFn: () => apiClient.getGeneration(generationId),
+    queryKey: generationDetailKey(generationId, scope),
+    queryFn: () => {
+      requireCurrentServer(scope);
+      return apiClient.getGeneration(generationId);
+    },
     enabled: !!generationId,
   });
 }

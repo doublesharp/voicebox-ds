@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Download, Edit2, Mic, Trash2, X } from 'lucide-react';
+import { ChevronRight, Download, Edit2, Mic, Trash2, X } from 'lucide-react';
 import { type Ref, useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -38,14 +38,19 @@ import {
 } from '@/lib/hooks/useProfiles';
 import { useServerStore } from '@/stores/serverStore';
 
-function makeProfileSchema(t: (key: string) => string) {
-  return z.object({
-    name: z.string().min(1, t('profileForm.validation.nameRequired')).max(100),
-    description: z.string().max(500).optional(),
-    language: z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]),
-    personality: z.string().max(2000).optional(),
-    design_prompt: z.string().max(2000).optional(),
-  });
+function makeProfileSchema(t: (key: string) => string, requiresDesign: boolean) {
+  return z
+    .object({
+      name: z.string().min(1, t('profileForm.validation.nameRequired')).max(100),
+      description: z.string().max(500).optional(),
+      language: z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]),
+      personality: z.string().max(2000).optional(),
+      design_prompt: z.string().max(2000).optional(),
+    })
+    .refine((data) => !requiresDesign || !!data.design_prompt?.trim(), {
+      path: ['design_prompt'],
+      message: t('profileForm.validation.designPromptRequired'),
+    });
 }
 
 type ProfileFormValues = {
@@ -130,7 +135,7 @@ export function VoiceInspector({
   }, []);
 
   const form = useForm<ProfileFormValues>({
-    resolver: zodResolver(makeProfileSchema(t)),
+    resolver: zodResolver(makeProfileSchema(t, profile?.voice_type === 'designed')),
     defaultValues: {
       name: '',
       description: '',
@@ -261,7 +266,15 @@ export function VoiceInspector({
     setSaving(true);
     try {
       const normalizedPersonality = data.personality?.trim() || null;
-      const normalizedDesignPrompt = data.design_prompt?.trim() || undefined;
+      const normalizedDesignPrompt =
+        profile?.voice_type === 'designed' ? data.design_prompt?.trim() : undefined;
+      const savedForm = {
+        name: data.name,
+        description: data.description || '',
+        language: data.language,
+        personality: normalizedPersonality ?? '',
+        design_prompt: normalizedDesignPrompt ?? data.design_prompt ?? '',
+      };
       await updateProfile.mutateAsync({
         profileId,
         data: {
@@ -269,28 +282,21 @@ export function VoiceInspector({
           description: data.description,
           language: data.language,
           personality: normalizedPersonality,
-          ...(profile?.voice_type === 'designed' && normalizedDesignPrompt
-            ? { design_prompt: normalizedDesignPrompt }
-            : {}),
+          ...(normalizedDesignPrompt !== undefined ? { design_prompt: normalizedDesignPrompt } : {}),
         },
       });
 
       if (isCurrent(epoch)) {
-        savedFormAwaitingRefetch.current = {
-          ...data,
-          description: data.description || '',
-          personality: data.personality || '',
-          design_prompt: data.design_prompt || '',
-        };
+        savedFormAwaitingRefetch.current = savedForm;
         // Rebase against the acknowledged write while preserving any newer
         // typing, including a return to the original value during the request.
         const latest = form.getValues();
-        form.reset(data, { keepErrors: true, keepTouched: true });
-        form.setValue('name', latest.name, { shouldDirty: true });
-        form.setValue('description', latest.description, { shouldDirty: true });
-        form.setValue('language', latest.language, { shouldDirty: true });
-        form.setValue('personality', latest.personality, { shouldDirty: true });
-        form.setValue('design_prompt', latest.design_prompt, { shouldDirty: true });
+        form.reset(savedForm, { keepErrors: true, keepTouched: true });
+        for (const field of Object.keys(savedForm) as (keyof ProfileFormValues)[]) {
+          if (latest[field] !== data[field]) {
+            form.setValue(field, latest[field], { shouldDirty: true });
+          }
+        }
       }
 
       if (effectsDirty) {
@@ -323,7 +329,7 @@ export function VoiceInspector({
         description: t('voiceInspector.toast.savedDescription', { name: data.name }),
       });
       return (
-        JSON.stringify(form.getValues()) === JSON.stringify(data) &&
+        JSON.stringify(form.getValues()) === JSON.stringify(savedForm) &&
         effectsRevision.current === revision
       );
     } catch (error) {
@@ -504,20 +510,25 @@ export function VoiceInspector({
       <Form {...form}>
         <form id={formId} onSubmit={form.handleSubmit(onSubmit)} className="space-y-0">
           {/* Fields */}
-          <div className="space-y-5 px-5 py-5">
+          <div className="space-y-4 px-5 py-4">
             <FormSection
               title={t('profileForm.sections.identity', { defaultValue: 'Profile details' })}
+              className="space-y-3"
             >
               <FormField
                 control={form.control}
                 name="name"
                 render={({ field }) => (
-                  <FormItem className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-x-3 space-y-0">
+                  <FormItem>
                     <FormLabel>{t('profileForm.fields.name')}</FormLabel>
                     <FormControl>
-                      <Input placeholder={t('profileForm.fields.namePlaceholder')} {...field} />
+                      <Input
+                        className="h-9"
+                        placeholder={t('profileForm.fields.namePlaceholder')}
+                        {...field}
+                      />
                     </FormControl>
-                    <FormMessage className="col-start-2" />
+                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -532,6 +543,7 @@ export function VoiceInspector({
                       <Textarea
                         placeholder={t('profileForm.fields.descriptionPlaceholder')}
                         rows={2}
+                        className="min-h-14 resize-y py-1.5 leading-5"
                         {...field}
                       />
                     </FormControl>
@@ -544,11 +556,11 @@ export function VoiceInspector({
                 control={form.control}
                 name="language"
                 render={({ field }) => (
-                  <FormItem className="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-x-3 space-y-0">
+                  <FormItem>
                     <FormLabel>{t('profileForm.fields.language')}</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
-                        <SelectTrigger>
+                        <SelectTrigger className="h-9">
                           <SelectValue />
                         </SelectTrigger>
                       </FormControl>
@@ -560,7 +572,7 @@ export function VoiceInspector({
                         ))}
                       </SelectContent>
                     </Select>
-                    <FormMessage className="col-start-2" />
+                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -582,6 +594,7 @@ export function VoiceInspector({
                             defaultValue: 'Describe the voice timbre, pacing, and character…',
                           })}
                           rows={2}
+                          className="min-h-14 resize-y py-1.5 leading-5"
                           {...field}
                         />
                       </FormControl>
@@ -605,6 +618,7 @@ export function VoiceInspector({
                           defaultValue: 'Optional character instructions for persona rewriting…',
                         })}
                         rows={2}
+                        className="min-h-14 resize-y py-1.5 leading-5"
                         {...field}
                       />
                     </FormControl>
@@ -613,16 +627,28 @@ export function VoiceInspector({
                 )}
               />
             </FormSection>
-            <FormSection
-              title={t('voiceInspector.samples', { defaultValue: 'Reference samples' })}
-              description={t('voiceInspector.samplesHelp', {
-                defaultValue:
-                  'Use clean speech from one speaker, without music or background noise.',
-              })}
-              className="border-t border-border/60 pt-5"
-            >
-              <SampleList profileId={profileId} />
-            </FormSection>
+            {profile.voice_type === 'preset' || profile.voice_type === 'designed' ? (
+              <details className="group border-t border-border/60 pt-3">
+                <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                  <ChevronRight aria-hidden="true" className="size-4 group-open:rotate-90" />
+                  {t('voiceInspector.samples', { defaultValue: 'Reference samples' })}
+                </summary>
+                <div className="mt-3">
+                  <SampleList profileId={profileId} />
+                </div>
+              </details>
+            ) : (
+              <FormSection
+                title={t('voiceInspector.samples', { defaultValue: 'Reference samples' })}
+                description={t('voiceInspector.samplesHelp', {
+                  defaultValue:
+                    'Use clean speech from one speaker, without music or background noise.',
+                })}
+                className="space-y-3 border-t border-border/60 pt-4"
+              >
+                <SampleList profileId={profileId} />
+              </FormSection>
+            )}
             {/* Effects */}
             <FormSection
               title={t('profileForm.fields.defaultEffects')}
@@ -630,7 +656,7 @@ export function VoiceInspector({
                 defaultValue:
                   'Applied automatically with this voice. A preset selected in Generate replaces them for that take.',
               })}
-              className="border-t border-border/60 pt-5"
+              className="space-y-3 border-t border-border/60 pt-4"
             >
               <EffectsChainEditor
                 value={effectsChain}

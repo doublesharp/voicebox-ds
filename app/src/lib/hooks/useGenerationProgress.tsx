@@ -22,9 +22,12 @@ interface GenerationStatusEvent {
 // Agent-initiated generations are played by the floating pill, not the
 // main-window AudioPlayer. Skip autoplay here to avoid double-playback.
 const AGENT_SOURCES = new Set(['mcp', 'rest']);
+// Leave room for Generate, downloads, and other requests on HTTP/1.1.
+const MAX_STATUS_STREAMS = 3;
+const ROTATION_INTERVAL_MS = 1_000;
 
 /**
- * Subscribes to SSE for all pending generations. When a generation completes,
+ * Shares a bounded set of SSE connections across pending generations. When one completes,
  * invalidates the history query, removes it from pending, and auto-plays
  * if the player is idle.
  */
@@ -63,6 +66,10 @@ export function useGenerationProgress() {
 
   useEffect(() => {
     const currentSources = eventSourcesRef.current;
+    const isCurrentServer = () => {
+      const server = useServerStore.getState();
+      return server.serverUrl === serverUrl && server.serverRevision === serverRevision;
+    };
 
     // Close SSE connections for IDs no longer pending
     for (const [id, source] of currentSources.entries()) {
@@ -72,22 +79,19 @@ export function useGenerationProgress() {
       }
     }
 
-    // Open SSE connections for new pending IDs
-    for (const id of pendingIds) {
-      if (currentSources.has(id)) continue;
-
+    function watch(id: string) {
       const url = apiClient.getGenerationStatusUrl(id);
       const source = new EventSource(url);
+      const isCurrentSource = () =>
+        currentSources.get(id) === source &&
+        isCurrentServer() &&
+        useGenerationStore.getState().pendingGenerationIds.has(id);
 
       source.onmessage = (event) => {
-        // Ignore queued callbacks from a connection that has been replaced or closed.
-        if (
-          currentSources.get(id) !== source ||
-          useServerStore.getState().serverUrl !== serverUrl ||
-          useServerStore.getState().serverRevision !== serverRevision
-        ) return;
+        if (!isCurrentSource()) return;
         try {
           const data: GenerationStatusEvent = JSON.parse(event.data);
+          if (data.id !== id) return;
 
           if (data.status === 'completed') {
             source.close();
@@ -103,6 +107,7 @@ export function useGenerationProgress() {
               apiClient
                 .addStoryItem(storyId, { generation_id: id })
                 .then(() => {
+                  if (!isCurrentServer()) return;
                   queryClient.invalidateQueries({ queryKey: ['stories'] });
                   queryClient.invalidateQueries({ queryKey: ['stories', storyId] });
                   toast({
@@ -113,19 +118,13 @@ export function useGenerationProgress() {
                   });
                 })
                 .catch(() => {
+                  if (!isCurrentServer()) return;
                   toast({
                     title: 'Generation complete',
                     description: 'Audio generated but failed to add to story',
                     variant: 'destructive',
                   });
                 });
-            } else {
-              // toast({
-              //   title: 'Generation complete!',
-              //   description: data.duration
-              //     ? `Audio generated (${data.duration.toFixed(2)}s)`
-              //     : 'Audio generated',
-              // });
             }
 
             // Auto-play if enabled and nothing is currently playing.
@@ -192,11 +191,7 @@ export function useGenerationProgress() {
       };
 
       source.onerror = () => {
-        if (
-          currentSources.get(id) !== source ||
-          useServerStore.getState().serverUrl !== serverUrl ||
-          useServerStore.getState().serverRevision !== serverRevision
-        ) return;
+        if (!isCurrentSource()) return;
         // EventSource reconnects automatically after a transient interruption.
         // Keep pending story additions until it completes or closes permanently.
         if (source.readyState !== EventSource.CLOSED) return;
@@ -210,6 +205,31 @@ export function useGenerationProgress() {
 
       currentSources.set(id, source);
     }
+
+    const waiting: string[] = [];
+    for (const id of pendingIds) {
+      if (currentSources.has(id)) continue;
+      if (currentSources.size < MAX_STATUS_STREAMS) watch(id);
+      else waiting.push(id);
+    }
+    if (!waiting.length) return;
+
+    // A newly subscribed stream sends the current status first. Rotate the
+    // oldest connection so later cancellations and completions are observed.
+    const rotation = setInterval(() => {
+      if (!isCurrentServer()) return;
+      const next = waiting.shift();
+      const oldest = currentSources.entries().next().value;
+      if (!next || !oldest) return;
+      const pending = useGenerationStore.getState().pendingGenerationIds;
+      if (!pending.has(next)) return;
+      const [id, source] = oldest;
+      currentSources.delete(id);
+      source.close();
+      if (pending.has(id)) waiting.push(id);
+      watch(next);
+    }, ROTATION_INTERVAL_MS);
+    return () => clearInterval(rotation);
   }, [
     pendingIds,
     serverUrl,

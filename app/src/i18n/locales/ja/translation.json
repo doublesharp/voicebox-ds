@@ -294,6 +294,7 @@
     },
     "validation": {
       "nameRequired": "名前は必須です",
+      "designPromptRequired": "音声の特徴を入力してください。",
       "referenceRequired": "サンプルを追加する際はリファレンステキストが必須です",
       "sampleRequired": "オーディオサンプルが必要です",
       "referenceTextRequired": "リファレンステキストは必須です",
@@ -619,6 +620,7 @@
     }
   },
   "stories": {
+    "back": "ストーリーに戻る",
     "title": "ストーリー",
     "newStory": "新しいストーリー",
     "loading": "ストーリーを読み込み中…",
@@ -667,6 +669,8 @@
     }
   },
   "storyContent": {
+    "generate": "生成",
+    "export": "エクスポート",
     "selectStory": {
       "title": "ストーリーを選択",
       "hint": "リストからストーリーを選んで内容を表示します"
@@ -781,6 +785,23 @@
       "placeholder": "デリバリー指示 — 例:暖かくゆっくり話す、はっきりと威厳をもって…",
       "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
+    "delivery": {
+      "label": "話し方",
+      "natural": "自然",
+      "upbeat": "明るく",
+      "excited": "元気に",
+      "custom": "カスタム",
+      "polish": "ナレーション仕上げ",
+      "save": "この声の設定を保存",
+      "saved": "この声に保存済み",
+      "hear": "試聴",
+      "hearNatural": "自然な話し方を試聴",
+      "stop": "試聴を停止",
+      "stopNatural": "比較を停止",
+      "downloadHear": "ダウンロードして試聴",
+      "previewFailed": "試聴できませんでした",
+      "polishUnavailable": "ナレーション仕上げは使用できません。別の効果を選んでください。"
+    },
     "voiceSelector": {
       "placeholder": "ボイスを選択…"
     },
@@ -804,6 +825,23 @@
   "main": {
     "importVoice": "ボイスをインポート",
     "createVoice": "ボイスを作成",
+    "starter": {
+      "stepsLabel": "初回セットアップの手順",
+      "chooseStep": "音声を選ぶ",
+      "sampleStep": "最初のサンプル",
+      "chooseHeading": "最初の音声を作成",
+      "chooseDescription": "内蔵音声で短いサンプルを生成できます。",
+      "sampleHeading": "生成した音声を聴く",
+      "voiceDescription": "内蔵音声・英語",
+      "createDescription": "サンプルを録音またはアップロード",
+      "importDescription": ".voicebox.zip のバックアップを開く",
+      "action": "音声を試す",
+      "preparing": "サンプルを準備中…",
+      "ready": "サンプルができました。",
+      "failed": "サンプルを準備できませんでした",
+      "play": "サンプルを再生",
+      "finish": "生成画面を開く"
+    },
     "import": {
       "invalidTitle": "無効なファイル形式",
       "invalidDescription": "有効な .voicebox.zip ファイルを選択してください",
@@ -1392,6 +1430,9 @@
     "enable": "Enable microphones",
     "enabling": "Enabling…",
     "refresh": "Refresh microphones",
+    "permissionDeniedBrowser": "マイクへのアクセスが拒否されました。サイト設定で許可してから、もう一度お試しください。",
+    "permissionDeniedDesktop": "マイクへのアクセスが拒否されました。システム設定で Voicebox に許可してから、もう一度お試しください。",
+    "openSettings": "マイク設定を開く",
     "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
     "input": "Microphone {{number}}",
     "unavailable": "{{name}} (unavailable)",

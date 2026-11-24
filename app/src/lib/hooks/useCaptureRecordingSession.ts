@@ -55,6 +55,7 @@ const SHORT_RECORDING_MESSAGE = 'Recording too short, canceled';
 export type CapturePillState = PillState | 'hidden';
 
 export interface UseCaptureRecordingSessionOptions {
+  showMicrophonePermissionHelp?: boolean;
   /**
    * Fired after a capture row is created on the server. Callers can use this
    * to select the new capture or emit a Tauri event to a sibling window.
@@ -82,6 +83,7 @@ export interface UseCaptureRecordingSessionResult {
   errorMessage: string | null;
   isRecording: boolean;
   usingDefaultMicrophone: boolean;
+  microphonePermissionDenied: boolean;
   isUploading: boolean;
   isRefining: boolean;
   startRecording: () => void;
@@ -251,6 +253,7 @@ export function useCaptureRecordingSession(
     cancelRecording: cancelAudioRecording,
     error: recordError,
     usingDefaultMicrophone,
+    permissionDenied,
   } = useAudioRecording({
     onRecordingComplete: (blob, recordedDuration) => {
       // Trigger-happy tap — MediaRecorder hasn't emitted a usable chunk yet
@@ -274,11 +277,11 @@ export function useCaptureRecordingSession(
     },
   });
 
+  const microphonePermissionDenied = permissionDenied && !!options.showMicrophonePermissionHelp;
   useEffect(() => {
-    if (recordError) {
-      showError(recordError);
-    }
-  }, [recordError, showError]);
+    if (microphonePermissionDenied) dismissError();
+    else if (recordError) showError(recordError);
+  }, [recordError, microphonePermissionDenied, dismissError, showError]);
 
   const startRecording = useCallback(() => {
     if (isRecording) return;
@@ -337,6 +340,7 @@ export function useCaptureRecordingSession(
     errorMessage,
     isRecording,
     usingDefaultMicrophone,
+    microphonePermissionDenied,
     isUploading: uploadMutation.isPending,
     isRefining: refineMutation.isPending,
     startRecording,

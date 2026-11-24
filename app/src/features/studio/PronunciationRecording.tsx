@@ -1,6 +1,7 @@
 import { Mic, Square } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useAudioRecording } from '@/lib/hooks/useAudioRecording';
+import { MicrophonePermissionHelp } from '@/components/MicrophoneSelector/MicrophonePermissionHelp';
 import { errorMessage } from './session';
 import { StudioButton } from './ui';
 
@@ -105,7 +106,11 @@ export function PronunciationRecording({
         ) : null}
       </div>
       {recorder.isRecording && <p className="studio-note">Say “{source}” naturally.</p>}
-      {(recordingError || saveError) && <p className="studio-error" role="alert">{recordingError || saveError}</p>}
+      {recordingError && recorder.permissionDenied ? (
+        <MicrophonePermissionHelp />
+      ) : (recordingError || saveError) && (
+        <p className="studio-error" role="alert">{recordingError || saveError}</p>
+      )}
     </div>
   );
 }

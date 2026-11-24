@@ -7,6 +7,7 @@ interface GenerationDraftState {
   textRevision: number;
   submitting: boolean;
   profileId: string | null;
+  profileServerRevision: number;
   profileApplied: boolean;
   profileDefaultsBaseline: {
     engine: GenerationFormValues['engine'];
@@ -15,12 +16,14 @@ interface GenerationDraftState {
   } | null;
   presetId: string | null;
   effectsOverridden: boolean;
+  voiceoverPolish: boolean;
   setValues: (values: GenerationFormValues) => void;
   clearSubmittedText: (revision: number, text: string) => void;
   setSubmitting: (submitting: boolean) => void;
-  selectProfile: (profileId: string | null) => void;
+  selectProfile: (profileId: string | null, serverRevision: number) => void;
   markProfileApplied: () => void;
   setPresetId: (presetId: string | null, overridden?: boolean) => void;
+  setVoiceoverPolish: (value: boolean) => void;
 }
 
 export const useGenerationDraftStore = create<GenerationDraftState>((set) => ({
@@ -28,10 +31,12 @@ export const useGenerationDraftStore = create<GenerationDraftState>((set) => ({
   textRevision: 0,
   submitting: false,
   profileId: null,
+  profileServerRevision: 0,
   profileApplied: false,
   profileDefaultsBaseline: null,
   presetId: null,
   effectsOverridden: false,
+  voiceoverPolish: false,
   setValues: (values) =>
     set((state) => ({
       values: { ...values },
@@ -44,14 +49,16 @@ export const useGenerationDraftStore = create<GenerationDraftState>((set) => ({
         : state,
     ),
   setSubmitting: (submitting) => set({ submitting }),
-  selectProfile: (profileId) =>
+  selectProfile: (profileId, profileServerRevision) =>
     set((state) =>
-      state.profileId === profileId
+      state.profileId === profileId && state.profileServerRevision === profileServerRevision
         ? state
         : {
             profileId,
+            profileServerRevision,
             profileApplied: false,
             effectsOverridden: false,
+            voiceoverPolish: false,
             profileDefaultsBaseline: {
               engine: state.values?.engine,
               language: state.values?.language,
@@ -61,4 +68,5 @@ export const useGenerationDraftStore = create<GenerationDraftState>((set) => ({
     ),
   markProfileApplied: () => set({ profileApplied: true }),
   setPresetId: (presetId, overridden = true) => set({ presetId, effectsOverridden: overridden }),
+  setVoiceoverPolish: (voiceoverPolish) => set({ voiceoverPolish }),
 }));

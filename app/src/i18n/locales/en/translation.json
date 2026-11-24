@@ -294,6 +294,7 @@
     },
     "validation": {
       "nameRequired": "Name is required",
+      "designPromptRequired": "Describe the voice.",
       "referenceRequired": "Reference text is required when adding a sample",
       "sampleRequired": "Audio sample is required",
       "referenceTextRequired": "Reference text is required",
@@ -359,7 +360,7 @@
     "transcribing": "Transcribing…",
     "remove": "Remove",
     "startRecording": "Start Recording",
-    "recordHint": "Click to start recording. Maximum duration: 30 seconds.",
+    "recordHint": "Up to 30 seconds.",
     "stopRecording": "Stop Recording",
     "remaining": "{{time}} remaining",
     "recordingComplete": "Recording complete",
@@ -619,6 +620,7 @@
     }
   },
   "stories": {
+    "back": "Back to stories",
     "title": "Stories",
     "newStory": "New Story",
     "loading": "Loading stories…",
@@ -667,6 +669,8 @@
     }
   },
   "storyContent": {
+    "generate": "Generate",
+    "export": "Export",
     "selectStory": {
       "title": "Select a story",
       "hint": "Choose a story from the list to view its content"
@@ -711,7 +715,7 @@
     }
   },
   "history": {
-    "empty": "No voice generations, yet…",
+    "empty": "No takes yet",
     "actions": {
       "menu": "Actions",
       "play": "Play",
@@ -781,6 +785,23 @@
       "placeholder": "Delivery instructions — e.g. Speak slowly with warmth, Authoritative and clear…",
       "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
+    "delivery": {
+      "label": "Delivery",
+      "natural": "Natural",
+      "upbeat": "Upbeat",
+      "excited": "Excited",
+      "custom": "Custom",
+      "polish": "Voiceover polish",
+      "save": "Save for this voice",
+      "saved": "Saved for this voice",
+      "hear": "Hear it",
+      "hearNatural": "Hear Natural",
+      "stop": "Stop preview",
+      "stopNatural": "Stop comparison",
+      "downloadHear": "Download & hear",
+      "previewFailed": "Speech preview failed",
+      "polishUnavailable": "Voiceover polish is unavailable. Choose another effect."
+    },
     "voiceSelector": {
       "placeholder": "Select a voice…"
     },
@@ -804,6 +825,23 @@
   "main": {
     "importVoice": "Import Voice",
     "createVoice": "Create Voice",
+    "starter": {
+      "stepsLabel": "First run steps",
+      "chooseStep": "Choose a voice",
+      "sampleStep": "First take",
+      "chooseHeading": "Make your first take",
+      "chooseDescription": "Generate a short sample with a built-in voice.",
+      "sampleHeading": "Hear your first take",
+      "voiceDescription": "Built-in · English",
+      "createDescription": "Record or upload a sample",
+      "importDescription": "Open a .voicebox.zip backup",
+      "action": "Try a voice",
+      "preparing": "Preparing your sample…",
+      "ready": "Your sample is ready.",
+      "failed": "Couldn’t start the sample",
+      "play": "Play sample",
+      "finish": "Open Generate"
+    },
     "import": {
       "invalidTitle": "Invalid file type",
       "invalidDescription": "Please select a valid .voicebox.zip file",
@@ -1388,10 +1426,13 @@
     "label": "Microphone",
     "systemDefault": "System default",
     "recordingDefault": "Recording (default mic)",
-    "fallbackNotice": "The selected microphone is unavailable. Using the system default for this session. Your saved choice is unchanged.",
+    "fallbackNotice": "The selected microphone is unavailable. Using the system default.",
     "enable": "Enable microphones",
     "enabling": "Enabling…",
     "refresh": "Refresh microphones",
+    "permissionDeniedBrowser": "Microphone access denied. Allow it in site settings, then try again.",
+    "permissionDeniedDesktop": "Microphone access denied. Allow Voicebox in system settings, then try again.",
+    "openSettings": "Open microphone settings",
     "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
     "input": "Microphone {{number}}",
     "unavailable": "{{name}} (unavailable)",

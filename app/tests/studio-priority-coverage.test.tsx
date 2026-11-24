@@ -55,6 +55,16 @@ mock.module('../src/components/ui/dialog', () => ({
   DialogTitle: pass,
   DialogTrigger: pass,
 }));
+mock.module('../src/components/ui/dropdown-menu', () => ({
+  DropdownMenu: pass,
+  DropdownMenuTrigger: pass,
+  DropdownMenuContent: pass,
+  DropdownMenuItem: ({ children, onSelect }: any) => (
+    <button type="button" role="menuitem" onClick={onSelect}>
+      {children}
+    </button>
+  ),
+}));
 mock.module('../src/features/studio/StorageCleanupDialog', () => ({
   StorageCleanupDialog: () => null,
 }));
@@ -67,6 +77,14 @@ function text(value: any): string {
 const button = (label: string) =>
   renderer.root.findAllByType('button').find((n) => text(n.props.children).includes(label))!;
 const input = (placeholder: string) => renderer.root.findByProps({ placeholder });
+function field(label: string) {
+  const id = renderer.root
+    .findAllByType('label')
+    .find((node) => text(node.props.children) === label)!.props.htmlFor;
+  return [...renderer.root.findAllByType('input'), ...renderer.root.findAllByType('textarea')].find(
+    (node) => node.props.id === id,
+  )!;
+}
 async function mount() {
   await act(async () => {
     renderer = create(<ProjectsPage />);
@@ -114,9 +132,9 @@ test('creation submits trimmed metadata once while pending and navigates', async
     });
   };
   await mount();
-  act(() => input('A story worth telling').props.onChange({ target: { value: '  Title  ' } }));
-  act(() => input('Optional').props.onChange({ target: { value: ' Client ' } }));
-  act(() => input('Paste your script here…').props.onChange({ target: { value: 'One\n\nTwo' } }));
+  act(() => field('Project name').props.onChange({ target: { value: '  Title  ' } }));
+  act(() => field('Client / collection').props.onChange({ target: { value: ' Client ' } }));
+  act(() => field('Script').props.onChange({ target: { value: 'One\n\nTwo' } }));
   expect(
     text(
       renderer.root
@@ -156,7 +174,7 @@ test('copies the selected Story', async () => {
     return { id: 'copied' };
   };
   await mount();
-  await click('Copy into project');
+  await click('Copy from Story…');
   act(() => renderer.root.findByType('select').props.onChange({ target: { value: 's' } }));
   await click('Create studio copy');
   expect(calls).toEqual(['s']);
@@ -177,7 +195,7 @@ test('late creation and list results from the old server are ignored', async () 
       resolveCreate = r;
     });
   await mount();
-  act(() => input('A story worth telling').props.onChange({ target: { value: 'Title' } }));
+  act(() => field('Project name').props.onChange({ target: { value: 'Title' } }));
   await act(async () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} }));
   endpoint = 'http://two';
   await act(async () => renderer.update(<ProjectsPage />));
@@ -197,7 +215,7 @@ test('creation failure is shown and a later attempt can succeed', async () => {
     return { id: 'success' };
   };
   await mount();
-  act(() => input('A story worth telling').props.onChange({ target: { value: 'Title' } }));
+  act(() => field('Project name').props.onChange({ target: { value: 'Title' } }));
   const submit = () => renderer.root.findByType('form').props.onSubmit({ preventDefault() {} });
   await act(async () => submit());
   expect(JSON.stringify(renderer.toJSON())).toContain('creation failed');

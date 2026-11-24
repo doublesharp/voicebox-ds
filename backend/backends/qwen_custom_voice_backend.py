@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from . import TTSBackend, LANGUAGE_CODE_TO_NAME
+from .qwen_assets import QWEN_TTS_REQUIRED_FILES
 from .base import (
     is_model_cached,
     get_torch_device,
@@ -78,7 +79,9 @@ class QwenCustomVoiceBackend:
 
     def _is_model_cached(self, model_size: Optional[str] = None) -> bool:
         size = model_size or self.model_size
-        return is_model_cached(self._get_model_path(size))
+        return is_model_cached(
+            self._get_model_path(size), required_files=list(QWEN_TTS_REQUIRED_FILES)
+        )
 
     async def load_model_async(self, model_size: Optional[str] = None) -> None:
         if model_size is None:

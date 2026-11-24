@@ -48,7 +48,7 @@ mock.module('../src/lib/hooks/useSettings', () => ({
   useCaptureSettings: () => ({ settings: {}, update() {} }),
 }));
 mock.module('../src/lib/hooks/useDictationReadiness', () => ({
-  useDictationReadiness: () => ({ canRecord: true }),
+  useDictationReadiness: () => ({ canRecord: true, canCapture: true }),
 }));
 mock.module('../src/lib/hooks/useCaptureRecordingSession', () => ({
   useCaptureRecordingSession: () => ({
@@ -130,9 +130,9 @@ async function setup(voices: any[] = []) {
 test('search and selection remain independent across refetch and transcript modes', async () => {
   rows = [row('a', 'Alpha raw', 'Alpha polished', 'dictation'), row('b', 'Beta raw', null, 'file')];
   const { client, view } = await setup();
-  expect(view.root.findByType('textarea').props.defaultValue).toBe('Alpha polished');
+  expect(view.root.findByType('textarea').props.value).toBe('Alpha polished');
   act(() => button(view, 'captures.transcript.raw').props.onClick());
-  expect(view.root.findByType('textarea').props.defaultValue).toBe('Alpha raw');
+  expect(view.root.findByType('textarea').props.value).toBe('Alpha raw');
   const search = view.root
     .findAllByType('input')
     .find((n) => n.props.placeholder === 'captures.searchPlaceholder')!;
@@ -142,7 +142,7 @@ test('search and selection remain independent across refetch and transcript mode
     .findAllByType('button')
     .find((n) => n.findAllByType('div').some((d) => d.children.includes('Beta raw')))!;
   act(() => beta.props.onClick());
-  expect(view.root.findByType('textarea').props.defaultValue).toBe('Beta raw');
+  expect(view.root.findByType('textarea').props.value).toBe('Beta raw');
   expect(button(view, 'captures.transcript.refined').props.disabled).toBe(true);
   await act(async () => {
     client.setQueryData(['captures'], { items: [...rows], total: 2 });
@@ -294,13 +294,17 @@ for (const action of ['delete', 'play'] as const) {
   });
 }
 
-test('play-as submits the transcript and selected voice engine', async () => {
+test.each([
+  ['refined', 'Polished words'],
+  ['raw', 'Raw words'],
+])('play-as submits the displayed %s transcript and selected voice engine', async (version, text) => {
   rows = [row('a', 'Raw words', 'Polished words', 'dictation')];
   generateSpeech.mockClear();
   const { client, view } = await setup([{ id: 'voice', name: 'Voice', language: 'en', default_engine: 'kokoro' }]);
   try {
+    if (version === 'raw') act(() => button(view, 'captures.transcript.raw').props.onClick());
     await act(async () => { button(view, 'captures.actions.playAs').props.onClick(); await new Promise((r) => setTimeout(r, 10)); });
-    expect(generateSpeech).toHaveBeenCalledWith({ profile_id: 'voice', text: 'Polished words', language: 'en', engine: 'kokoro' });
+    expect(generateSpeech).toHaveBeenCalledWith({ profile_id: 'voice', text, language: 'en', engine: 'kokoro' });
     expect(useGenerationStore.getState().pendingGenerationIds.has('generation-1')).toBe(true);
   } finally { act(() => view.unmount()); client.clear(); useGenerationStore.getState().removePendingGeneration('generation-1'); }
 });

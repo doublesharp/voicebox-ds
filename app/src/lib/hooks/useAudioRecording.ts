@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { convertToWav } from '@/lib/utils/audio';
 import {
   type MicrophoneProcessing,
+  isMicrophonePermissionDenied,
   microphoneErrorMessage,
   requestMicrophone,
 } from '@/lib/utils/microphone';
@@ -31,7 +32,9 @@ interface RecordingSession {
 function releaseStream(session: RecordingSession) {
   const stream = session.stream;
   session.stream = null;
-  stream?.getTracks().forEach((track) => track.stop());
+  stream?.getTracks().forEach((track) => {
+    track.stop();
+  });
 }
 
 function clearSessionTimer(session: RecordingSession) {
@@ -53,7 +56,9 @@ export function useAudioRecording({
   const [audioStream, setAudioStream] = useState<MediaStream | null>(null);
   const [duration, setDuration] = useState(0);
   const [usingDefaultMicrophone, setUsingDefaultMicrophone] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ message: string; permissionDenied: boolean } | null>(
+    null,
+  );
   const currentRef = useRef<RecordingSession | null>(null);
   const sessionsRef = useRef(new Set<RecordingSession>());
 
@@ -78,7 +83,7 @@ export function useAudioRecording({
     currentRef.current = session;
     sessionsRef.current.add(session);
     setIsStarting(true);
-    setError(null);
+    setFailure(null);
     setUsingDefaultMicrophone(false);
     setDuration(0);
 
@@ -110,7 +115,9 @@ export function useAudioRecording({
         processing,
       );
       if (session.cancelled || currentRef.current !== session) {
-        stream.getTracks().forEach((track) => track.stop());
+        stream.getTracks().forEach((track) => {
+          track.stop();
+        });
         return;
       }
       session.stream = stream;
@@ -160,7 +167,7 @@ export function useAudioRecording({
         session.chunks = [];
         if (currentRef.current === session) {
           currentRef.current = null;
-          setError('Recording error occurred');
+          setFailure({ message: 'Recording error occurred', permissionDenied: false });
           setIsStarting(false);
           setIsRecording(false);
           setAudioStream(null);
@@ -205,7 +212,10 @@ export function useAudioRecording({
         currentRef.current = null;
         setIsStarting(false);
         setAudioStream(null);
-        setError(microphoneErrorMessage(err));
+        setFailure({
+          message: microphoneErrorMessage(err),
+          permissionDenied: isMicrophonePermissionDenied(err),
+        });
         setIsRecording(false);
       }
     } finally {
@@ -214,6 +224,7 @@ export function useAudioRecording({
   }, [deviceId, maxDurationSeconds, onRecordingComplete, platform.metadata.isTauri, processing]);
 
   const cancelRecording = useCallback(() => {
+    setFailure(null);
     const session = currentRef.current;
     if (!session) return;
     session.cancelled = true;
@@ -268,7 +279,8 @@ export function useAudioRecording({
     audioStream,
     usingDefaultMicrophone,
     duration,
-    error,
+    error: failure?.message ?? null,
+    permissionDenied: failure?.permissionDenied ?? false,
     startRecording,
     stopRecording,
     cancelRecording,

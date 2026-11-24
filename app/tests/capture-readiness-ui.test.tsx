@@ -10,7 +10,7 @@ mock.module('../src/lib/hooks/useSettings', () => ({
   useCaptureSettings: () => ({ settings: { hotkey_enabled: false }, update() {} }),
 }));
 mock.module('../src/lib/hooks/useDictationReadiness', () => ({
-  useDictationReadiness: () => ({ canRecord: ready }),
+  useDictationReadiness: () => ({ canRecord: false, canCapture: ready }),
 }));
 mock.module('../src/lib/hooks/useCaptureRecordingSession', () => ({
   useCaptureRecordingSession: () => ({
@@ -41,7 +41,7 @@ const { CapturesTab } = await import('../src/components/CapturesTab/CapturesTab'
 const { profileListKey } = await import('../src/lib/hooks/useProfiles');
 const { currentServerScope } = await import('../src/lib/serverScope');
 afterAll(() => mock.restore());
-test('missing setup is actionable even with the global shortcut disabled', async () => {
+test('manual Capture actions require the models and work without global shortcut permissions', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(['captures'], { items: [] });
   client.setQueryData(profileListKey(currentServerScope()), []);
@@ -67,6 +67,11 @@ test('missing setup is actionable even with the global shortcut disabled', async
     view.root
       .findAllByType('button')
       .some((node) => node.children.includes('captures.actions.dictate')),
+  ).toBe(true);
+  expect(
+    view.root
+      .findAllByType('button')
+      .some((node) => node.children.includes('captures.actions.import')),
   ).toBe(true);
   act(() => view.unmount());
   client.clear();

@@ -22,6 +22,7 @@ DEFAULT_LLM_MAX_TOKENS = 512
 DEFAULT_LLM_TEMPERATURE = 0.7
 
 from ..utils.platform_detect import get_backend_type
+from .qwen_assets import QWEN_MLX_REQUIRED_FILES, QWEN_TTS_REQUIRED_FILES
 from .qwen_cuda_variants import is_cuda_graph_variant, require_cuda_graph_variant
 
 LANGUAGE_CODE_TO_NAME = {
@@ -266,6 +267,7 @@ def _get_qwen_model_configs() -> list[ModelConfig]:
     # mlx-audio can continue after an EOS miss with silence followed by
     # codec noise. Retry only the affected text as smaller chunks.
     retries_runaway = backend_type == "mlx"
+    required_files = QWEN_MLX_REQUIRED_FILES if backend_type == "mlx" else QWEN_TTS_REQUIRED_FILES
 
     configs = [
         ModelConfig(
@@ -273,6 +275,7 @@ def _get_qwen_model_configs() -> list[ModelConfig]:
             display_name="Qwen TTS 1.7B",
             engine="qwen",
             hf_repo_id=repo_1_7b,
+            required_files=required_files,
             model_size="1.7B",
             size_mb=3500,
             retries_runaway=retries_runaway,
@@ -284,6 +287,7 @@ def _get_qwen_model_configs() -> list[ModelConfig]:
             display_name="Qwen TTS 0.6B",
             engine="qwen",
             hf_repo_id=repo_0_6b,
+            required_files=required_files,
             model_size="0.6B",
             size_mb=1200,
             retries_runaway=retries_runaway,
@@ -293,7 +297,7 @@ def _get_qwen_model_configs() -> list[ModelConfig]:
     ]
 
     if backend_type == "mlx":
-        from .qwen_mlx_variants import QWEN_MLX_QUANTIZED_VARIANTS, QWEN_MLX_QUANTIZED_REVISIONS, QWEN_MLX_REQUIRED_FILES
+        from .qwen_mlx_variants import QWEN_MLX_QUANTIZED_VARIANTS, QWEN_MLX_QUANTIZED_REVISIONS
 
         configs.extend(
             ModelConfig(
@@ -345,6 +349,7 @@ def _get_qwen_custom_voice_configs() -> list[ModelConfig]:
             display_name="Qwen CustomVoice 1.7B",
             engine="qwen_custom_voice",
             hf_repo_id=f"{prefix}/Qwen3-TTS-12Hz-1.7B-CustomVoice{suffix}",
+            required_files=QWEN_MLX_REQUIRED_FILES if on_mlx else QWEN_TTS_REQUIRED_FILES,
             model_size="1.7B",
             size_mb=3500,
             retries_runaway=on_mlx,
@@ -356,6 +361,7 @@ def _get_qwen_custom_voice_configs() -> list[ModelConfig]:
             display_name="Qwen CustomVoice 0.6B",
             engine="qwen_custom_voice",
             hf_repo_id=f"{prefix}/Qwen3-TTS-12Hz-0.6B-CustomVoice{suffix}",
+            required_files=QWEN_MLX_REQUIRED_FILES if on_mlx else QWEN_TTS_REQUIRED_FILES,
             model_size="0.6B",
             size_mb=1200,
             retries_runaway=on_mlx,
@@ -379,6 +385,7 @@ def _get_qwen_voice_design_configs() -> list[ModelConfig]:
             display_name="Qwen VoiceDesign 1.7B",
             engine="qwen_voice_design",
             hf_repo_id=f"{prefix}/Qwen3-TTS-12Hz-1.7B-VoiceDesign{suffix}",
+            required_files=QWEN_MLX_REQUIRED_FILES if on_mlx else QWEN_TTS_REQUIRED_FILES,
             model_size="1.7B",
             size_mb=3500,
             retries_runaway=on_mlx,

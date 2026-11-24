@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { PlatformProvider } from '../src/platform/PlatformContext';
 import type { Platform } from '../src/platform/types';
@@ -26,7 +25,6 @@ mock.module('../src/lib/utils/audio', () => ({ convertToWav: async (blob: Blob) 
 
 const { useMicrophoneStore } = await import('../src/stores/microphoneStore');
 const { useAudioRecording } = await import('../src/lib/hooks/useAudioRecording');
-const { useMicrophonePreview } = await import('../src/lib/hooks/useMicrophonePreview');
 
 const recorders: Recorder[] = [];
 
@@ -60,7 +58,6 @@ function microphone(deviceId: string) {
 
 let renderer: ReactTestRenderer | null = null;
 let recording!: ReturnType<typeof useAudioRecording>;
-let preview!: ReturnType<typeof useMicrophonePreview>;
 
 function RecordingProbe({
   deviceId,
@@ -72,11 +69,6 @@ function RecordingProbe({
   recording = useAudioRecording({ deviceId, processing });
   return null;
 }
-function PreviewProbe({ processing }: { processing?: 'processed' | 'clean' }) {
-  preview = useMicrophonePreview(true, processing);
-  return null;
-}
-
 function mountRecording(deviceId?: string | null, processing?: 'processed' | 'clean') {
   act(() => {
     renderer = create(
@@ -110,29 +102,6 @@ describe('recording input lifecycle', () => {
     expect(persisted.state.deviceId).toBe('shure-usb');
     useMicrophoneStore.getState().setMicrophone(null, null);
     expect(useMicrophoneStore.getState().cleanReferenceAudio).toBe(true);
-  });
-
-  test('reference preview follows processing changes and releases the old input', async () => {
-    const first = microphone('shure-usb');
-    const second = microphone('shure-usb');
-    let calls = 0;
-    const acquire = mock(async (_constraints: MediaStreamConstraints) =>
-      ++calls === 1 ? first.stream : second.stream,
-    );
-    useDevices(acquire);
-    await act(async () => {
-      renderer = create(<PreviewProbe />);
-    });
-    await act(async () => {
-      renderer?.update(<PreviewProbe processing="clean" />);
-    });
-    expect(first.stop).toHaveBeenCalled();
-    expect(preview.stream).toBe(second.stream);
-    expect(acquire.mock.calls[1][0].audio).toMatchObject({
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-    });
   });
 
   test('reference recording passes clean processing without changing the saved input', async () => {
@@ -225,25 +194,30 @@ describe('recording input lifecycle', () => {
     expect(recording.audioStream).toBe(selected.stream);
   });
 
-  test('the preview reports fallback and releases its default stream on close', async () => {
-    const { stream, stop } = microphone('built-in');
-    useDevices(async (constraints) => {
-      if ((constraints.audio as MediaTrackConstraints).deviceId) {
-        throw new DOMException('Selected mic missing', 'NotFoundError');
-      }
+  test('a denied recording can be retried after granting access', async () => {
+    const { stream, stop } = microphone('shure-usb');
+    let denied = true;
+    const acquire = mock(async () => {
+      if (denied) throw new DOMException('Permission denied', 'NotAllowedError');
       return stream;
     });
+    useDevices(acquire);
+    mountRecording();
     await act(async () => {
-      renderer = create(createElement(PreviewProbe));
+      await recording.startRecording();
     });
-    expect(preview.stream).toBe(stream);
-    expect(preview.usingDefaultMicrophone).toBe(true);
-    expect(preview.error).toBeNull();
+    expect(recording.permissionDenied).toBe(true);
+    expect(recording.isRecording).toBe(false);
+    expect(acquire).toHaveBeenCalledTimes(1);
+    denied = false;
     await act(async () => {
-      renderer?.unmount();
+      await recording.startRecording();
     });
-    renderer = null;
-    expect(stop).toHaveBeenCalled();
+    expect(recording.permissionDenied).toBe(false);
+    expect(recording.error).toBeNull();
+    expect(recording.audioStream).toBe(stream);
+    await act(async () => recording.cancelRecording());
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   test('automatic input stop returns the recorder to idle and allows Stop safely', async () => {
@@ -366,29 +340,4 @@ describe('recording input lifecycle', () => {
     });
   });
 
-  test('changing preview input releases the old stream and closing releases the new stream', async () => {
-    const old = microphone('shure-usb');
-    const current = microphone('second-usb');
-    useDevices(async (constraints) =>
-      (constraints.audio as MediaTrackConstraints).deviceId &&
-      ((constraints.audio as MediaTrackConstraints).deviceId as ConstrainDOMStringParameters)
-        .exact === 'shure-usb'
-        ? old.stream
-        : current.stream,
-    );
-    await act(async () => {
-      renderer = create(createElement(PreviewProbe));
-    });
-    expect(preview.stream).toBe(old.stream);
-    await act(async () => {
-      useMicrophoneStore.getState().setMicrophone('second-usb', 'Second USB');
-    });
-    expect(old.stop).toHaveBeenCalled();
-    expect(preview.stream).toBe(current.stream);
-    await act(async () => {
-      renderer?.unmount();
-    });
-    renderer = null;
-    expect(current.stop).toHaveBeenCalled();
-  });
 });

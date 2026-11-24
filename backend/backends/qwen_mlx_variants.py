@@ -18,21 +18,6 @@ QWEN_MLX_QUANTIZED_REVISIONS = {
     "1.7B-8bit": "e7dd0585652209fa0d7783659aad4e8a324de11c",
     "1.7B-4bit": "37e955a1deb861c088ae5f3a67043185f3d1a60c",
 }
-QWEN_MLX_REQUIRED_FILES = (
-    "config.json",
-    "generation_config.json",
-    "merges.txt",
-    "vocab.json",
-    "tokenizer_config.json",
-    "preprocessor_config.json",
-    "model.safetensors",
-    "model.safetensors.index.json",
-    "speech_tokenizer/config.json",
-    "speech_tokenizer/configuration.json",
-    "speech_tokenizer/model.safetensors",
-    "speech_tokenizer/preprocessor_config.json",
-)
-
 import asyncio
 import inspect
 import logging
@@ -51,6 +36,7 @@ from .base import (
 )
 from .kokoro_backend import KOKORO_DEFAULT_VOICE, KOKORO_SAMPLE_RATE, LANG_CODE_MAP
 from .mlx_backend import _run_on_mlx_thread
+from .qwen_assets import QWEN_MLX_REQUIRED_FILES
 from .qwen_custom_voice_backend import QWEN_CV_DEFAULT_SPEAKER
 from .qwen_voice_design_backend import QWEN_VD_DEFAULT_DESIGN
 
@@ -127,7 +113,9 @@ class QwenCustomVoiceMLXBackend:
 
     def _is_model_cached(self, model_size: Optional[str] = None) -> bool:
         size = model_size or self.model_size
-        return is_model_cached(self._get_model_path(size), weight_extensions=_MLX_WEIGHT_EXTS)
+        return is_model_cached(
+            self._get_model_path(size), required_files=list(QWEN_MLX_REQUIRED_FILES)
+        )
 
     async def load_model_async(self, model_size: Optional[str] = None) -> None:
         if model_size is None:
@@ -269,7 +257,9 @@ class QwenVoiceDesignMLXBackend:
 
     def _is_model_cached(self, model_size: Optional[str] = None) -> bool:
         size = model_size or self.model_size
-        return is_model_cached(self._get_model_path(size), weight_extensions=_MLX_WEIGHT_EXTS)
+        return is_model_cached(
+            self._get_model_path(size), required_files=list(QWEN_MLX_REQUIRED_FILES)
+        )
 
     async def load_model_async(self, model_size: Optional[str] = None) -> None:
         if model_size is None:

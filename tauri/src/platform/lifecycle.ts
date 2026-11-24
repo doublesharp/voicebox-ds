@@ -5,6 +5,10 @@ import type { PlatformLifecycle, ServerLogEntry } from '@/platform/types';
 class TauriLifecycle implements PlatformLifecycle {
   onServerReady?: () => void;
 
+  openMicrophoneSettings = /Mac|Win/.test(navigator.platform)
+    ? () => invoke<void>('open_microphone_settings')
+    : undefined;
+
   async startServer(remote = false, modelsDir?: string | null): Promise<string> {
     try {
       const result = await invoke<string>('start_server', {

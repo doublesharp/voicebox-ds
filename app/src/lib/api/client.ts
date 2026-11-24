@@ -41,6 +41,7 @@ import type {
   PresetVoice,
   ProfileSampleResponse,
   RocmStatus,
+  SpeechPreviewMode,
   StoryCreate,
   StoryDetailResponse,
   StoryExportFormat,
@@ -282,12 +283,29 @@ class ApiClient {
     });
   }
 
-  /** Unsaved preview. The caller consumes PCM as it arrives and owns cancellation. */
-  async previewSpeech(data: GenerationRequest, signal: AbortSignal): Promise<Response> {
-    const response = await fetch(`${this.getBaseUrl()}/generate/stream?incremental=true`, {
+  /** Unsaved preview. Buffered mode uses the ordinary generation processing chain. */
+  async previewSpeech(
+    data: GenerationRequest,
+    signal: AbortSignal,
+    mode: SpeechPreviewMode = 'incremental',
+    modelToPrepare?: string,
+  ): Promise<Response> {
+    const baseUrl = this.getBaseUrl();
+    const incremental = mode === 'incremental';
+    if (!incremental && modelToPrepare) {
+      await this.request('/models/load', {
+        method: 'POST',
+        body: JSON.stringify({ model_name: modelToPrepare }),
+        signal,
+      });
+    }
+    if (signal.aborted) throw new DOMException('Preview stopped', 'AbortError');
+    const endpoint = incremental ? '/generate/stream?incremental=true' : '/generate/stream';
+    const body = incremental ? { ...data, normalize: false, effects_chain: [], speed: 1 } : data;
+    const response = await fetch(`${baseUrl}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...data, normalize: false, effects_chain: [], speed: 1 }),
+      body: JSON.stringify(body),
       signal,
     });
     if (!response.ok) {

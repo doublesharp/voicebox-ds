@@ -6,8 +6,12 @@ $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $ArchivePath -PathType Leaf)) {
     throw "CUDA archive not found: $ArchivePath"
 }
-if (Get-Process -Name "voicebox", "voicebox-server", "voicebox-server-cuda" -ErrorAction SilentlyContinue) {
-    throw "Fully quit Voicebox before installing its CUDA backend."
+$parent = Join-Path $env:APPDATA "com.doublesharp.voicebox.ds\backends"
+$destination = Join-Path $parent "cuda"
+$runningBackend = Get-Process -Name "voicebox-server-cuda" -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -eq (Join-Path $destination "voicebox-server-cuda.exe") }
+if ($runningBackend -or (Get-Process -Name "voicebox-ds" -ErrorAction SilentlyContinue)) {
+    throw "Quit Voicebox DS before installing its CUDA backend."
 }
 
 $ArchivePath = (Resolve-Path -LiteralPath $ArchivePath).Path
@@ -21,8 +25,6 @@ if (Test-Path -LiteralPath $manifestPath) {
     }
 }
 
-$parent = Join-Path $env:APPDATA "sh.voicebox.app\backends"
-$destination = Join-Path $parent "cuda"
 $token = [guid]::NewGuid().ToString("N")
 $staging = Join-Path $parent "cuda-install-$token"
 $backup = Join-Path $parent "cuda-backup-$token"
@@ -56,4 +58,4 @@ try {
 if (Test-Path -LiteralPath $backup) {
     Remove-Item -LiteralPath $backup -Recurse -Force
 }
-Write-Host "CUDA backend installed at $destination. Launch Voicebox to use it."
+Write-Host "CUDA backend installed at $destination. Launch Voicebox DS to use it."

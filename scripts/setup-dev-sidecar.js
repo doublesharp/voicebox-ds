@@ -47,7 +47,7 @@ function getTargetTriple() {
 
 // Create a minimal executable for the platform. ``baseName`` is the
 // sidecar identifier as declared in tauri.conf.json's ``externalBin``
-// (e.g. "voicebox-server", "voicebox-mcp"). Tauri appends the target
+// (e.g. "voicebox-ds-server", "voicebox-ds-mcp"). Tauri appends the target
 // triple to that name at compile time.
 function createPlaceholderBinary(targetTriple, baseName) {
   const isWindows = targetTriple.includes('windows');
@@ -369,7 +369,7 @@ exit 1
 // Every sidecar listed in tauri.conf.json's ``externalBin`` needs a
 // file on disk at compile time, even in dev. Add to this list whenever
 // a new sidecar is introduced.
-const SIDECAR_BASE_NAMES = ['voicebox-server', 'voicebox-mcp'];
+const SIDECAR_BASE_NAMES = ['voicebox-ds-server', 'voicebox-ds-mcp'];
 
 function main() {
   const targetTriple = getTargetTriple();

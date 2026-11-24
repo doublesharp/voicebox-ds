@@ -1,4 +1,4 @@
-import { Check, Copy, Plug, Trash2, Waypoints } from 'lucide-react';
+import { Check, Copy, Plug, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
@@ -20,17 +20,17 @@ import { SettingRow, SettingSection } from './SettingRow';
 
 function getStdioShimCommand(): string {
   if (typeof navigator === 'undefined') {
-    return `/Applications/${APP_BRANDING.name}.app/Contents/MacOS/voicebox-mcp`;
+    return `/Applications/${APP_BRANDING.name}.app/Contents/MacOS/voicebox-ds-mcp`;
   }
 
   const platform = `${navigator.platform} ${navigator.userAgent}`.toLowerCase();
   if (platform.includes('win')) {
-    return `C:\\Program Files\\${APP_BRANDING.name}\\voicebox-mcp.exe`;
+    return `C:\\Program Files\\${APP_BRANDING.name}\\voicebox-ds-mcp.exe`;
   }
   if (platform.includes('linux')) {
-    return '/opt/voicebox/voicebox-mcp';
+    return 'voicebox-ds-mcp';
   }
-  return `/Applications/${APP_BRANDING.name}.app/Contents/MacOS/voicebox-mcp`;
+  return `/Applications/${APP_BRANDING.name}.app/Contents/MacOS/voicebox-ds-mcp`;
 }
 
 /**
@@ -85,250 +85,213 @@ export function MCPPage() {
   };
 
   return (
-    <div className="flex gap-8 items-start max-w-5xl">
-      <div className="flex-1 min-w-0 max-w-2xl space-y-8">
-        <SettingSection
-          title={t('settings.mcp.install.title')}
-          description={t('settings.mcp.install.description')}
-        >
-          <SnippetRow
-            title={t('settings.mcp.install.http.title')}
-            description={t('settings.mcp.install.http.description')}
-            snippet={JSON.stringify(
-              {
-                mcpServers: {
-                  voicebox: {
-                    url: mcpUrl,
-                    headers: { 'X-Voicebox-Client-Id': 'claude-code' },
-                  },
+    <div className="max-w-3xl space-y-5 sm:space-y-6">
+      <SettingSection
+        title={t('settings.mcp.install.title')}
+        description={t('settings.mcp.install.description')}
+      >
+        <SnippetRow
+          title={t('settings.mcp.install.http.title')}
+          description={t('settings.mcp.install.http.description')}
+          snippet={JSON.stringify(
+            {
+              mcpServers: {
+                'voicebox-ds': {
+                  url: mcpUrl,
+                  headers: { 'X-Voicebox-Client-Id': 'claude-code' },
                 },
               },
-              null,
-              2,
-            )}
-          />
-          <SnippetRow
-            title={t('settings.mcp.install.claudeCode.title')}
-            description={t('settings.mcp.install.claudeCode.description')}
-            snippet={`claude mcp add voicebox --transport http --url ${mcpUrl} --header "X-Voicebox-Client-Id: claude-code"`}
-          />
-          <SnippetRow
-            title={t('settings.mcp.install.stdio.title')}
-            description={t('settings.mcp.install.stdio.description')}
-            snippet={JSON.stringify(
-              {
-                mcpServers: {
-                  voicebox: {
-                    command: stdioShimCommand,
-                    env: { VOICEBOX_CLIENT_ID: 'claude-code' },
-                  },
-                },
-              },
-              null,
-              2,
-            )}
-          />
-        </SettingSection>
-
-        <SettingSection
-          title={t('settings.mcp.defaultVoice.title')}
-          description={t('settings.mcp.defaultVoice.description')}
-        >
-          <SettingRow
-            title={t('settings.mcp.defaultVoice.label')}
-            description={t('settings.mcp.defaultVoice.labelHint')}
-            action={
-              <Select
-                value={defaultProfileId || '__default__'}
-                onValueChange={(v) =>
-                  updateCapture({
-                    default_playback_voice_id: v === '__default__' ? null : v,
-                  })
-                }
-              >
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__default__">{t('settings.mcp.defaultVoice.none')}</SelectItem>
-                  {(profiles ?? []).map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            }
-          />
-        </SettingSection>
-
-        <SettingSection
-          title={t('settings.mcp.bindings.title')}
-          description={t('settings.mcp.bindings.description')}
-        >
-          {bindingError && <p role="alert" className="py-3 text-sm text-destructive">{bindingError}</p>}
-          {bindings.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 italic">
-              <Trans i18nKey="settings.mcp.bindings.empty" components={{ code: <code /> }} />
-            </p>
-          ) : (
-            <div className="divide-y divide-border/60">
-              {bindings.map((b) => (
-                <div
-                  key={b.client_id}
-                  className="py-3 grid grid-cols-[1fr_auto_auto] gap-4 items-center"
-                >
-                  <div className="min-w-0">
-                    <div className="font-medium text-sm truncate">{b.label || b.client_id}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      <code className="text-[11px]">{b.client_id}</code>
-                      {' · '}
-                      {b.last_seen_at ? (
-                        <span
-                          title={t('settings.mcp.bindings.lastSeenTitle', { when: b.last_seen_at })}
-                        >
-                          <Plug className="inline h-3 w-3 text-emerald-500" />{' '}
-                          {t('settings.mcp.bindings.lastSeen', {
-                            when: formatDate(b.last_seen_at),
-                          })}
-                        </span>
-                      ) : (
-                        <span>{t('settings.mcp.bindings.neverConnected')}</span>
-                      )}
-                    </div>
-                  </div>
-                  <Select
-                    value={b.profile_id ?? '__default__'}
-                    onValueChange={(v) => {
-                      setBindingError(null);
-                      void upsertAsync({
-                        client_id: b.client_id,
-                        label: b.label,
-                        profile_id: v === '__default__' ? null : v,
-                      }).catch((error) => {
-                        setBindingError(saveError);
-                        toast({
-                          title: t('common.error'),
-                          description:
-                            error instanceof Error ? error.message : t('common.unknownError'),
-                          variant: 'destructive',
-                        });
-                      });
-                    }}
-                  >
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">
-                        {t('settings.mcp.bindings.defaultOption')}
-                      </SelectItem>
-                      {(profiles ?? []).map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    disabled={isRemoving}
-                    onClick={() => {
-                      setBindingError(null);
-                      void removeAsync(b.client_id).catch(() => setBindingError(
-                        t('settings.mcp.bindings.removeFailed', {
-                          defaultValue: 'Could not remove the agent binding. Please try again.',
-                        }),
-                      ));
-                    }}
-                    aria-label={t('settings.mcp.bindings.removeAria', { client: b.client_id })}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+            },
+            null,
+            2,
           )}
+        />
+        <SnippetRow
+          title={t('settings.mcp.install.claudeCode.title')}
+          description={t('settings.mcp.install.claudeCode.description')}
+          snippet={`claude mcp add voicebox-ds --transport http --url ${mcpUrl} --header "X-Voicebox-Client-Id: claude-code"`}
+        />
+        <SnippetRow
+          title={t('settings.mcp.install.stdio.title')}
+          description={t('settings.mcp.install.stdio.description')}
+          snippet={JSON.stringify(
+            {
+              mcpServers: {
+                'voicebox-ds': {
+                  command: stdioShimCommand,
+                  env: { VOICEBOX_CLIENT_ID: 'claude-code' },
+                },
+              },
+            },
+            null,
+            2,
+          )}
+        />
+      </SettingSection>
 
-          <div className="pt-4 space-y-2">
-            <div className="text-sm font-medium">{t('settings.mcp.bindings.add.title')}</div>
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
-              <input
-                type="text"
-                placeholder={t('settings.mcp.bindings.add.clientIdPlaceholder')}
-                value={newClientId}
-                onChange={(e) => setNewClientId(e.target.value)}
-                className="h-9 px-3 rounded-md border bg-background text-sm"
-              />
-              <input
-                type="text"
-                placeholder={t('settings.mcp.bindings.add.labelPlaceholder')}
-                value={newLabel}
-                onChange={(e) => setNewLabel(e.target.value)}
-                className="h-9 px-3 rounded-md border bg-background text-sm"
-              />
-              <Select
-                value={newProfileId || '__default__'}
-                onValueChange={(v) => setNewProfileId(v === '__default__' ? '' : v)}
-              >
-                <SelectTrigger className="h-9 min-w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__default__">
-                    {t('settings.mcp.bindings.defaultOption')}
+      <SettingSection
+        title={t('settings.mcp.defaultVoice.title')}
+        description={t('settings.mcp.defaultVoice.description')}
+      >
+        <SettingRow
+          title={t('settings.mcp.defaultVoice.label')}
+          actionClassName="w-full sm:w-auto"
+          description={t('settings.mcp.defaultVoice.labelHint')}
+          action={
+            <Select
+              value={defaultProfileId || '__default__'}
+              onValueChange={(v) =>
+                updateCapture({
+                  default_playback_voice_id: v === '__default__' ? null : v,
+                })
+              }
+            >
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">{t('settings.mcp.defaultVoice.none')}</SelectItem>
+                {(profiles ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
-                  {(profiles ?? []).map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button size="sm" onClick={handleAdd} disabled={!newClientId.trim() || adding}>
-              {t('settings.mcp.bindings.add.action')}
-            </Button>
-          </div>
-        </SettingSection>
-      </div>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+        />
+      </SettingSection>
 
-      <aside className="hidden lg:block w-[280px] shrink-0 space-y-6 sticky top-0">
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">{t('settings.mcp.sidebar.aboutTitle')}</h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {t('settings.mcp.sidebar.aboutBody')}
+      <SettingSection
+        title={t('settings.mcp.bindings.title')}
+        description={t('settings.mcp.bindings.description')}
+      >
+        {bindingError && <p role="alert" className="py-3 text-sm text-destructive">{bindingError}</p>}
+        {bindings.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 italic">
+            <Trans i18nKey="settings.mcp.bindings.empty" components={{ code: <code /> }} />
           </p>
+        ) : (
+          <div className="divide-y divide-border/60">
+            {bindings.map((b) => (
+              <div
+                key={b.client_id}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:gap-3"
+              >
+                <div className="col-span-2 min-w-0 sm:col-span-1">
+                  <div className="font-medium text-sm truncate">{b.label || b.client_id}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    <code className="text-[11px]">{b.client_id}</code>
+                    {' · '}
+                    {b.last_seen_at ? (
+                      <span
+                        title={t('settings.mcp.bindings.lastSeenTitle', { when: b.last_seen_at })}
+                      >
+                        <Plug className="inline h-3 w-3 text-emerald-500" />{' '}
+                        {t('settings.mcp.bindings.lastSeen', {
+                          when: formatDate(b.last_seen_at),
+                        })}
+                      </span>
+                    ) : (
+                      <span>{t('settings.mcp.bindings.neverConnected')}</span>
+                    )}
+                  </div>
+                </div>
+                <Select
+                  value={b.profile_id ?? '__default__'}
+                  onValueChange={(v) => {
+                    setBindingError(null);
+                    void upsertAsync({
+                      client_id: b.client_id,
+                      label: b.label,
+                      profile_id: v === '__default__' ? null : v,
+                    }).catch((error) => {
+                      setBindingError(saveError);
+                      toast({
+                        title: t('common.error'),
+                        description:
+                          error instanceof Error ? error.message : t('common.unknownError'),
+                        variant: 'destructive',
+                      });
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">
+                      {t('settings.mcp.bindings.defaultOption')}
+                    </SelectItem>
+                    {(profiles ?? []).map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  disabled={isRemoving}
+                  onClick={() => {
+                    setBindingError(null);
+                    void removeAsync(b.client_id).catch(() => setBindingError(
+                      t('settings.mcp.bindings.removeFailed', {
+                        defaultValue: 'Could not remove the agent binding. Please try again.',
+                      }),
+                    ));
+                  }}
+                  aria-label={t('settings.mcp.bindings.removeAria', { client: b.client_id })}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="space-y-2 py-3.5">
+          <div className="text-sm font-medium">{t('settings.mcp.bindings.add.title')}</div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <input
+              type="text"
+              placeholder={t('settings.mcp.bindings.add.clientIdPlaceholder')}
+              value={newClientId}
+              onChange={(e) => setNewClientId(e.target.value)}
+              className="h-9 min-w-0 rounded-md border bg-background px-3 text-sm"
+            />
+            <input
+              type="text"
+              placeholder={t('settings.mcp.bindings.add.labelPlaceholder')}
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              className="h-9 min-w-0 rounded-md border bg-background px-3 text-sm"
+            />
+            <Select
+              value={newProfileId || '__default__'}
+              onValueChange={(v) => setNewProfileId(v === '__default__' ? '' : v)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">
+                  {t('settings.mcp.bindings.defaultOption')}
+                </SelectItem>
+                {(profiles ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button size="sm" onClick={handleAdd} disabled={!newClientId.trim() || adding}>
+            {t('settings.mcp.bindings.add.action')}
+          </Button>
         </div>
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold">{t('settings.mcp.sidebar.toolsTitle')}</h3>
-          <ul className="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
-            <li>
-              <code className="text-accent">voicebox_speak</code>
-              <div>{t('settings.mcp.sidebar.tools.speak')}</div>
-            </li>
-            <li>
-              <code className="text-accent">voicebox_transcribe</code>
-              <div>{t('settings.mcp.sidebar.tools.transcribe')}</div>
-            </li>
-            <li>
-              <code className="text-accent">voicebox_list_captures</code>
-              <div>{t('settings.mcp.sidebar.tools.listCaptures')}</div>
-            </li>
-            <li>
-              <code className="text-accent">voicebox_list_profiles</code>
-              <div>{t('settings.mcp.sidebar.tools.listProfiles')}</div>
-            </li>
-          </ul>
-        </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Waypoints className="h-3.5 w-3.5 text-accent" />
-          <span>
-            <Trans i18nKey="settings.mcp.sidebar.postSpeak" components={{ code: <code /> }} />
-          </span>
-        </div>
-      </aside>
+      </SettingSection>
     </div>
   );
 }
@@ -355,12 +318,10 @@ function SnippetRow({
   };
 
   return (
-    <div className="py-3 space-y-2">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-sm font-medium">{title}</div>
-          <div className="text-xs text-muted-foreground">{description}</div>
-        </div>
+    <SettingRow
+      title={title}
+      description={description}
+      action={
         <Button size="sm" variant="outline" onClick={copy}>
           {copied ? (
             <>
@@ -374,10 +335,11 @@ function SnippetRow({
             </>
           )}
         </Button>
-      </div>
-      <pre className="text-[11px] font-mono p-3 rounded-md bg-muted/50 overflow-x-auto whitespace-pre-wrap break-all">
+      }
+    >
+      <pre className="whitespace-pre-wrap break-all rounded-md bg-muted/50 p-3 font-mono text-xs text-muted-foreground">
         {snippet}
       </pre>
-    </div>
+    </SettingRow>
   );
 }

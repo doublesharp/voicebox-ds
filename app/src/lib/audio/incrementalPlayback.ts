@@ -1,4 +1,4 @@
-import type { GenerationRequest } from '@/lib/api/types';
+import type { GenerationRequest, SpeechPreviewMode } from '@/lib/api/types';
 import type { PlatformAudio } from '@/platform/types';
 import { apiClient } from '@/lib/api/client';
 import { pcmWaveStream } from './pcmWaveStream';
@@ -10,14 +10,20 @@ export class IncrementalPlayback {
   constructor(
     private readonly audio: PlatformAudio,
     private readonly update: (active: boolean, error?: string) => void,
-    private readonly request = (data: GenerationRequest, signal: AbortSignal) =>
-      apiClient.previewSpeech(data, signal),
+    private readonly request = (
+      data: GenerationRequest,
+      signal: AbortSignal,
+      mode: SpeechPreviewMode,
+      modelToPrepare?: string,
+    ) => apiClient.previewSpeech(data, signal, mode, modelToPrepare),
   ) {}
 
   async start(
     data: GenerationRequest,
     deviceIds: string[],
     stillCurrent: () => boolean = () => true,
+    mode: SpeechPreviewMode = 'incremental',
+    modelToPrepare?: string,
   ): Promise<void> {
     await this.stop();
     if (!stillCurrent()) return;
@@ -70,13 +76,13 @@ export class IncrementalPlayback {
         return;
       }
       unlisten = remove;
-      const response = await this.request(data, abort.signal);
+      const response = await this.request(data, abort.signal, mode, modelToPrepare);
       if (!valid()) {
         await response.body?.cancel();
         return;
       }
       if (!response.body) throw new Error('Audio preview response has no stream');
-      for await (const block of pcmWaveStream(response.body, abort.signal)) {
+      for await (const block of pcmWaveStream(response.body, abort.signal, mode)) {
         if (!valid()) return;
         if (!sessionId) {
           await startNative(

@@ -2,11 +2,11 @@ import { Mic, Pause, Play, Square } from 'lucide-react';
 import { memo, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Visualizer } from 'react-sound-visualizer';
+import { MicrophonePermissionHelp } from '@/components/MicrophoneSelector/MicrophonePermissionHelp';
 import { MicrophoneSelector } from '@/components/MicrophoneSelector/MicrophoneSelector';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { FormControl, FormItem, FormMessage } from '@/components/ui/form';
-import { useMicrophonePreview } from '@/lib/hooks/useMicrophonePreview';
 import { formatAudioDuration } from '@/lib/utils/audio';
 import { useMicrophoneStore } from '@/stores/microphoneStore';
 
@@ -32,6 +32,8 @@ interface AudioSampleRecordingProps {
   isStarting?: boolean;
   recordingStream?: MediaStream | null;
   usingDefaultMicrophone?: boolean;
+  recordingError?: string | null;
+  permissionDenied?: boolean;
   duration: number;
   onStart: () => void;
   onStop: () => void;
@@ -49,6 +51,8 @@ export function AudioSampleRecording({
   isStarting = false,
   recordingStream,
   usingDefaultMicrophone = false,
+  recordingError,
+  permissionDenied = false,
   duration,
   onStart,
   onStop,
@@ -63,11 +67,6 @@ export function AudioSampleRecording({
   const cleanReferenceAudio = useMicrophoneStore((state) => state.cleanReferenceAudio);
   const setCleanReferenceAudio = useMicrophoneStore((state) => state.setCleanReferenceAudio);
   const processingId = useId();
-  const preview = useMicrophonePreview(
-    showWaveform && !file && !isRecording && !isStarting,
-    cleanReferenceAudio ? 'clean' : 'processed',
-  );
-  const audioStream = isRecording ? recordingStream : preview.stream;
 
   return (
     <FormItem>
@@ -85,27 +84,20 @@ export function AudioSampleRecording({
                 />
                 {t('audioSample.disableProcessing', 'Disable browser audio processing')}
               </label>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  'audioSample.disableProcessingHint',
-                  'For reference recordings only. Requests no noise suppression, echo cancellation, or automatic gain. Recordings may still use compressed audio.',
-                )}
-              </p>
             </div>
           )}
-          {(usingDefaultMicrophone || preview.usingDefaultMicrophone) && (
+          {usingDefaultMicrophone && (
             <output className="block text-sm text-muted-foreground">
               {t('microphone.fallbackNotice')}
             </output>
           )}
-          {preview.error && (
+          {permissionDenied ? <MicrophonePermissionHelp /> : recordingError && (
             <p role="alert" className="text-sm text-destructive">
-              {preview.error}
+              {recordingError}
             </p>
           )}
           {!isRecording && !file && (
-            <div className="relative flex flex-col items-center justify-center gap-4 p-4 border-2 border-dashed rounded-lg min-h-[180px] overflow-hidden">
-              {showWaveform && audioStream && <MemoizedWaveform audioStream={audioStream} />}
+            <div className="relative flex min-h-32 flex-col items-center justify-center gap-2 overflow-hidden rounded-lg border border-dashed p-4">
               <Button
                 type="button"
                 onClick={onStart}
@@ -124,7 +116,9 @@ export function AudioSampleRecording({
 
           {isRecording && (
             <div className="relative flex flex-col items-center justify-center gap-4 p-4 border-2 border-accent rounded-lg bg-accent/5 min-h-[180px] overflow-hidden">
-              {showWaveform && audioStream && <MemoizedWaveform audioStream={audioStream} />}
+              {showWaveform && recordingStream && (
+                <MemoizedWaveform audioStream={recordingStream} />
+              )}
               <div className="relative z-10 flex items-center gap-4">
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full bg-accent animate-pulse" />

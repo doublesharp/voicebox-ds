@@ -35,7 +35,7 @@ router = APIRouter(prefix="/cloud", tags=["cloud"], dependencies=[Depends(requir
 
 def _callback_url(request: Request) -> str:
     # Always loopback — the cloud only redirects codes to 127.0.0.1/localhost.
-    port = request.url.port or 17493
+    port = request.url.port or config.DEFAULT_PORT
     return f"http://127.0.0.1:{port}/cloud/callback"
 
 

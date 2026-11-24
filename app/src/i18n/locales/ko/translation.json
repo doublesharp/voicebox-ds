@@ -294,6 +294,7 @@
     },
     "validation": {
       "nameRequired": "이름은 필수입니다",
+      "designPromptRequired": "음성의 특징을 설명해 주세요.",
       "referenceRequired": "샘플을 추가할 때는 참조 텍스트가 필요합니다",
       "sampleRequired": "오디오 샘플이 필요합니다",
       "referenceTextRequired": "참조 텍스트가 필요합니다",
@@ -619,6 +620,7 @@
     }
   },
   "stories": {
+    "back": "스토리로 돌아가기",
     "title": "스토리",
     "newStory": "새 스토리",
     "loading": "스토리 로딩 중…",
@@ -667,6 +669,8 @@
     }
   },
   "storyContent": {
+    "generate": "생성",
+    "export": "내보내기",
     "selectStory": {
       "title": "스토리 선택",
       "hint": "목록에서 스토리를 선택하여 내용을 확인하세요"
@@ -781,6 +785,23 @@
       "placeholder": "전달 지시사항 — 예: 천천히 따뜻하게 말하기, 권위적으로 명확하게…",
       "placeholderOmnivoice": "Voice attributes, comma-separated — e.g. female, low pitch, british accent (fixed vocabulary: gender, age, pitch, whisper, accent)"
     },
+    "delivery": {
+      "label": "말투",
+      "natural": "자연스럽게",
+      "upbeat": "밝게",
+      "excited": "활기차게",
+      "custom": "맞춤",
+      "polish": "내레이션 보정",
+      "save": "이 음성에 저장",
+      "saved": "이 음성에 저장됨",
+      "hear": "미리 듣기",
+      "hearNatural": "자연스러운 말투 듣기",
+      "stop": "미리 듣기 중지",
+      "stopNatural": "비교 중지",
+      "downloadHear": "다운로드하고 듣기",
+      "previewFailed": "음성 미리 듣기에 실패했습니다",
+      "polishUnavailable": "내레이션 보정을 사용할 수 없습니다. 다른 효과를 선택하세요."
+    },
     "voiceSelector": {
       "placeholder": "음성 선택…"
     },
@@ -804,6 +825,23 @@
   "main": {
     "importVoice": "음성 가져오기",
     "createVoice": "음성 만들기",
+    "starter": {
+      "stepsLabel": "초기 설정 단계",
+      "chooseStep": "음성 선택",
+      "sampleStep": "첫 샘플",
+      "chooseHeading": "첫 음성을 만들어 보세요",
+      "chooseDescription": "기본 음성으로 짧은 샘플을 생성하세요.",
+      "sampleHeading": "첫 음성을 들어 보세요",
+      "voiceDescription": "기본 음성 · 영어",
+      "createDescription": "샘플 녹음 또는 업로드",
+      "importDescription": ".voicebox.zip 백업 열기",
+      "action": "음성 체험",
+      "preparing": "샘플 준비 중…",
+      "ready": "샘플이 준비됐어요.",
+      "failed": "샘플을 준비하지 못했어요",
+      "play": "샘플 재생",
+      "finish": "생성 화면 열기"
+    },
     "import": {
       "invalidTitle": "잘못된 파일 형식",
       "invalidDescription": "올바른 .voicebox.zip 파일을 선택해 주세요",
@@ -1392,6 +1430,9 @@
     "enable": "Enable microphones",
     "enabling": "Enabling…",
     "refresh": "Refresh microphones",
+    "permissionDeniedBrowser": "마이크 접근이 거부되었습니다. 사이트 설정에서 허용한 후 다시 시도하세요.",
+    "permissionDeniedDesktop": "마이크 접근이 거부되었습니다. 시스템 설정에서 Voicebox를 허용한 후 다시 시도하세요.",
+    "openSettings": "마이크 설정 열기",
     "noAccess": "Microphone access is unavailable. Check your system or browser permissions.",
     "input": "Microphone {{number}}",
     "unavailable": "{{name}} (unavailable)",

@@ -67,7 +67,7 @@ function StoryTimeReadout({
     state.playbackStoryId === storyId ? state.currentTimeMs : 0,
   );
   return (
-    <span className="text-xs text-muted-foreground tabular-nums ml-2">
+    <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
       {formatTime(time)} / {formatTime(totalDurationMs)}
     </span>
   );
@@ -942,7 +942,6 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
 
   // Calculate tracks area height
   const tracksAreaHeight = tracks.length * TRACK_HEIGHT;
-  const timelineContainerHeight = editorHeight - 40 - SCRUB_BAR_HEIGHT;
 
   // Scrollbar thumb geometry
   const maxTimelineScroll = Math.max(0, timelineWidth - containerWidth);
@@ -1056,8 +1055,9 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
   return (
     <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60 z-50">
       <div
-        className="border-t bg-background/30 backdrop-blur-2xl overflow-hidden relative"
+        className="relative flex flex-col overflow-hidden bg-background/30 pt-2 backdrop-blur-2xl [&>.overflow-auto]:min-h-0 [&>.overflow-auto]:flex-1"
         ref={containerRef}
+        style={{ height: editorHeight }}
       >
         {/* Resize handle at top */}
         <button
@@ -1071,9 +1071,9 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
 
         <StoryPlaybackNotice storyId={storyId} />
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b bg-muted/30 mt-2">
+        <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 gap-y-1 border-b bg-muted/30 px-2 py-1 min-[900px]:grid-cols-[auto_auto_auto_minmax(0,1fr)] min-[900px]:gap-x-3 min-[900px]:px-3">
           {/* Play controls - left side */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-0.5 min-[900px]:gap-1">
             <Button
               variant="ghost"
               size="icon"
@@ -1099,12 +1099,38 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
               totalDurationMs={totalDurationMs}
               formatTime={formatTime}
             />
+          </div>
+
+          <div className="min-w-0 justify-self-end [&_button]:max-w-full [&_button]:whitespace-normal min-[900px]:justify-self-start">
             <CreateStudioCopyButton storyId={storyId} />
           </div>
 
-          {/* Clip editing controls - center */}
+          {/* Zoom controls */}
+          <div className="flex items-center gap-0.5 border-l border-border/60 pl-1 min-[900px]:gap-1">
+            <span className="hidden text-xs text-muted-foreground min-[900px]:inline">Zoom:</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleZoomOut}
+              aria-label="Zoom out"
+            >
+              <Minus className="h-3 w-3" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={handleZoomIn}
+              aria-label="Zoom in"
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+
+          {/* Clip editing controls */}
           {selectedClipId && (
-            <div className="flex items-center gap-1">
+            <div className="col-span-full flex min-w-0 items-center gap-0.5 border-t border-border/60 pt-1 min-[900px]:col-span-1 min-[900px]:justify-self-end min-[900px]:border-0 min-[900px]:pt-0">
               <Button
                 variant="ghost"
                 size="icon"
@@ -1217,29 +1243,6 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
               )}
             </div>
           )}
-
-          {/* Zoom controls - right side */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">Zoom:</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={handleZoomOut}
-              aria-label="Zoom out"
-            >
-              <Minus className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={handleZoomIn}
-              aria-label="Zoom in"
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
         </div>
 
         {/* Timeline scroll container */}
@@ -1247,7 +1250,6 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
         <div
           ref={tracksRef}
           className="overflow-auto relative"
-          style={{ height: `${timelineContainerHeight}px` }}
           onMouseMove={draggingItem ? handleDragMove : undefined}
           onMouseUp={draggingItem ? handleDragEnd : undefined}
           onMouseLeave={draggingItem ? handleDragEnd : undefined}
@@ -1458,7 +1460,7 @@ export const StoryTrackEditor = memo(function StoryTrackEditor({
         </div>
 
         {/* Horizontal timeline scrollbar + zoom handles */}
-        <div className="flex border-t bg-background/40" style={{ height: `${SCRUB_BAR_HEIGHT}px` }}>
+        <div className="flex shrink-0 border-t bg-background/40" style={{ height: `${SCRUB_BAR_HEIGHT}px` }}>
           <div className="w-16 shrink-0 border-r" />
           <div ref={scrollbarTrackRef} className="relative flex-1 overflow-hidden select-none px-1">
             <div

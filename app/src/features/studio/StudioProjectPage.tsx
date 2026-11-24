@@ -132,6 +132,7 @@ function ProjectWorkspace({
   const [revisionId, setRevisionId] = useState('');
   const [checkpointName, setCheckpointName] = useState('');
   const checkpointNameRef = useRef('');
+  const resumeDelivery = useRef<(() => void) | null>(null);
   const checkpointRequestRef = useRef(false);
   const checkpointDialogEpoch = useRef(0);
   const [checkpointBusy, setCheckpointBusy] = useState(false);
@@ -567,7 +568,10 @@ function ProjectWorkspace({
             <Dialog
               open={checkpointOpen}
               onOpenChange={(next) => {
-                if (!next) checkpointDialogEpoch.current += 1;
+                if (!next) {
+                  checkpointDialogEpoch.current += 1;
+                  resumeDelivery.current = null;
+                }
                 setCheckpointOpen(next);
               }}
             >
@@ -579,12 +583,20 @@ function ProjectWorkspace({
                   </button>
                 </DialogTrigger>
               )}
-              <DialogContent className="studio studio-modal">
+              <DialogContent
+                className="studio studio-modal"
+                aria-describedby={undefined}
+                onCloseAutoFocus={(event) => {
+                  const resume = resumeDelivery.current;
+                  resumeDelivery.current = null;
+                  if (resume) {
+                    event.preventDefault();
+                    resume();
+                  }
+                }}
+              >
                 <DialogHeader>
                   <DialogTitle>Create a checkpoint</DialogTitle>
-                  <DialogDescription>
-                    Save this version to review, restore, or export later.
-                  </DialogDescription>
                 </DialogHeader>
                 <Field label="Checkpoint name">
                   <Input
@@ -656,7 +668,10 @@ function ProjectWorkspace({
             </Dialog>
             {(!startingEdit || project.revisions.length > 0) && (
               <Deliver
-                onCreateCheckpoint={() => setCheckpointOpen(true)}
+                onCreateCheckpoint={(onSaved) => {
+                  resumeDelivery.current = onSaved;
+                  setCheckpointOpen(true);
+                }}
                 onGoToMix={workspace !== 'mix' ? () => goToWorkspace('mix') : undefined}
                 onGoToEdit={() => goToWorkspace('edit')}
               />
@@ -699,7 +714,7 @@ function ProjectWorkspace({
               ))}
             </select>
           )}
-          <div className="studio-action-row">
+          <div className="studio-action-row studio-workspace-actions">
             <Dialog open={captionsOpen} onOpenChange={setCaptionsOpen}>
               {!startingEdit && (
                 <DialogTrigger asChild>
@@ -765,7 +780,7 @@ function ProjectWorkspace({
                     </button>
                   </DialogTrigger>
                   <DialogContent
-                    className="studio studio-modal"
+                    className={`studio studio-modal${workspace === 'mix' ? '' : ' studio-voice-inspector'}`}
                     onCloseAutoFocus={(event) => {
                       if (!inspectorOpener.current) return;
                       event.preventDefault();
@@ -784,7 +799,7 @@ function ProjectWorkspace({
                       </DialogDescription>
                     </DialogHeader>
                     {workspace === 'mix' ? (
-                      <Mixer />
+                      <Mixer showTitle={false} />
                     ) : (
                       <>
                         {selectedClipId && <ClipInspector />}
@@ -913,7 +928,9 @@ function ProjectWorkspace({
           </div>
           {!startingEdit && workspace !== 'review' && resize('inspector')}
           {!startingEdit && workspace !== 'review' && (
-            <aside className="studio-desktop-inspector">
+            <aside
+              className={`studio-desktop-inspector${workspace === 'edit' ? ' studio-voice-inspector' : ''}`}
+            >
               {workspace === 'mix' ? (
                 <Mixer />
               ) : (
@@ -941,7 +958,9 @@ function ProjectWorkspace({
                 .map((job) => (
                   <div className="studio-job" key={job.id}>
                     <div>
-                      <strong>{job.kind === 'generation' ? 'Take generation' : 'Audio export'}</strong>
+                      <strong>
+                        {job.kind === 'generation' ? 'Take generation' : 'Audio export'}
+                      </strong>
                       <span>{job.phase?.replace(/_/g, ' ') ?? job.status}</span>
                       {job.error && (
                         <details className="studio-job-error">

@@ -10,6 +10,9 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+APPLICATION_ID = "com.doublesharp.voicebox.ds"
+DEFAULT_PORT = 17593
+
 # Allow users to override the HuggingFace model download directory.
 # Set VOICEBOX_MODELS_DIR to an absolute path before starting the server.
 # This sets HF_HUB_CACHE so all huggingface_hub downloads go to that path.

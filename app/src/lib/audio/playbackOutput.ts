@@ -30,6 +30,13 @@ function resumeOutput(output: OutputContext): Promise<void> {
   return output.resuming;
 }
 
+export async function resumePlaybackContext(): Promise<AudioContext> {
+  const output = getOutputContext();
+  if (!output) throw new Error('Audio playback is unavailable');
+  await resumeOutput(output);
+  return output.context;
+}
+
 export function createPlaybackOutput(): PlaybackOutput {
   const audio = new Audio();
   audio.crossOrigin = 'anonymous';

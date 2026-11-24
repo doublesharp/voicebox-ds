@@ -21,7 +21,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useServerHealth } from '@/lib/hooks/useServer';
 import { syncKeepServerRunning } from '@/lib/keepServerRunning';
 import { usePlatform } from '@/platform/PlatformContext';
-import { useServerStore } from '@/stores/serverStore';
+import { LOCAL_SERVER_URL, useServerStore } from '@/stores/serverStore';
 
 const connectionSchema = z.object({
   serverUrl: z.string().url('Please enter a valid URL'),
@@ -78,7 +78,7 @@ export function ConnectionForm() {
                 <FormItem>
                   <FormLabel>Server URL</FormLabel>
                   <FormControl>
-                    <Input placeholder="http://127.0.0.1:17493" {...field} />
+                    <Input placeholder={LOCAL_SERVER_URL} {...field} />
                   </FormControl>
                   <FormDescription>Enter the URL of your voicebox backend server</FormDescription>
                   <FormMessage />
