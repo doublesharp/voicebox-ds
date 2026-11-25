@@ -1,5 +1,5 @@
 name: Voicebox DS builds
-run-name: Voicebox DS ${{ inputs.platforms || github.ref_name }}
+run-name: Voicebox DS ${{ inputs.release_tag || inputs.platforms || github.ref_name }}
 
 on:
   push:
@@ -7,8 +7,12 @@ on:
       - 'ds-v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: Existing ds-v tag to build and publish on all platforms
+        type: string
+        required: false
       platforms:
-        description: Platforms to package from the doublesharp branch
+        description: Platforms to package when no release tag is specified
         type: choice
         required: true
         default: both
@@ -22,8 +26,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: voicebox-ds-build-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+  group: voicebox-ds-build-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && !inputs.release_tag }}
 
 jobs:
   build:
@@ -32,9 +36,9 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(format('[{0}{1}{2}]',
-          (inputs.platforms == 'macos' || inputs.platforms == 'both' || github.event_name == 'push') && '{"os":"macos-26","target":"aarch64-apple-darwin","python_arch":"arm64","artifact":"macos-arm64","bundles":"app"}' || '',
-          (inputs.platforms == 'both' || github.event_name == 'push') && ',{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-x64","bundles":"nsis"}' || inputs.platforms == 'windows' && '{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-x64","bundles":"nsis"}' || '',
-          github.event_name == 'push' && ',{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","python_arch":"x64","artifact":"linux-x64","bundles":"deb"}' || inputs.platforms == 'linux' && '{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","python_arch":"x64","artifact":"linux-x64","bundles":"deb"}' || '')) }}
+          (inputs.platforms == 'macos' || inputs.platforms == 'both' || github.event_name == 'push' || inputs.release_tag) && '{"os":"macos-26","target":"aarch64-apple-darwin","python_arch":"arm64","artifact":"macos-arm64","bundles":"app"}' || '',
+          (inputs.platforms == 'both' || github.event_name == 'push' || inputs.release_tag) && ',{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-x64","bundles":"nsis"}' || inputs.platforms == 'windows' && '{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-x64","bundles":"nsis"}' || '',
+          (github.event_name == 'push' || inputs.release_tag) && ',{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","python_arch":"x64","artifact":"linux-x64","bundles":"deb"}' || inputs.platforms == 'linux' && '{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","python_arch":"x64","artifact":"linux-x64","bundles":"deb"}' || '')) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     defaults:
@@ -48,6 +52,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || '' }}
 
       - name: Fingerprint backend inputs
         id: source
@@ -80,13 +86,15 @@ jobs:
             backend/requirements-mlx.txt
 
       - name: Verify tag version
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.release_tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
           version = json.loads(Path("tauri/src-tauri/tauri.conf.json").read_text())["version"]
-          if os.environ["GITHUB_REF_NAME"] != f"ds-v{version}":
+          if os.environ["RELEASE_TAG"] != f"ds-v{version}":
               raise SystemExit(f"Expected tag ds-v{version} for the tagged app version")
           PY
 
@@ -258,7 +266,7 @@ jobs:
           name: Voicebox-DS-${{ matrix.artifact }}
           path: release-assets/${{ matrix.artifact }}/
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+          retention-days: ${{ (github.event_name == 'push' || inputs.release_tag) && 1 || 7 }}
           compression-level: 0
 
       - name: Upload optional CUDA backend
@@ -268,7 +276,7 @@ jobs:
           name: Voicebox-DS-windows-cuda
           path: release-assets/windows-cuda/
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+          retention-days: ${{ (github.event_name == 'push' || inputs.release_tag) && 1 || 7 }}
           compression-level: 0
 
       - name: Upload optional NVIDIA runtime libraries
@@ -278,7 +286,7 @@ jobs:
           name: Voicebox-DS-windows-cuda-libs
           path: release-assets/windows-cuda-libs/
           if-no-files-found: error
-          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+          retention-days: ${{ (github.event_name == 'push' || inputs.release_tag) && 1 || 7 }}
           compression-level: 0
       - name: Trim Cargo build cache (tauri/src-tauri)
         if: runner.os != 'Windows'
@@ -290,7 +298,7 @@ jobs:
           budget: 4GiB
 
   publish:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || inputs.release_tag
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -304,7 +312,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
           mkdir assets
           find artifacts -mindepth 2 -type f ! -name build-info.json -exec mv -n {} assets/ \;

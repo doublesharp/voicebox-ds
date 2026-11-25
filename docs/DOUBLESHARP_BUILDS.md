@@ -13,6 +13,12 @@ git push origin ds-v0.6.1
 
 The workflow builds macOS (Apple Silicon), Linux (x64 `.deb`), and Windows (x64 setup executable). After all three builds pass, it publishes the packages and checksums to [GitHub Releases](https://github.com/doublesharp/voicebox-ds/releases).
 
+If GitHub misses a tag push, run the workflow with the existing tag to retry the release:
+
+```sh
+gh workflow run release.yml --ref doublesharp -f release_tag=ds-v0.6.1
+```
+
 ## Manual test builds
 
 After local acceptance, run **release.yml** from `doublesharp` with `macos`, `windows`, `linux`, or `both` (macOS and Windows). The [GitHub Actions run](https://github.com/doublesharp/voicebox-ds/actions/workflows/release.yml) keeps the test packages and their source commit and checksums for seven days.
