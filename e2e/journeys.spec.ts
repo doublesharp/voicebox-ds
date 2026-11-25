@@ -28,7 +28,9 @@ for (const { retry, title } of [
     await page.route(`${API_URL}/models/status`, async (route) => {
       const response = await route.fetch();
       const data = await response.json();
-      const model = data.models.find((entry: { model_name: string }) => entry.model_name === 'kokoro');
+      const model = data.models.find(
+        (entry: { model_name: string }) => entry.model_name === 'kokoro',
+      );
       expect(model).toBeDefined();
       model.downloaded = true;
       await route.fulfill({ response, json: data });
@@ -93,11 +95,13 @@ for (const { retry, title } of [
       const settings = page.waitForResponse(`${API_URL}/settings/generation`);
       await page.goto('/');
       expect((await settings).ok()).toBe(true);
-      const step = page.getByRole('list', { name: 'First run steps' }).locator('[aria-current="step"]');
+      const step = page
+        .getByRole('list', { name: 'First run steps' })
+        .locator('[aria-current="step"]');
       await expect(page.getByRole('heading', { name: 'Make your first take' })).toBeVisible();
-      await expect(step).toContainText('Choose a voice');
+      await expect(step).toContainText('Voice setup');
       await expect(page.getByRole('region', { name: 'Recent takes' })).toBeHidden();
-      const start = page.getByRole('button', { name: 'Try a voice', exact: true });
+      const start = page.getByRole('button', { name: 'Generate sample', exact: true });
       await expect(start).toBeInViewport({ ratio: 1 });
       await expect(page.getByRole('button', { name: /^Create Voice/ })).toBeVisible();
       await expect(page.getByRole('button', { name: /^Import Voice/ })).toBeVisible();
@@ -106,7 +110,7 @@ for (const { retry, title } of [
       await expect(step).toContainText('First take');
       await expect(page.getByRole('heading', { name: 'Hear your first take' })).toBeFocused();
       if (retry) {
-        const failed = page.getByText('Couldn’t start the sample', { exact: true });
+        const failed = page.getByText('Couldn’t prepare the sample', { exact: true });
         await expect(failed).toBeVisible();
         await page.getByRole('button', { name: 'Retry', exact: true }).click();
         await expect(failed).toBeHidden();

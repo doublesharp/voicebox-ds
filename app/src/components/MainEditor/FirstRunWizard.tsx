@@ -162,7 +162,7 @@ export function FirstRunWizard({
             )}
             {isSampleStep && failed && !attempt?.profileId && (
               <Button variant="outline" onClick={onBack}>
-                {t('main.starter.chooseStep')}
+                {t('common.back')}
               </Button>
             )}
           </div>

@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Back",
     "cancel": "Cancel",
     "save": "Save",
     "delete": "Delete",
@@ -827,7 +828,7 @@
     "createVoice": "Create Voice",
     "starter": {
       "stepsLabel": "First run steps",
-      "chooseStep": "Choose a voice",
+      "chooseStep": "Voice setup",
       "sampleStep": "First take",
       "chooseHeading": "Make your first take",
       "chooseDescription": "Generate a short sample with a built-in voice.",
@@ -835,10 +836,10 @@
       "voiceDescription": "Built-in · English",
       "createDescription": "Record or upload a sample",
       "importDescription": "Open a .voicebox.zip backup",
-      "action": "Try a voice",
+      "action": "Generate sample",
       "preparing": "Preparing your sample…",
       "ready": "Your sample is ready.",
-      "failed": "Couldn’t start the sample",
+      "failed": "Couldn’t prepare the sample",
       "play": "Play sample",
       "finish": "Open Generate"
     },

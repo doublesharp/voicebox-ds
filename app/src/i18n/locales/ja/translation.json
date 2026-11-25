@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "戻る",
     "cancel": "キャンセル",
     "save": "保存",
     "delete": "削除",
@@ -827,7 +828,7 @@
     "createVoice": "ボイスを作成",
     "starter": {
       "stepsLabel": "初回セットアップの手順",
-      "chooseStep": "音声を選ぶ",
+      "chooseStep": "音声を設定",
       "sampleStep": "最初のサンプル",
       "chooseHeading": "最初の音声を作成",
       "chooseDescription": "内蔵音声で短いサンプルを生成できます。",
@@ -835,7 +836,7 @@
       "voiceDescription": "内蔵音声・英語",
       "createDescription": "サンプルを録音またはアップロード",
       "importDescription": ".voicebox.zip のバックアップを開く",
-      "action": "音声を試す",
+      "action": "サンプルを生成",
       "preparing": "サンプルを準備中…",
       "ready": "サンプルができました。",
       "failed": "サンプルを準備できませんでした",

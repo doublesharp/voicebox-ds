@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Retour",
     "cancel": "Annuler",
     "save": "Enregistrer",
     "delete": "Supprimer",
@@ -827,7 +828,7 @@
     "createVoice": "Créer une voix",
     "starter": {
       "stepsLabel": "Étapes de démarrage",
-      "chooseStep": "Choisir une voix",
+      "chooseStep": "Configurer une voix",
       "sampleStep": "Première prise",
       "chooseHeading": "Créez votre première prise",
       "chooseDescription": "Générez un court extrait avec une voix intégrée.",
@@ -835,7 +836,7 @@
       "voiceDescription": "Intégrée · Anglais",
       "createDescription": "Enregistrez ou importez un extrait",
       "importDescription": "Ouvrez une sauvegarde .voicebox.zip",
-      "action": "Essayer une voix",
+      "action": "Générer un extrait",
       "preparing": "Préparation de votre extrait…",
       "ready": "Votre extrait est prêt.",
       "failed": "Impossible de préparer l’extrait",

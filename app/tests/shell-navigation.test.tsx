@@ -47,12 +47,15 @@ for (const [route, current] of [
   });
 }
 
-test('desktop sidebar offers an accessible collapse control without losing navigation', () => {
+test('desktop sidebar shows Voicebox DS branding and keeps navigation when collapsed', () => {
   path = '/voices';
   let toggles = 0;
   act(() => {
     renderer = create(<Sidebar desktop collapsed={false} onToggle={() => toggles++} />);
   });
+  const header = renderer.root.findByProps({ className: 'app-rail-header' });
+  expect(header.findByProps({ className: 'app-rail-heading' }).children).toEqual(['Voicebox DS']);
+  expect(header.findByType('img').props.alt).toBe('');
   const toggle = renderer.root.findByProps({ 'aria-label': 'Collapse sidebar' });
   expect(toggle.props['aria-expanded']).toBe(true);
   act(() => toggle.props.onClick());

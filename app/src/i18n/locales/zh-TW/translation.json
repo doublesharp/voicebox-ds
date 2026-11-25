@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "cancel": "取消",
     "save": "儲存",
     "delete": "刪除",
@@ -827,7 +828,7 @@
     "createVoice": "建立聲音",
     "starter": {
       "stepsLabel": "首次使用步驟",
-      "chooseStep": "選擇語音",
+      "chooseStep": "設定語音",
       "sampleStep": "首段音訊",
       "chooseHeading": "製作第一段音訊",
       "chooseDescription": "使用內建語音產生一段簡短的試聽音訊。",
@@ -835,7 +836,7 @@
       "voiceDescription": "內建 · 英語",
       "createDescription": "錄製或上傳語音樣本",
       "importDescription": "開啟 .voicebox.zip 備份",
-      "action": "試用語音",
+      "action": "產生試聽音訊",
       "preparing": "正在準備試聽音訊…",
       "ready": "試聽音訊已準備好。",
       "failed": "無法準備試聽音訊",

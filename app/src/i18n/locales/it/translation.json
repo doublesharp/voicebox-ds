@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Indietro",
     "cancel": "Annulla",
     "save": "Salva",
     "delete": "Elimina",
@@ -827,7 +828,7 @@
     "createVoice": "Crea voce",
     "starter": {
       "stepsLabel": "Passaggi iniziali",
-      "chooseStep": "Scegli una voce",
+      "chooseStep": "Configura una voce",
       "sampleStep": "Primo audio",
       "chooseHeading": "Crea il tuo primo audio",
       "chooseDescription": "Genera una breve clip con una voce integrata.",
@@ -835,7 +836,7 @@
       "voiceDescription": "Integrata · Inglese",
       "createDescription": "Registra o carica un campione",
       "importDescription": "Apri un backup .voicebox.zip",
-      "action": "Prova una voce",
+      "action": "Genera un campione",
       "preparing": "Preparazione del campione…",
       "ready": "Il campione è pronto.",
       "failed": "Impossibile preparare il campione",

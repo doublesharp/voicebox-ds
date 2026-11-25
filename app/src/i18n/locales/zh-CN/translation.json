@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "返回",
     "cancel": "取消",
     "save": "保存",
     "delete": "删除",
@@ -827,7 +828,7 @@
     "createVoice": "创建声音",
     "starter": {
       "stepsLabel": "首次使用步骤",
-      "chooseStep": "选择语音",
+      "chooseStep": "设置语音",
       "sampleStep": "首段音频",
       "chooseHeading": "创作第一段音频",
       "chooseDescription": "使用内置语音生成一段简短的试听音频。",
@@ -835,7 +836,7 @@
       "voiceDescription": "内置 · 英语",
       "createDescription": "录制或上传语音样本",
       "importDescription": "打开 .voicebox.zip 备份",
-      "action": "试用语音",
+      "action": "生成试听音频",
       "preparing": "正在准备试听音频…",
       "ready": "试听音频已准备好。",
       "failed": "无法准备试听音频",

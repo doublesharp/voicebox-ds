@@ -1,8 +1,7 @@
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import voiceboxLogo from '@/assets/voicebox-logo.png';
-import { DoubleSharpMark } from '@/components/Branding';
+import voiceboxLogo from '@/assets/voicebox-ds-icon.png';
 import { Button } from '@/components/ui/button';
 import { APP_BRANDING } from '@/lib/constants/branding';
 import { usePlatform } from '@/platform/PlatformContext';
@@ -24,16 +23,11 @@ export function AboutPage() {
     <div className="max-w-3xl">
       <SettingSection>
         <div className="flex items-center gap-4 py-4">
-          <div className="relative shrink-0">
-            <img src={voiceboxLogo} alt="" className="h-12 w-12 object-contain" />
-            <DoubleSharpMark className="absolute -right-1 -bottom-1 h-5 w-5" />
-          </div>
+          <img src={voiceboxLogo} alt="" className="h-12 w-12 shrink-0 object-contain" />
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-tight">{APP_BRANDING.name}</h2>
-            <p className="text-sm text-muted-foreground">
-              {APP_BRANDING.edition}
-              {version && ` · v${version}`}
-            </p>
+            <p className="text-sm text-muted-foreground">{APP_BRANDING.description}</p>
+            {version && <p className="mt-1 text-xs text-muted-foreground">v{version}</p>}
           </div>
         </div>
 
@@ -41,7 +35,7 @@ export function AboutPage() {
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline" size="sm">
               <a href={APP_BRANDING.sourceUrl} target="_blank" rel="noopener noreferrer">
-                {t('settings.about.editionSource', { defaultValue: 'Edition source' })}
+                {t('settings.about.editionSource', { defaultValue: 'Voicebox DS source' })}
                 <ArrowUpRight className="ml-1.5 h-3.5 w-3.5 text-muted-foreground" />
               </a>
             </Button>
@@ -51,7 +45,7 @@ export function AboutPage() {
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {t('settings.about.upstreamSource', { defaultValue: 'Original Voicebox' })}
+                {t('settings.about.upstreamSource', { defaultValue: 'Original Voicebox source' })}
                 <ArrowUpRight className="ml-1.5 h-3.5 w-3.5 text-muted-foreground" />
               </a>
             </Button>

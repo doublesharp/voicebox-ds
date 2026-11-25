@@ -1,4 +1,4 @@
-import doubleSharpMark from '@/assets/doublesharp-mark.png';
+import voiceboxLogo from '@/assets/voicebox-ds-icon.png';
 import { TitleBarDragRegion } from '@/components/TitleBarDragRegion';
 import { APP_BRANDING } from '@/lib/constants/branding';
 import { TOP_SAFE_AREA_PADDING } from '@/lib/constants/ui';
@@ -20,15 +20,12 @@ export function StartupScreen({ error, onRetry }: StartupScreenProps) {
     >
       <TitleBarDragRegion />
       <main className="my-auto w-full max-w-md shrink-0 px-6 py-12 text-center">
-        <img src={doubleSharpMark} alt="DoubleSharp" className="mx-auto h-24 w-24 object-contain" />
+        <img src={voiceboxLogo} alt="" className="mx-auto h-24 w-24 object-contain" />
         <h1 className="mt-7 text-2xl font-medium tracking-tight">{APP_BRANDING.name}</h1>
-        <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-          {APP_BRANDING.edition}
-        </p>
         {error ? (
           <div className="mt-9 space-y-3">
             <div role="alert" className="space-y-2">
-              <p className="text-sm font-medium text-destructive">Server startup failed</p>
+              <p className="text-sm font-medium text-destructive">Voice server unavailable</p>
               <p className="break-words text-sm text-muted-foreground">{error}</p>
             </div>
             <button
@@ -49,7 +46,7 @@ export function StartupScreen({ error, onRetry }: StartupScreenProps) {
               <span />
             </div>
             <output className="mt-4 block text-sm text-muted-foreground">
-              Opening your voice studio…
+              Connecting to the voice server…
             </output>
           </div>
         )}

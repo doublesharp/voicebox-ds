@@ -101,7 +101,10 @@ export function Sidebar({
     >
       {desktop && (
         <div className="app-rail-header">
-          <span className="app-rail-heading">Voicebox</span>
+          <div className="app-rail-brand" title={APP_BRANDING.name}>
+            <img src={voiceboxLogo} alt="" className="size-[26px] shrink-0" />
+            <span className="app-rail-heading">{APP_BRANDING.name}</span>
+          </div>
           <button
             type="button"
             className="app-rail-toggle"
@@ -114,16 +117,15 @@ export function Sidebar({
           </button>
         </div>
       )}
-      <div
-        className={cn('px-3 mb-2 shrink-0 flex justify-center', desktop && 'hidden')}
-        title={`${APP_BRANDING.name} · ${APP_BRANDING.edition}`}
-      >
-        <img
-          src={voiceboxLogo}
-          alt={`${APP_BRANDING.name} · ${APP_BRANDING.edition}`}
-          className="sidebar-logo w-12 h-12 object-contain"
-        />
-      </div>
+      {!desktop && (
+        <div className="px-3 mb-2 shrink-0 flex justify-center" title={APP_BRANDING.name}>
+          <img
+            src={voiceboxLogo}
+            alt={APP_BRANDING.name}
+            className="sidebar-logo w-12 h-12 object-contain"
+          />
+        </div>
+      )}
       <nav
         id={desktop ? 'desktop-sidebar-navigation' : undefined}
         aria-label="Main navigation"

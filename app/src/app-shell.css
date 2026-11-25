@@ -161,11 +161,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px;
-  gap: 8px;
+  padding: 0 8px;
+  gap: 6px;
+}
+.app-shell[data-desktop="true"] .app-rail-brand {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
 }
 .app-shell[data-desktop="true"] .app-rail-heading {
   overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
@@ -217,7 +224,7 @@
 .app-shell[data-desktop="true"] .app-rail-link[aria-current="page"]::before {
   display: none;
 }
-.app-shell[data-desktop="true"][data-sidebar-collapsed="true"] .app-rail-heading,
+.app-shell[data-desktop="true"][data-sidebar-collapsed="true"] .app-rail-brand,
 .app-shell[data-desktop="true"][data-sidebar-collapsed="true"] .app-rail-label,
 .app-shell[data-desktop="true"][data-sidebar-collapsed="true"] .app-rail-group-label {
   display: none;

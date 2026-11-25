@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "뒤로",
     "cancel": "취소",
     "save": "저장",
     "delete": "삭제",
@@ -827,7 +828,7 @@
     "createVoice": "음성 만들기",
     "starter": {
       "stepsLabel": "초기 설정 단계",
-      "chooseStep": "음성 선택",
+      "chooseStep": "음성 설정",
       "sampleStep": "첫 샘플",
       "chooseHeading": "첫 음성을 만들어 보세요",
       "chooseDescription": "기본 음성으로 짧은 샘플을 생성하세요.",
@@ -835,7 +836,7 @@
       "voiceDescription": "기본 음성 · 영어",
       "createDescription": "샘플 녹음 또는 업로드",
       "importDescription": ".voicebox.zip 백업 열기",
-      "action": "음성 체험",
+      "action": "샘플 생성",
       "preparing": "샘플 준비 중…",
       "ready": "샘플이 준비됐어요.",
       "failed": "샘플을 준비하지 못했어요",

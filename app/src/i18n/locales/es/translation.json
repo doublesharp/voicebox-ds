@@ -1,5 +1,6 @@
 {
   "common": {
+    "back": "Volver",
     "cancel": "Cancelar",
     "save": "Guardar",
     "delete": "Eliminar",
@@ -827,7 +828,7 @@
     "createVoice": "Crear voz",
     "starter": {
       "stepsLabel": "Pasos de inicio",
-      "chooseStep": "Elige una voz",
+      "chooseStep": "Configura una voz",
       "sampleStep": "Primera toma",
       "chooseHeading": "Crea tu primera toma",
       "chooseDescription": "Genera una muestra breve con una voz integrada.",
@@ -835,7 +836,7 @@
       "voiceDescription": "Integrada · Inglés",
       "createDescription": "Graba o sube una muestra",
       "importDescription": "Abre una copia .voicebox.zip",
-      "action": "Prueba una voz",
+      "action": "Generar muestra",
       "preparing": "Preparando tu muestra…",
       "ready": "Tu muestra está lista.",
       "failed": "No se pudo preparar la muestra",
