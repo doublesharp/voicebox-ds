@@ -1,7 +1,10 @@
-name: DoubleSharp builds
-run-name: DoubleSharp ${{ inputs.platforms }} build
+name: Voicebox DS builds
+run-name: Voicebox DS ${{ inputs.platforms || github.ref_name }}
 
 on:
+  push:
+    tags:
+      - 'ds-v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       platforms:
@@ -13,24 +16,25 @@ on:
           - both
           - macos
           - windows
+          - linux
 
 permissions:
   contents: read
 
 concurrency:
-  group: doublesharp-manual-build
-  cancel-in-progress: true
+  group: voicebox-ds-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   build:
-    # This workflow keeps the existing release.yml entry point so it can be
-    # dispatched on doublesharp without changing the repository's default branch.
-    # There are deliberately no push, pull_request, tag, or scheduled triggers.
-    if: github.ref == 'refs/heads/doublesharp'
+    if: github.event_name == 'push' || github.ref == 'refs/heads/doublesharp'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.platforms == 'windows' && '[{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-cuda"}]' || inputs.platforms == 'macos' && '[{"os":"macos-latest","target":"aarch64-apple-darwin","python_arch":"arm64","artifact":"macos-arm64"}]' || '[{"os":"macos-latest","target":"aarch64-apple-darwin","python_arch":"arm64","artifact":"macos-arm64"},{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-cuda"}]') }}
+        include: ${{ fromJSON(format('[{0}{1}{2}]',
+          (inputs.platforms == 'macos' || inputs.platforms == 'both' || github.event_name == 'push') && '{"os":"macos-26","target":"aarch64-apple-darwin","python_arch":"arm64","artifact":"macos-arm64","bundles":"app"}' || '',
+          (inputs.platforms == 'both' || github.event_name == 'push') && ',{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-x64","bundles":"nsis"}' || inputs.platforms == 'windows' && '{"os":"windows-latest","target":"x86_64-pc-windows-msvc","python_arch":"x64","artifact":"windows-x64","bundles":"nsis"}' || '',
+          github.event_name == 'push' && ',{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","python_arch":"x64","artifact":"linux-x64","bundles":"deb"}' || inputs.platforms == 'linux' && '{"os":"ubuntu-22.04","target":"x86_64-unknown-linux-gnu","python_arch":"x64","artifact":"linux-x64","bundles":"deb"}' || '')) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     defaults:
@@ -39,6 +43,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_BUILD_JOBS: "4"
+      CUDA_TORCH_VERSION: "2.11.0+cu128"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
     steps:
@@ -62,7 +67,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: backend/dist/voicebox-server-cuda
-          key: fork-cuda-v1-cu128-${{ matrix.target }}-py312-${{ steps.source.outputs.backend }}
+          key: fork-cuda-v2-${{ env.CUDA_TORCH_VERSION }}-${{ matrix.target }}-py312-${{ steps.source.outputs.backend }}
 
       - uses: actions/setup-python@v5
         with:
@@ -73,6 +78,24 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-mlx.txt
+
+      - name: Verify tag version
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          version = json.loads(Path("tauri/src-tauri/tauri.conf.json").read_text())["version"]
+          if os.environ["GITHUB_REF_NAME"] != f"ds-v{version}":
+              raise SystemExit(f"Expected tag ds-v{version} for the tagged app version")
+          PY
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libasound2-dev libssl-dev libxdo-dev libudev-dev patchelf
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -106,7 +129,13 @@ jobs:
         if: steps.server-cache.outputs.cache-hit != 'true' || (runner.os == 'Windows' && steps.cuda-cache.outputs.cache-hit != 'true')
         run: |
           python -m pip install --upgrade pip
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          fi
           python -m pip install pyinstaller -r backend/requirements.txt
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python -c 'import torch; assert torch.version.cuda is None, "Linux packages require CPU PyTorch"'
+          fi
           python -m pip install --no-deps chatterbox-tts hume-tada omnivoice
           python -m pip install --no-deps "moss-tts-nano @ git+https://github.com/OpenMOSS/MOSS-TTS-Nano.git@8b7bcc9341b3b4ef3a3a58ba1338a7d85ff133eb"
           python -m pip install --no-deps faster-qwen3-tts==0.3.2
@@ -143,7 +172,9 @@ jobs:
         env:
           TORCH_CUDA_ARCH_LIST: "8.0;8.6;8.9;9.0;12.0+PTX"
         run: |
-          python -m pip install --force-reinstall --no-deps torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+          python -m pip install --force-reinstall --no-deps \
+            "torch==$CUDA_TORCH_VERSION" torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 \
+            --index-url https://download.pytorch.org/whl/cu128
           python -c "import torch; assert torch.version.cuda, 'CUDA PyTorch is required'; print(torch.__version__, torch.version.cuda)"
           python backend/build_binary.py --cuda
 
@@ -170,61 +201,84 @@ jobs:
         working-directory: tauri
         env:
           TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
         run: |
-          bundle=app
-          if [ "$RUNNER_OS" = "Windows" ]; then bundle=nsis; fi
-          bun run tauri build --ci --target "$TARGET" --bundles "$bundle" --config fork-build.json
+          bun run tauri build --ci --target "$TARGET" --bundles "$BUNDLES" --config fork-build.json
 
       - name: Package macOS app
         if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          mkdir -p release-assets
+          mkdir -p release-assets/macos-arm64
           APP_BUNDLE=$(find "tauri/src-tauri/target/$TARGET/release/bundle/macos" -maxdepth 1 -name '*.app' -print -quit)
           test -n "$APP_BUNDLE"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" release-assets/Voicebox-doublesharp-macos-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent "$APP_BUNDLE" release-assets/macos-arm64/Voicebox-DS-macOS-arm64.zip
 
-      - name: Package Windows installer and complete CUDA backend
+      - name: Collect Linux package
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p release-assets/linux-x64
+          cp tauri/src-tauri/target/"$TARGET"/release/bundle/deb/*.deb release-assets/linux-x64/Voicebox-DS-Linux-x64.deb
+
+      - name: Package Windows installer and optional CUDA downloads
         if: runner.os == 'Windows'
         env:
           TARGET: ${{ matrix.target }}
         run: |
-          mkdir -p release-assets
-          cp tauri/src-tauri/target/"$TARGET"/release/bundle/nsis/*-setup.exe release-assets/
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          Path("backend/dist/voicebox-server-cuda/cuda-libs.json").write_text(
-              json.dumps({"version": "cu128-v1"}) + "\n"
-          )
-          PY
-          # Use fast compression, and do not recompress this in upload-artifact.
-          tar -c -C backend/dist voicebox-server-cuda | gzip -1 > release-assets/voicebox-cuda-windows-x64.tar.gz
-          cp scripts/install-cuda-backend.ps1 release-assets/Install-CUDA.ps1
+          mkdir -p release-assets/{windows-x64,windows-cuda,windows-cuda-libs}
+          cp tauri/src-tauri/target/"$TARGET"/release/bundle/nsis/*-setup.exe release-assets/windows-x64/Voicebox-DS-Windows-x64-setup.exe
+          python scripts/package_cuda.py backend/dist/voicebox-server-cuda \
+            --platform windows-x86_64 --output release-assets/windows-cuda \
+            --torch-compat "==$CUDA_TORCH_VERSION" --split-runtime
+          mv release-assets/windows-cuda/cuda-libs-*.tar.gz* release-assets/windows-cuda-libs/
+          cp scripts/install-cuda-backend.ps1 release-assets/windows-cuda/Install-CUDA.ps1
 
       - name: Record source revision and file checksums
         env:
-          BUILD_SOURCE_SHA: ${{ github.sha }}
           BUILD_TARGET: ${{ matrix.target }}
         run: |
           python - <<'PY'
-          import hashlib, json, os
+          import hashlib, json, os, subprocess
           from pathlib import Path
-          folder = Path("release-assets")
-          manifest = {"commit": os.environ["BUILD_SOURCE_SHA"], "target": os.environ["BUILD_TARGET"], "files": {}}
-          for path in sorted(folder.iterdir()):
-              with path.open("rb") as stream:
-                  manifest["files"][path.name] = hashlib.file_digest(stream, "sha256").hexdigest()
-          (folder / "build-info.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+          for folder in Path("release-assets").iterdir():
+              files = {}
+              for path in sorted(folder.iterdir()):
+                  with path.open("rb") as stream:
+                      files[path.name] = hashlib.file_digest(stream, "sha256").hexdigest()
+              manifest = {"commit": commit, "target": os.environ["BUILD_TARGET"], "files": files}
+              (folder / "build-info.json").write_text(json.dumps(manifest, indent=2) + "\n")
           PY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Voicebox-doublesharp-${{ matrix.artifact }}-${{ github.sha }}
-          path: release-assets/
+          name: Voicebox-DS-${{ matrix.artifact }}
+          path: release-assets/${{ matrix.artifact }}/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+          compression-level: 0
+
+      - name: Upload optional CUDA backend
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voicebox-DS-windows-cuda
+          path: release-assets/windows-cuda/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
+          compression-level: 0
+
+      - name: Upload optional NVIDIA runtime libraries
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Voicebox-DS-windows-cuda-libs
+          path: release-assets/windows-cuda-libs/
+          if-no-files-found: error
+          retention-days: ${{ github.event_name == 'push' && 1 || 7 }}
           compression-level: 0
       - name: Trim Cargo build cache (tauri/src-tauri)
         if: runner.os != 'Windows'
@@ -234,3 +288,50 @@ jobs:
           working-directory: tauri/src-tauri
           target-dir: ${{ github.workspace }}/tauri/src-tauri/target
           budget: 4GiB
+
+  publish:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Voicebox-DS-*
+          path: artifacts
+      - name: Publish packages on GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir assets
+          find artifacts -mindepth 2 -type f ! -name build-info.json -exec mv -n {} assets/ \;
+          cd assets
+          test -s Voicebox-DS-macOS-arm64.zip
+          test -s Voicebox-DS-Linux-x64.deb
+          test -s Voicebox-DS-Windows-x64-setup.exe
+          test -s voicebox-server-cuda-windows-x86_64.tar.gz
+          test -s Install-CUDA.ps1
+          test -s cuda-libs.json
+          compgen -G 'cuda-libs-windows-x86_64-*.tar.gz*' >/dev/null
+          oversized=$(find . -type f -size +2147483647c)
+          if [ -n "$oversized" ]; then
+            printf 'Release assets must be smaller than 2 GiB:\n%s\n' "$oversized" >&2
+            exit 1
+          fi
+          sha256sum ./* > SHA256SUMS.txt
+          if status=$(gh release view "$TAG" --json isDraft --jq '.isDraft'); then
+            if [ "$status" = 'true' ]; then
+              gh release upload "$TAG" ./* --clobber
+              gh release edit "$TAG" --draft=false --verify-tag
+            fi
+            exit 0
+          fi
+          gh release create "$TAG" ./* --verify-tag --title "Voicebox DS ${TAG#ds-v}" --notes-file - <<'NOTES'
+          - **macOS (Apple Silicon).** Download and unzip `Voicebox-DS-macOS-arm64.zip`. The app uses ad-hoc signing.
+          - **Linux (x64).** Install `Voicebox-DS-Linux-x64.deb` on a Debian-based distribution.
+          - **Windows (x64).** Run `Voicebox-DS-Windows-x64-setup.exe`. The installer includes the CPU backend.
+          - **Optional NVIDIA acceleration on Windows.** Put `Install-CUDA.ps1`, `voicebox-server-cuda-windows-x86_64.tar.gz`, its `.sha256`, and `cuda-libs.json` in one folder. Quit Voicebox DS and run the script. If it requests the NVIDIA runtime archive, download it (or all of its numbered parts) into the same folder and rerun the script.
+          NOTES

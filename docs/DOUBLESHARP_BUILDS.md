@@ -2,22 +2,35 @@
 
 Use `doublesharp` as the integration branch for tested customizations. Feature branches remain independent for review or an upstream contribution.
 
-GitHub builds are **manual only**. Merging or pushing a branch, opening a PR, creating a tag, or waiting for a schedule does not trigger this workflow.
+## Publish a GitHub release
 
-After local acceptance, run the existing workflow file **release.yml** (`.github/workflows/release.yml`) with **Use workflow from: doublesharp** and choose `macos`, `windows`, or `both`. Selecting another branch skips the build job. The existing workflow file name is retained so dispatch does not require changing the fork's default branch.
+Tag the commit on `doublesharp` with `ds-v<version>`, using the app version from `tauri/src-tauri/tauri.conf.json`. For example, to publish version 0.6.1 from the current commit:
 
-To reduce repeated work, the workflow caches Python downloads, Rust dependencies and compilation, and frozen CPU/MCP/CUDA binaries keyed by their runtime source and dependency inputs. A frontend-only change can reuse the backend binaries. A newer manual run cancels an older build. Artifacts expire after seven days; they include the source commit and SHA-256 checksums. No GitHub release, tag, updater feed, or deployment is created.
+```sh
+git tag -a ds-v0.6.1 -m "Voicebox DS 0.6.1"
+git push origin ds-v0.6.1
+```
+
+The workflow builds macOS (Apple Silicon), Linux (x64 `.deb`), and Windows (x64 setup executable). After all three builds pass, it publishes the packages and checksums to [GitHub Releases](https://github.com/doublesharp/voicebox-ds/releases).
+
+## Manual test builds
+
+After local acceptance, run **release.yml** from `doublesharp` with `macos`, `windows`, `linux`, or `both` (macOS and Windows). The [GitHub Actions run](https://github.com/doublesharp/voicebox-ds/actions/workflows/release.yml) keeps the test packages and their source commit and checksums for seven days.
+
+The equivalent CLI command is `gh workflow run release.yml --ref doublesharp -f platforms=both`.
 
 ## macOS
 
-The artifact contains a zipped Apple Silicon `Voicebox DS.app`. It is a local test build without Developer ID notarization. If a stdio MCP client points to the older `/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp` or `/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp` path, update it to `/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp` after installing the renamed app. Runtime/model locations come from the target installation's configuration; build and deployment instructions must use explicit portable paths.
+The archive contains the ad-hoc-signed Apple Silicon `Voicebox DS.app`. If a stdio MCP client points to the older `/Applications/Voicebox.app/Contents/MacOS/voicebox-mcp` or `/Applications/VoiceboxDS.app/Contents/MacOS/voicebox-mcp` path, update it to `/Applications/Voicebox DS.app/Contents/MacOS/voicebox-ds-mcp` after installing the renamed app. Runtime and model locations come from the target installation's configuration.
 
 ## Windows and CUDA
 
-Download and extract the Windows artifact, install its `*-setup.exe`, then quit Voicebox DS. Run `Install-CUDA.ps1` from the extracted artifact directory. It verifies the archive checksum when `build-info.json` is present and installs the complete CUDA backend under `%APPDATA%\com.doublesharp.voicebox.ds\backends\cuda`, preserving the prior backend if extraction or replacement fails.
+Run `Voicebox-DS-Windows-x64-setup.exe` to install the app with CPU support.
 
-Launch Voicebox with a compatible NVIDIA driver. Check `http://127.0.0.1:17593/health` for `backend_variant: cuda`, `gpu_available: true`, and the expected GPU. A successful hosted build proves packaging; an actual Windows/NVIDIA inference test is still required.
+For NVIDIA acceleration, put `Install-CUDA.ps1`, `voicebox-server-cuda-windows-x86_64.tar.gz`, its `.sha256` file, and `cuda-libs.json` in one folder. For manual builds, extract the CUDA backend and NVIDIA runtime artifacts into the same folder. Quit Voicebox DS and run the script from PowerShell.
 
-The installer and CUDA archive belong to the same build. Distribute both. The custom desktop build disables the upstream desktop update endpoint so an upstream release cannot replace fork customizations.
+The script reuses matching NVIDIA libraries already installed. If it requests the NVIDIA runtime archive, put the archive or all its numbered parts in the same folder and rerun the script. The script verifies the checksums and installs under `%APPDATA%\com.doublesharp.voicebox.ds\backends\cuda` while preserving the prior backend if extraction or replacement fails.
 
-The equivalent command after publishing this workflow is `gh workflow run release.yml --ref doublesharp -f platforms=both`. Do not dispatch it until local testing has been accepted.
+Launch Voicebox with a compatible NVIDIA driver. Check `http://127.0.0.1:17593/health` for `backend_variant: cuda`, `gpu_available: true`, and the expected GPU.
+
+Use the CUDA backend for the same release as the Windows installer. The desktop build disables the upstream update endpoint.

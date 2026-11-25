@@ -103,12 +103,36 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def split_release_archive(archive: Path, limit: int = 1900 * 1024**2) -> list[str]:
+    """Split oversized downloads into parts below GitHub's asset limit."""
+    if archive.stat().st_size <= limit:
+        return []
+
+    parts = []
+    size = archive.stat().st_size
+    with archive.open("rb") as source:
+        for index, offset in enumerate(range(0, size, limit), start=1):
+            part = archive.with_name(f"{archive.name}.part-{index:02d}")
+            remaining = min(limit, size - offset)
+            with part.open("wb") as output:
+                while remaining:
+                    block = source.read(min(remaining, 1024**2))
+                    if not block:
+                        raise OSError(f"Unexpected end of {archive}")
+                    output.write(block)
+                    remaining -= len(block)
+            parts.append(part.name)
+    archive.unlink()
+    return parts
+
+
 def package(
     onedir_path: Path,
     output_dir: Path,
     cuda_libs_version: str,
     torch_compat: str,
     plat: str,
+    split_runtime: bool = False,
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -172,7 +196,8 @@ def package(
     (output_dir / f"{cuda_libs_name}.sha256").write_text(
         f"{cuda_sha}  {cuda_libs_name}\n"
     )
-    print(f"  Size: {cuda_libs_archive.stat().st_size / (1024**2):.1f} MB")
+    cuda_archive_size = cuda_libs_archive.stat().st_size
+    print(f"  Size: {cuda_archive_size / (1024**2):.1f} MB")
     print(f"  SHA-256: {cuda_sha[:16]}...")
 
     # Write cuda-libs.json manifest
@@ -183,21 +208,28 @@ def package(
         "archive": cuda_libs_archive.name,
         "sha256": cuda_sha,
     }
+    if split_runtime:
+        manifest["files"] = {
+            path.relative_to(onedir_path).as_posix(): sha256_file(path)
+            for _, path in nvidia_files
+        }
+        manifest["parts"] = split_release_archive(cuda_libs_archive)
     manifest_path = output_dir / "cuda-libs.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"\nManifest: {manifest_path.name}")
-    print(json.dumps(manifest, indent=2))
+    if not split_runtime:
+        print(json.dumps(manifest, indent=2))
 
     # Summary
     total_input = core_size + nvidia_size
-    total_output = server_archive.stat().st_size + cuda_libs_archive.stat().st_size
+    total_output = server_archive.stat().st_size + cuda_archive_size
     print(f"\nTotal input:  {total_input / (1024**3):.2f} GB")
     print(f"Total output: {total_output / (1024**3):.2f} GB (compressed)")
     print(
         f"Server core:  {server_archive.stat().st_size / (1024**2):.1f} MB (redownloaded on app update)"
     )
     print(
-        f"CUDA libs:    {cuda_libs_archive.stat().st_size / (1024**2):.1f} MB (cached until CUDA toolkit bump)"
+        f"CUDA libs:    {cuda_archive_size / (1024**2):.1f} MB (cached while the runtime files match)"
     )
 
 
@@ -235,6 +267,11 @@ def main():
         help="Platform token for asset names, e.g. linux-x86_64. Explicit so a "
         "cross-platform CI runner can never mislabel an asset.",
     )
+    parser.add_argument(
+        "--split-runtime",
+        action="store_true",
+        help="Record per-library checksums for reuse and split oversized release assets.",
+    )
     args = parser.parse_args()
 
     if not args.input.is_dir():
@@ -243,7 +280,10 @@ def main():
         sys.exit(1)
 
     output_dir = args.output or args.input.parent
-    package(args.input, output_dir, args.cuda_libs_version, args.torch_compat, args.platform)
+    package(
+        args.input, output_dir, args.cuda_libs_version, args.torch_compat, args.platform,
+        split_runtime=args.split_runtime,
+    )
 
 
 if __name__ == "__main__":
