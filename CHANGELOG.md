@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-25
+
+Voicebox DS has a new icon with DoubleSharp’s multicolor loops around a gold waveform. The desktop sidebar shows the icon beside the app name, and the startup screen and About page use the same branding.
+
+### Interface
+
+- First-run setup uses **Generate sample** for the built-in voice and offers **Retry** if preparation fails.
+- Startup shows when the app is connecting to the voice server. About shows the app version and labels the source links for Voicebox DS and the original Voicebox.
+
+_Voicebox is free and open source, built with [Capy](https://capy.ai?utm_source=voicebox&utm_medium=changelog&utm_campaign=built-with-capy)._
+
 ## [0.6.1] - 2026-11-22
 
 **Apple Silicon MLX upgrades, YouTube narration Studio workflows, and Recent Takes UX refresh.** Builds on Voicebox 0.6.0 and the DoubleSharp integration branch with native Apple Silicon MLX routing across Qwen CustomVoice, Qwen VoiceDesign, Chatterbox, Chatterbox Turbo, and Kokoro, a full YouTube narration pipeline in Studio (broadcast loudness, de-esser, YouTube Narration preset, music ducking, chapter markers, pronunciation packs, and YouTube-sized caption cues), redesigned Recent Takes cards, and broad stability, packaging, and localization fixes.
@@ -874,7 +885,8 @@ The first public release of Voicebox — an open-source voice synthesis studio p
 
 Tauri v2, React, TypeScript, Tailwind CSS, FastAPI, Qwen3-TTS, Whisper, SQLite
 
-[Unreleased]: https://github.com/doublesharp/voicebox-ds/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/doublesharp/voicebox-ds/compare/ds-v0.6.2...HEAD
+[0.6.2]: https://github.com/doublesharp/voicebox-ds/compare/ds-v0.6.1...ds-v0.6.2
 [0.6.1]: https://github.com/doublesharp/voicebox-ds/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/jamiepine/voicebox/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/jamiepine/voicebox/compare/v0.4.5...v0.5.0
