@@ -104,7 +104,7 @@ The two cloud incumbents sit on opposite halves of the voice I/O loop — Eleven
 
 ## Download
 
-Get Voicebox DS for macOS (Apple Silicon), Linux (x64), or Windows (x64) from [GitHub Releases](https://github.com/doublesharp/voicebox-ds/releases). The Windows installer includes CPU support, with [optional NVIDIA acceleration](docs/DOUBLESHARP_BUILDS.md#windows-and-cuda).
+Download the [latest prebuilt Voicebox DS release](https://github.com/doublesharp/voicebox-ds/releases/latest) for macOS (Apple Silicon), Linux (x64), or Windows (x64). The Windows installer includes CPU support, with [optional NVIDIA acceleration](docs/DOUBLESHARP_BUILDS.md#windows-and-cuda).
 
 Open Voicebox DS and select **Try a voice** to hear your first take. To bring work from another install, import your exported voices or Studio projects. Each desktop app keeps its own library and model cache.
 
